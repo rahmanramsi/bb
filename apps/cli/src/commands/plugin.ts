@@ -144,6 +144,7 @@ const pluginTokenResultSchema = z.object({
   error: z.string().optional(),
   token: z.string().optional(),
 });
+const forbiddenResponseSchema = z.object({ message: z.string() });
 const pluginLogsResultSchema = z.object({
   ok: z.boolean(),
   error: z.string().optional(),
@@ -442,6 +443,14 @@ async function callPlugins(
   } catch {
     throw new Error(
       `Unexpected response from /api/v1/plugins${path} (${response.status}): ${text.slice(0, 200)}`,
+    );
+  }
+  if (response.status === 403) {
+    const refusal = forbiddenResponseSchema.safeParse(parsed);
+    throw new Error(
+      refusal.success
+        ? refusal.data.message
+        : `/api/v1/plugins${path} failed: HTTP 403`,
     );
   }
   if (!response.ok && ![400, 404, 422].includes(response.status)) {

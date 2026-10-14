@@ -37,6 +37,8 @@ What lives here:
   reading its document, turning an `npx` or `uvx` agent into a `customAgents`
   entry, and the `listRegistry` / `addRegistryAgent` / `removeAgent` RPC and
   `bb acp` CLI commands that the settings section (`app.tsx`) and the CLI share.
+  Adding and removing agents writes the global setting, so those RPC methods
+  and CLI commands are admin-only.
 - `src/declaration.ts` — one agent definition becomes one
   `bb.providers.register` declaration: ids, display names, icons,
   capabilities, and the bridge options it launches with (`acpLaunchSpec`, and

@@ -480,6 +480,48 @@ describe("the ACP registry", () => {
     ]);
   });
 
+  it("keeps adding and removing agents to admins while members can list them", async () => {
+    stubRegistry(() => Response.json(REGISTRY_DOCUMENT));
+    const host = await loadPlugin({});
+    const member = { experimental_callerRole: "member" } as const;
+
+    await host.harness.callRpc("addRegistryAgent", { id: "claude-acp" });
+    await expect(
+      host.harness.callRpc("addRegistryAgent", { id: "claude-acp" }, member),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    await expect(
+      host.harness.callRpc("removeAgent", { id: "claude-acp" }, member),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    for (const argv of [
+      ["add", "claude-acp", "--json"],
+      ["remove", "claude-acp", "--json"],
+    ]) {
+      const refused = await host.harness.runCli(argv, member);
+      expect(refused.exitCode).toBe(1);
+      expect(JSON.parse(refused.stdout)).toMatchObject({
+        ok: false,
+        error: { code: "admin_required" },
+      });
+    }
+    expect(
+      statuses(
+        await host.harness.callRpc(
+          "listRegistry",
+          { refresh: false },
+          member,
+        ),
+      )["claude-acp"],
+    ).toBe("added");
+    await expect(
+      host.harness.runCli(["registry"], member),
+    ).resolves.toMatchObject({ exitCode: 0 });
+    for (const command of ["add", "remove"]) {
+      const help = await host.harness.runCli([command, "--help"], member);
+      expect(help.exitCode).toBe(0);
+      expect(help.stdout).toContain(`bb acp ${command}`);
+    }
+  });
+
   it("refuses a built-in, a binary-only and an unknown agent without touching the setting", async () => {
     stubRegistry(() => Response.json(REGISTRY_DOCUMENT));
     const host = await loadPlugin({});

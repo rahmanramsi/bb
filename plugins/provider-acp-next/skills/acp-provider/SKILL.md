@@ -17,8 +17,9 @@ Agents in the official ACP registry can be added without writing JSON.
 `manual install` (the agent ships only as a downloadable binary).
 `bb acp add <agent-id>` adds the agent as provider `acp-<agent-id>`, or moves an
 added agent to the registry's current version while keeping the fields edited
-by hand. `bb acp remove <agent-id>` removes it. The plugin's settings page shows
-the same list. An added agent is an entry in the `Custom agents` setting that
+by hand. `bb acp remove <agent-id>` removes it. In multi-user mode only admins
+can add or remove agents; members can list them. The plugin's settings page
+shows the same list. An added agent is an entry in the `Custom agents` setting that
 runs `npx -y <package>` or `uvx <package>` on the thread's host, so the host
 needs Node.js or uv. The list is cached for six hours; when the registry cannot
 be reached the saved copy is shown with the reason.
