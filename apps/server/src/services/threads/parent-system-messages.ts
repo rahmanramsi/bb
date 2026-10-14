@@ -55,7 +55,13 @@ import {
   withThreadSendGuard,
 } from "./thread-context-mutation-guard.js";
 import { requestQueuedMessageDispatch } from "./queued-message-dispatch.js";
-import { sharesRunningTurnAuthority } from "./turn-authority.js";
+import {
+  bindsSteersToExpectedTurn,
+  readRunningTurnBinding,
+  runningTurnBindingHolds,
+  sharesRunningTurnAuthority,
+  type RunningTurnBinding,
+} from "./turn-authority.js";
 
 const PARENT_SYSTEM_MESSAGE_SOURCE = "tell";
 
@@ -128,6 +134,7 @@ interface QueueReadyParentSystemMessageArgs extends ParentSystemMessageTaxonomy 
 }
 
 interface QueueActiveParentSystemMessageInTransactionArgs extends QueueReadyParentSystemMessageArgs {
+  binding: RunningTurnBinding;
   preparedCommand: PreparedTurnSubmitCommandPayload;
 }
 
@@ -230,9 +237,10 @@ export function buildParentSystemThreadMention(
 }
 
 function queueActiveParentSystemMessageInTransaction(
+  deps: LoggedPendingInteractionWorkSessionDeps,
   tx: DbTransaction,
   args: QueueActiveParentSystemMessageInTransactionArgs,
-): Extract<HostDaemonCommand, { type: "turn.submit" }> | null {
+): Extract<HostDaemonCommand, { type: "turn.submit" }> | "turn-changed" | null {
   const currentThread = getThread(tx, args.thread.id);
   if (
     !currentThread ||
@@ -242,6 +250,15 @@ function queueActiveParentSystemMessageInTransaction(
     currentThread.deletedAt !== null
   ) {
     return null;
+  }
+  if (
+    !runningTurnBindingHolds(deps, {
+      binding: args.binding,
+      db: tx,
+      threadId: args.thread.id,
+    })
+  ) {
+    return "turn-changed";
   }
 
   const expectedSteerTurnId = getActiveTurnId({ db: tx }, args.thread.id);
@@ -259,6 +276,7 @@ function queueActiveParentSystemMessageInTransaction(
       target: {
         mode: "auto",
         expectedTurnId: expectedSteerTurnId,
+        bindExpectedTurn: bindsSteersToExpectedTurn(deps),
       },
     },
   });
@@ -268,7 +286,8 @@ async function queueActiveParentSystemMessage(
   deps: LoggedPendingInteractionWorkSessionDeps,
   args: QueueReadyParentSystemMessageArgs,
 ): Promise<ParentSystemMessageDelivery> {
-  const expectedSteerTurnId = getActiveTurnId(deps, args.thread.id);
+  const binding = readRunningTurnBinding(deps.db, args.thread.id);
+  const expectedSteerTurnId = binding.activeTurnId;
   if (expectedSteerTurnId === null) {
     const outcome = queueInputForStartingTurn(deps, {
       claimed: null,
@@ -310,6 +329,7 @@ async function queueActiveParentSystemMessage(
   if (
     !sharesRunningTurnAuthority(deps, {
       author: SYSTEM_NOTICE_AUTHOR,
+      binding,
       thread: args.thread,
     })
   ) {
@@ -331,6 +351,7 @@ async function queueActiveParentSystemMessage(
     target: {
       mode: "auto",
       expectedTurnId: expectedSteerTurnId,
+      bindExpectedTurn: bindsSteersToExpectedTurn(deps),
     },
     environment: {
       id: args.environment.id,
@@ -342,14 +363,18 @@ async function queueActiveParentSystemMessage(
 
   const command = deps.db.transaction(
     (tx) =>
-      queueActiveParentSystemMessageInTransaction(tx, {
+      queueActiveParentSystemMessageInTransaction(deps, tx, {
         ...args,
+        binding,
         preparedCommand,
       }),
     { behavior: "immediate" },
   );
   if (command === null) {
     return "not-delivered";
+  }
+  if (command === "turn-changed") {
+    return "awaiting-running-turn";
   }
 
   deps.hub.notifyThread(args.thread.id, ["events-appended"], {

@@ -5,6 +5,7 @@ import { flattenPromptInputGroups } from "@bb/domain";
 import { killProcessesWithCwdUnder } from "@bb/process-utils";
 import {
   COMPETING_TURN_ERROR_CODE,
+  TURN_BINDING_MISMATCH_ERROR_CODE,
   type HostDaemonCommandResult,
 } from "@bb/host-daemon-contract";
 import type { RuntimeEntry } from "../runtime-manager.js";
@@ -442,10 +443,65 @@ async function resolveSubmittedTurnTarget(
   );
 }
 
+function turnBindingMismatch(
+  command: TurnSubmitCommand,
+  expectedTurnId: string | null,
+  liveTurnId: string,
+): CommandDispatchError {
+  return new CommandDispatchError(
+    TURN_BINDING_MISMATCH_ERROR_CODE,
+    `Input for thread ${command.threadId} is bound to turn ${expectedTurnId ?? "none"}, but turn ${liveTurnId} is live`,
+  );
+}
+
+async function deliverBoundSubmittedTurn(
+  command: TurnSubmitCommand,
+  entry: RuntimeEntry,
+  expectedTurnId: string | null,
+): Promise<void> {
+  const liveTurnId = await resolveLiveSubmittedTurnTarget(command, entry);
+  if (liveTurnId === null) {
+    return runSubmittedTurn(command, entry);
+  }
+  if (liveTurnId !== expectedTurnId) {
+    throw turnBindingMismatch(command, expectedTurnId, liveTurnId);
+  }
+  const result = await entry.runtime.steerTurn({
+    threadId: command.threadId,
+    expectedTurnId: liveTurnId,
+    input: command.input,
+    clientRequestId: command.requestId,
+    options: command.options,
+    contributedEnv: command.resumeContext.contributedEnv,
+    instructions: command.resumeContext.instructions,
+  });
+  if (result.status === "steered") {
+    return;
+  }
+  const currentTurnId = await resolveLiveSubmittedTurnTarget(command, entry);
+  if (currentTurnId === null) {
+    return runSubmittedTurn(command, entry);
+  }
+  if (currentTurnId === liveTurnId) {
+    throw new CommandDispatchError(
+      "stale_turn",
+      `Expected active turn ${liveTurnId} for thread ${command.threadId}, but active turn is ${result.activeTurnId ?? "none"}`,
+    );
+  }
+  throw turnBindingMismatch(command, expectedTurnId, currentTurnId);
+}
+
 async function deliverSubmittedTurn(
   command: TurnSubmitCommand,
   entry: RuntimeEntry,
 ): Promise<void> {
+  if (command.target.mode !== "start" && command.target.bindExpectedTurn) {
+    return deliverBoundSubmittedTurn(
+      command,
+      entry,
+      command.target.expectedTurnId,
+    );
+  }
   const resolvedTurnId = await resolveSubmittedTurnTarget(command, entry);
   if (command.target.mode === "start" || resolvedTurnId === null) {
     return runSubmittedTurn(command, entry);

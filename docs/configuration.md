@@ -2006,6 +2006,13 @@ now on a waiting notice answers that the thread is already running a turn.
 Editing a waiting notice turns it into an ordinary message by the editor, with
 the editor's credential.
 
+These credential checks hold only for the turn bb checked. If that turn ends
+and another one starts before the message reaches the host, bb decides again
+against the new turn: a notice waits in the queue, and any other message
+follows the interrupt rule above. The host never steers a message into a turn
+other than the one it was checked against; it hands the message back to the
+queue instead.
+
 `GET /api/v1/me` returns the authenticated user. Admins update roles with
 `PUT /api/v1/users/:id/role` (`{"role":"admin"|"member"}`) and remove accounts
 with `DELETE /api/v1/users/:id`. Invite management uses

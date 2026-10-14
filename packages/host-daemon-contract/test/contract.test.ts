@@ -1234,7 +1234,7 @@ const CONTRIBUTED_ENV = [
 
 describe("host-daemon command schemas", () => {
   it("uses the current host-daemon protocol version", () => {
-    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(235);
+    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(236);
     expect(HOST_ARTIFACT_MAX_BYTES).toBe(256 * 1024 * 1024);
   });
 
@@ -2558,13 +2558,21 @@ describe("host-daemon command schemas", () => {
           injectedSkillSources: [],
           instructionMode: "append",
         },
-        target: { mode: "auto", expectedTurnId: "turn_123" },
+        target: {
+          mode: "auto",
+          expectedTurnId: "turn_123",
+          bindExpectedTurn: true,
+        },
       }),
     ).toMatchObject({
       type: "turn.submit",
       bridgeLaunch: BRIDGE_LAUNCH,
       requestId: CLIENT_REQUEST_ID,
-      target: { mode: "auto", expectedTurnId: "turn_123" },
+      target: {
+        mode: "auto",
+        expectedTurnId: "turn_123",
+        bindExpectedTurn: true,
+      },
     });
 
     expect(() =>

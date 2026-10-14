@@ -37,6 +37,7 @@ import {
   getActiveTurnId,
   type TurnRequestRetryMarker,
 } from "./thread-events.js";
+import { bindsSteersToExpectedTurn } from "./turn-authority.js";
 import { recoverThreadModelOverride } from "./thread-execution-override.js";
 import {
   ensureThreadCanStartRequest,
@@ -782,6 +783,7 @@ async function sendThreadMessageWithoutContextClear(
     target: {
       mode,
       expectedTurnId: expectedSteerTurnId,
+      bindExpectedTurn: bindsSteersToExpectedTurn(deps),
     },
     environment: {
       id: readyEnvironment.id,

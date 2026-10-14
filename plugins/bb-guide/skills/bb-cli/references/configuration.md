@@ -133,6 +133,13 @@ now on a waiting notice answers that the thread is already running a turn.
 Editing a waiting notice turns it into an ordinary message by the editor, with
 the editor's credential.
 
+These credential checks hold only for the turn bb checked. If that turn ends
+and another one starts before the message reaches the host, bb decides again
+against the new turn: a notice waits in the queue, and any other message
+follows the interrupt rule above. The host never steers a message into a turn
+other than the one it was checked against; it hands the message back to the
+queue instead.
+
 Plugin RPC methods and commands that change server-wide settings, such as
 `bb concurrency-limit global 0` or `bb pool routing claude`, are admin-only and
 fail for members with `admin_required`. Session cookies are `Secure` when

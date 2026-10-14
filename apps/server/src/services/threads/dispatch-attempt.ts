@@ -90,7 +90,12 @@ import { resolveDispatchAuthor } from "./dispatch-author.js";
 import type { TurnRequestRetryMarker } from "./thread-events.js";
 import { restoreInterruptedThreadStartupRequest } from "./thread-provisioning.js";
 import { requestThreadInterruptForOtherAuthor } from "./thread-lifecycle.js";
-import { sharesRunningTurnAuthority } from "./turn-authority.js";
+import {
+  readRunningTurnBinding,
+  runningTurnBindingHolds,
+  sharesRunningTurnAuthority,
+  type RunningTurnBinding,
+} from "./turn-authority.js";
 import { markTurnTraceSpan } from "../system/turn-trace.js";
 
 export const pendingThreadStartContextSchema = z.object({
@@ -416,6 +421,10 @@ async function runDispatchAttempt(
     reattemptThread: null,
   };
 
+  const checkedRunningTurn: { value: RunningTurnBinding | null } = {
+    value: null,
+  };
+
   const continueThroughCoreWaits = async (): Promise<void> => {
     const sendAt = payload.sendAt ?? null;
     if (!sendNow && sendAt !== null && sendAt > Date.now()) {
@@ -486,13 +495,17 @@ async function runDispatchAttempt(
       continued.outcome = waitOn({ kind: "thread-busy" }, null);
       return;
     }
+    if (attempt === "join-turn") {
+      checkedRunningTurn.value = readRunningTurnBinding(deps.db, thread.id);
+    }
     if (
-      attempt === "join-turn" &&
+      checkedRunningTurn.value !== null &&
       !sharesRunningTurnAuthority(deps, {
         author: {
           authorRoleCeiling: args.authorRoleCeiling,
           authorUserId: args.authorUserId,
         },
+        binding: checkedRunningTurn.value,
         thread,
       })
     ) {
@@ -652,6 +665,16 @@ async function runDispatchAttempt(
       ...(args.retryOf !== undefined ? { retryOf: args.retryOf } : {}),
       beforeAppendInTransaction: ({ tx }) => {
         if (getThread(tx, thread.id)?.status !== thread.status) {
+          throw new DispatchThreadStatusChangedError();
+        }
+        if (
+          checkedRunningTurn.value !== null &&
+          !runningTurnBindingHolds(deps, {
+            binding: checkedRunningTurn.value,
+            db: tx,
+            threadId: thread.id,
+          })
+        ) {
           throw new DispatchThreadStatusChangedError();
         }
         if (claimed !== null) {
