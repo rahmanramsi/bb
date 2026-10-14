@@ -1153,7 +1153,7 @@ describe("thread runtime config", () => {
     });
   });
 
-  it("issues the turn author's shell credential in multi mode, falls back to a human creator for system authors, and never to a system user", async () => {
+  it("issues the turn author's shell credential in multi mode, falls back only to a member creator for system authors, and never to a system user", async () => {
     await withTestHarness(async (harness) => {
       const hostId = "host-auth";
       seedHostSession(harness.deps, { id: hostId });
@@ -1223,10 +1223,22 @@ describe("thread runtime config", () => {
         await shellPrincipal("usr_member_author", LOCAL_OWNER_USER_ID),
       ).toBeNull();
       harness.deps.config.authMode = "multi";
-      expect(await shellPrincipal("usr_admin_creator", null)).toMatchObject({
-        userId: "usr_admin_creator",
-        role: "admin",
+      expect(await shellPrincipal("usr_admin_creator", null)).toBeNull();
+      expect(await shellPrincipal("usr_member_author", null)).toMatchObject({
+        userId: "usr_member_author",
+        role: "member",
       });
+      for (const systemAuthor of [
+        LOCAL_OWNER_USER_ID,
+        MACHINE_AUTH_SYSTEM_USER_ID,
+      ]) {
+        expect(
+          await shellPrincipal("usr_admin_creator", systemAuthor),
+        ).toBeNull();
+      }
+      expect(
+        await shellPrincipal("usr_member_author", "usr_admin_creator"),
+      ).toMatchObject({ userId: "usr_admin_creator", role: "admin" });
       expect(
         await shellPrincipal("usr_admin_creator", "usr_member_author"),
       ).toMatchObject({ userId: "usr_member_author", role: "member" });

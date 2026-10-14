@@ -86,20 +86,28 @@ const connectCredentialSchema = z.object({
 });
 
 const shellTokenPayloadSchema = z
-  .object({ userId: z.string().min(1), expiresAt: z.number().int().positive() })
+  .object({
+    userId: z.string().min(1),
+    expiresAt: z.number().int().positive(),
+    roleCeiling: z.literal("member").optional(),
+  })
   .strict();
 const SHELL_TOKEN_PREFIX = "bbshell_";
 const SHELL_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export async function issueThreadShellToken(
   dataDir: string,
-  userId: string,
+  args: { userId: string; roleCeiling: "member" | null },
 ): Promise<string> {
   const secret = (
     await readFile(join(dataDir, AUTH_SECRET_FILE_NAME), "utf8")
   ).trim();
   const payload = Buffer.from(
-    JSON.stringify({ userId, expiresAt: Date.now() + SHELL_TOKEN_TTL_MS }),
+    JSON.stringify({
+      userId: args.userId,
+      expiresAt: Date.now() + SHELL_TOKEN_TTL_MS,
+      ...(args.roleCeiling === null ? {} : { roleCeiling: args.roleCeiling }),
+    }),
   ).toString("base64url");
   const signature = createHmac("sha256", secret)
     .update(payload)
@@ -110,6 +118,19 @@ export async function issueThreadShellToken(
 export function isSystemUserId(userId: string): boolean {
   return (
     userId === LOCAL_OWNER_USER_ID || userId === MACHINE_AUTH_SYSTEM_USER_ID
+  );
+}
+
+export function readUserRole(
+  db: DbConnection,
+  userId: string,
+): UserRole | null {
+  return (
+    db
+      .select({ role: authUsers.role })
+      .from(authUsers)
+      .where(eq(authUsers.id, userId))
+      .get()?.role ?? null
   );
 }
 
@@ -668,10 +689,16 @@ export async function createUserAuthService(
         const parsed = shellTokenPayloadSchema.safeParse(value);
         if (!parsed.success || parsed.data.expiresAt <= Date.now()) return null;
         const expiresAt = parsed.data.expiresAt;
-        return credentialFor(
-          principalForUser(parsed.data.userId, "user"),
-          () => expiresAt > Date.now(),
-        );
+        const roleCeiling = parsed.data.roleCeiling ?? null;
+        const shellPrincipal = principalForUser(parsed.data.userId, "user");
+        if (shellPrincipal === null || roleCeiling === null) {
+          return credentialFor(shellPrincipal, () => expiresAt > Date.now());
+        }
+        return {
+          principal: { ...shellPrincipal, role: roleCeiling },
+          isActive: async () =>
+            getUser(shellPrincipal.userId) !== null && expiresAt > Date.now(),
+        };
       }
       if (!token.startsWith(USER_PAT_PREFIX)) {
         return null;

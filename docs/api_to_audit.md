@@ -148,8 +148,13 @@ handler that needs an admin only for some inputs throws
 `experimental_PluginRpcForbiddenError(message)`; the route answers HTTP 403
 with `{ ok: false, error: { code: "forbidden", message } }`, the same shape.
 The server and the fake plugin host recognize it by its `name` and `code`
-rather than `instanceof`, because a plugin may bundle its own SDK copy; every
-other thrown error stays `handler_error` with HTTP 500. Plugin
+rather than `instanceof`, because a plugin may bundle its own SDK copy. The
+pair `name === "PluginRpcForbiddenError"` and `code === "forbidden"` on an
+`Error` instance is a reserved structural marker: any such error a handler
+throws, from any library, answers 403 `forbidden` with its message. An error
+with only one of the two, or a non-`Error` value carrying both, stays
+`handler_error`, and every other thrown error stays `handler_error` with
+HTTP 500. Plugin
 callers that go through `bb.sdk.plugins.callRpc` authenticate with the server
 service token, which acts as an admin. In local mode every request is the local
 owner admin, so nothing changes.
