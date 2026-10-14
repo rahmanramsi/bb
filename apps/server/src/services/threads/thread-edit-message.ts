@@ -17,7 +17,7 @@ import {
 import {
   threadScope,
   type PromptInput,
-  type Thread,
+  type ThreadRecord,
   type ThreadEvent,
 } from "@bb/domain";
 import type {
@@ -126,7 +126,9 @@ function findCommittedOperation(
 
 const EDIT_MESSAGE_STOP_TIMEOUT_MS = 60_000;
 
-function isMessageEditThreadQuiescent(thread: Pick<Thread, "status">): boolean {
+function isMessageEditThreadQuiescent(
+  thread: Pick<ThreadRecord, "status">,
+): boolean {
   return thread.status === "idle" || thread.status === "error";
 }
 
@@ -136,7 +138,7 @@ async function stopThreadBeforeMessageEdit(
     environment: Parameters<typeof requireReadyThreadEnvironment>[0];
     threadId: string;
   },
-): Promise<Thread> {
+): Promise<ThreadRecord> {
   let thread = getThread(deps.db, args.threadId);
   if (!thread) conflict("Thread not found");
   if (isMessageEditThreadQuiescent(thread)) return thread;
@@ -210,7 +212,7 @@ export function resolveTurnProviderCheckpointId(args: {
 
 function resolveEditableTurnCandidate(
   db: DbQueryConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   requestRow: Parameters<typeof parseStoredTurnRequestEvent>[0],
 ): EditableTurn {
   const request = parseStoredTurnRequestEvent(requestRow);
@@ -333,7 +335,7 @@ function resolveEditableTurnCandidate(
 
 function resolveEditableTurn(
   db: DbQueryConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   requestSequence?: number,
 ): EditableTurn {
   if (thread.archivedAt !== null || thread.deletedAt !== null) {
@@ -423,9 +425,10 @@ function rewindPrepareCommandFromStart(
 export async function editThreadMessage(
   deps: LoggedPendingInteractionWorkSessionDeps,
   args: {
+    authorUserId: string | null;
     environment: Parameters<typeof requireReadyThreadEnvironment>[0];
     payload: EditMessageRequest;
-    thread: Thread;
+    thread: ThreadRecord;
   },
 ): Promise<EditMessageResponse> {
   if (!deps.providerRegistry.supportsSessionRewind(args.thread.providerId)) {
@@ -555,6 +558,7 @@ export async function editThreadMessage(
   let cancelledRetryCount = 0;
   try {
     await sendThreadMessage(deps, {
+      authorUserId: args.authorUserId,
       beforeAppendInTransaction: ({ tx }) => {
         if (getActivePendingInteractionForThread(tx, editableThread.id)) {
           conflict(

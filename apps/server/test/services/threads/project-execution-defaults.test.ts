@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import {
   getProjectExecutionDefaults,
   upsertProjectExecutionDefaults,
@@ -41,6 +42,7 @@ describe("project execution defaults persistence", () => {
       });
 
       await createThreadFromRequest(harness.deps, {
+        createdByUserId: LOCAL_OWNER_USER_ID,
         origin: "app",
         startedOnBehalfOf: null,
         projectId: project.id,
@@ -86,6 +88,7 @@ describe("project execution defaults persistence", () => {
       });
 
       await createThreadFromRequest(harness.deps, {
+        createdByUserId: LOCAL_OWNER_USER_ID,
         origin: "app",
         startedOnBehalfOf: null,
         projectId: project.id,
@@ -154,6 +157,7 @@ describe("project execution defaults persistence", () => {
       });
 
       await createThreadFromRequest(harness.deps, {
+        createdByUserId: LOCAL_OWNER_USER_ID,
         origin: "app",
         originKind: "fork",
         startedOnBehalfOf: null,

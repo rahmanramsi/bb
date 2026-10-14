@@ -25,8 +25,9 @@ import {
   parseNamespacedGlyph,
   PLUGIN_SDK_MAJOR,
   PLUGIN_SDK_VERSION,
-  type Thread,
+  type ThreadRecord,
   type ThreadQueuedMessage,
+  LOCAL_OWNER_USER_ID,
 } from "@bb/domain";
 import {
   buildPluginApp,
@@ -35,7 +36,7 @@ import {
 } from "@bb/plugin-build";
 import { PluginHostArtifactRegistry } from "./plugin-host-artifact-registry.js";
 import { getPluginBuildToolchain } from "./build-toolchain.js";
-import { createNodeBbSdk, type BbSdk } from "@bb/sdk";
+import type { BbSdk } from "@bb/sdk";
 import {
   getInstalledPlugin,
   getPluginSafeMode,
@@ -100,7 +101,10 @@ import { createKeyedLock } from "../lib/async-deduper.js";
 import { runEventLoopWork } from "../system/event-loop-work.js";
 import { abortPluginToolCallsForPlugin } from "./plugin-tool-calls.js";
 import { buildCachedPluginServer } from "./plugin-server-cache.js";
-import { createPluginRpcCallerRegistry } from "./plugin-rpc-caller.js";
+import {
+  createPluginLoopbackSdk,
+  createPluginRpcCallerRegistry,
+} from "./plugin-rpc-caller.js";
 
 const serverRuntimeDir = dirname(fileURLToPath(import.meta.url));
 const pluginSdkRuntimePath = join(serverRuntimeDir, "plugin-sdk-runtime.js");
@@ -430,6 +434,7 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
   const handlerStats = new Map<string, PluginHandlerStats>();
   let boundSdk: BbSdk | undefined;
   let boundLoopbackBaseUrl: string | undefined;
+  let boundServiceToken: string | undefined;
   const rpcCallers = createPluginRpcCallerRegistry();
   let loadHold: PluginLoadHold | null = null;
 
@@ -922,10 +927,10 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
     };
   }
 
-  function buildThreadDto(thread: Thread) {
+  function buildThreadDto(thread: ThreadRecord) {
     return toThreadResponseFromThread(
       { db: deps.db, hub: deps.hub },
-      { thread },
+      { thread, viewerUserId: LOCAL_OWNER_USER_ID },
     );
   }
 
@@ -1635,6 +1640,7 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
       },
       getAppUrl: deps.getAppUrl ?? (() => null),
       getLoopbackBaseUrl: () => boundLoopbackBaseUrl,
+      getServiceToken: () => boundServiceToken,
       rpcCaller: rpcCallers.issue(row.id),
       publishSignal: (channel, payload) => {
         deps.hub.notifyPluginSignal(row.id, channel, payload);
@@ -2027,9 +2033,14 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
     return { outcome: "found", value };
   }
 
-  function bindSdk(args: { baseUrl: string }): void {
-    boundSdk = createNodeBbSdk({ baseUrl: args.baseUrl });
+  function bindSdk(args: { baseUrl: string; serviceToken: string }): void {
+    boundSdk = createPluginLoopbackSdk({
+      baseUrl: args.baseUrl,
+      callerToken: null,
+      serviceToken: args.serviceToken,
+    });
     boundLoopbackBaseUrl = args.baseUrl;
+    boundServiceToken = args.serviceToken;
   }
 
   return {

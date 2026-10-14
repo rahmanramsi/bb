@@ -17,8 +17,10 @@ import {
 import type { Hono } from "hono";
 import { ApiError } from "../errors.js";
 import {
+  assertAdmin,
   getGateAuthKind,
   type GateAuthHeaderReader,
+  type PrincipalReader,
 } from "../request-context.js";
 import { callHostOnlineRpc } from "../services/hosts/online-rpc.js";
 import {
@@ -35,7 +37,9 @@ import type { AppDeps } from "../types.js";
 const SERVER_EXPORT_WORK_DIR_NAME = "server-export";
 const DELETE_OLD_SERVER_COPY_TIMEOUT_MS = 5 * 60_000;
 
-function assertServerManagementAllowed(context: GateAuthHeaderReader): void {
+function assertServerManagementAllowed(
+  context: GateAuthHeaderReader & PrincipalReader,
+): void {
   if (getGateAuthKind(context) === "machine") {
     throw new ApiError(
       403,
@@ -43,6 +47,7 @@ function assertServerManagementAllowed(context: GateAuthHeaderReader): void {
       "Machine credentials cannot move, export, or clean up the server",
     );
   }
+  assertAdmin(context);
 }
 
 export const SERVER_MOVE_EXPERIMENT_DISABLED_MESSAGE =

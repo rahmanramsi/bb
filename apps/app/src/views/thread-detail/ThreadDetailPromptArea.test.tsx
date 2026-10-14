@@ -859,6 +859,7 @@ function makePendingInteraction(): PendingInteraction {
     statusReason: null,
     createdAt: 1,
     resolvedAt: null,
+    resolvedByUserId: null,
   };
 }
 

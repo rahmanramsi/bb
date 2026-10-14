@@ -65,7 +65,7 @@ Fields beyond those shown exist; these are the ones scripts use.
     {active: {total, results}, archived: {total, results}}
 
   bb prompt-history list --json
-    {entries: [{id, createdAt, input, projectId, threadId, scope}], nextCursor: string | null}
+    {entries: [{id, createdAt, input, projectId, threadId, scope}], nextCursor: string | null}    (only the caller's prompts)
 
   bb thread section list --json
     [{id, name, createdAt, updatedAt}]

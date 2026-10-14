@@ -1,5 +1,5 @@
 import { getThread, type ClaimedQueuedThreadMessageRow } from "@bb/db";
-import type { Thread, ThreadQueuedMessage } from "@bb/domain";
+import type { ThreadRecord, ThreadQueuedMessage } from "@bb/domain";
 import type { AppDeps } from "../../types.js";
 import { NotificationBuffer } from "../lib/notification-buffer.js";
 import {
@@ -13,7 +13,7 @@ type TurnStartingDeps = Pick<AppDeps, "db" | "hub" | "logger">;
 export type QueueInputForStartingTurnResult =
   | { kind: "dispatched" }
   | { kind: "queued"; entry: ThreadQueuedMessage }
-  | { kind: "retry"; thread: Thread | null };
+  | { kind: "retry"; thread: ThreadRecord | null };
 
 export function queueInputForStartingTurn(
   deps: TurnStartingDeps,

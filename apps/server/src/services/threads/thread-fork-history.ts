@@ -9,7 +9,7 @@ import {
   listStoredTurnCompletedRowsByTurnIds,
   type StoredEventRow,
 } from "@bb/db";
-import type { Thread, ThreadEvent, ThreadEventType } from "@bb/domain";
+import type { ThreadRecord, ThreadEvent, ThreadEventType } from "@bb/domain";
 import type { AppDeps } from "../../types.js";
 import { ApiError } from "../../errors.js";
 import { parseStoredEvent } from "./thread-data.js";
@@ -88,7 +88,7 @@ function resolveCheckpointForkDescriptor(args: {
 
 function resolveAnchoredForkPoint(
   deps: Pick<AppDeps, "db" | "providerRegistry">,
-  args: { sourceSeqEnd: number; sourceThread: Thread },
+  args: { sourceSeqEnd: number; sourceThread: ThreadRecord },
 ): ThreadForkPoint {
   const anchor = findLastRootStoredTurnStarted(deps.db, {
     atOrBeforeSequence: args.sourceSeqEnd,
@@ -166,7 +166,7 @@ function resolveAnchoredForkPoint(
 
 export function resolveThreadForkPoint(
   deps: Pick<AppDeps, "db" | "providerRegistry">,
-  args: { sourceSeqEnd: number | undefined; sourceThread: Thread },
+  args: { sourceSeqEnd: number | undefined; sourceThread: ThreadRecord },
 ): ThreadForkPoint | null {
   if (args.sourceSeqEnd !== undefined) {
     return resolveAnchoredForkPoint(deps, {
@@ -293,7 +293,7 @@ function selectInheritedForkEventRows(
 export function copyForkSourceHistory(
   deps: Pick<AppDeps, "db" | "hub">,
   args: {
-    fork: Pick<Thread, "environmentId" | "id">;
+    fork: Pick<ThreadRecord, "environmentId" | "id">;
     historyEndSequence: number;
     sourceThreadId: string;
   },

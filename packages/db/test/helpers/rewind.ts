@@ -56,7 +56,95 @@ export function dropMarketplaceSourceGitSubdirectoryColumn(
   }
 }
 
+function columnNames(db: DbConnection, table: string): string[] {
+  return db.$client
+    .prepare<[], { name: string }>(`PRAGMA table_info(${table})`)
+    .all()
+    .map((column) => column.name);
+}
+
+const LEGACY_PER_USER_STATE_DROP_MIGRATION_WHEN = 1791948352440;
+const LEGACY_PER_USER_SETTINGS_TABLES = [
+  {
+    createdByMigrationWhen: 1781917615702,
+    name: "app_theme",
+    ddl: `CREATE TABLE app_theme (
+      id text PRIMARY KEY NOT NULL,
+      theme_id text NOT NULL,
+      updated_at integer NOT NULL,
+      favicon_color text DEFAULT 'default' NOT NULL
+    )`,
+  },
+  {
+    createdByMigrationWhen: 1788908496395,
+    name: "ui_preferences",
+    ddl: `CREATE TABLE ui_preferences (
+      key text PRIMARY KEY NOT NULL,
+      value_json text NOT NULL,
+      revision integer NOT NULL,
+      updated_at integer NOT NULL
+    )`,
+  },
+] as const;
+
+function isMigrationApplied(db: DbConnection, when: number): boolean {
+  return (
+    db.$client
+      .prepare<[number], { found: number }>(
+        "SELECT 1 AS found FROM __drizzle_migrations WHERE created_at = ?",
+      )
+      .get(when) !== undefined
+  );
+}
+
+export function createLegacyUiPreferencesTable(db: DbConnection): void {
+  const table = LEGACY_PER_USER_SETTINGS_TABLES.find(
+    (candidate) => candidate.name === "ui_preferences",
+  );
+  if (table !== undefined) {
+    db.$client.exec(table.ddl);
+  }
+}
+
+export function restoreLegacyPerUserSettingsTables(db: DbConnection): void {
+  if (isMigrationApplied(db, LEGACY_PER_USER_STATE_DROP_MIGRATION_WHEN)) {
+    return;
+  }
+  for (const table of LEGACY_PER_USER_SETTINGS_TABLES) {
+    const exists =
+      db.$client
+        .prepare<[string], { name: string }>(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+        )
+        .get(table.name) !== undefined;
+    const created = isMigrationApplied(db, table.createdByMigrationWhen);
+    if (!exists && created) {
+      db.$client.exec(table.ddl);
+    }
+    if (exists && !created) {
+      db.$client.exec(`DROP TABLE ${table.name}`);
+    }
+  }
+}
+
+function restoreLegacyThreadPerUserColumns(db: DbConnection): void {
+  const threadColumns = columnNames(db, "threads");
+  for (const [column, type] of [
+    ["pinned_at", "integer"],
+    ["pin_sort_key", "text"],
+    ["last_read_at", "integer"],
+  ] as const) {
+    if (!threadColumns.includes(column)) {
+      db.$client.exec(`ALTER TABLE threads ADD ${column} ${type}`);
+    }
+  }
+  db.$client.exec(
+    'CREATE INDEX IF NOT EXISTS threads_pin_sort_idx ON threads (archived_at, deleted_at, pin_sort_key, id) WHERE "threads"."pinned_at" IS NOT NULL',
+  );
+}
+
 export function rewindMultiUser(db: DbConnection): void {
+  restoreLegacyThreadPerUserColumns(db);
   db.$client.exec(`
     DROP TABLE IF EXISTS thread_user_state;
     DROP TABLE IF EXISTS user_settings;

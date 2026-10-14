@@ -13,6 +13,7 @@ function interaction(
     statusReason: null,
     createdAt: 1,
     resolvedAt: null,
+    resolvedByUserId: null,
   };
   switch (payload.kind) {
     case "plugin":

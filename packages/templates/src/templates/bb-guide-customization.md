@@ -57,6 +57,19 @@ startup-only change, run `bb-app stop && bb-app start` or restart the desktop
 app. Until then, changing or unsetting `BB_SERVER_BIND_HOST` does not close a
 previous `0.0.0.0` listener.
 
+`BB_AUTH_MODE` (startup-only, `local` by default) controls sign-in. `local`
+treats every request as the built-in local owner. `multi` requires a session
+cookie (`POST /api/v1/auth/sign-in`) or a personal access token
+(`Authorization: Bearer bbpat_…`, created with `POST /api/v1/auth/tokens`) on
+every API and WebSocket request, including loopback. The first account
+registered on a `multi` server becomes an admin; later sign-ups need an admin's
+invite. Admin-only actions return `403` to members.
+
+Read and unread state, pins and pin order, UI preferences, appearance, and
+prompt history are kept per user; projects and threads are shared. Threads,
+queued messages, and resolved interactions record who created, wrote, or
+answered them (`createdByUserId`, `authorUserId`, `resolvedByUserId`).
+
 Settings → General → Command line installs the bb CLI for use outside bb: it
 puts the `bb` command on PATH on the computer that runs the bb server, so the
 user, a script, or an agent running outside bb (such as Claude Code or Codex)

@@ -32,6 +32,18 @@ import { toOptionalString } from "./strings.js";
 
 export type ServerBindHost = "127.0.0.1" | "0.0.0.0";
 
+export const serverAuthModeValues = ["local", "multi"] as const;
+export type ServerAuthMode = (typeof serverAuthModeValues)[number];
+
+function parseServerAuthModeEnvValue(args: EnvVarParseArgs): ServerAuthMode {
+  const normalizedValue = args.value.trim().toLowerCase();
+  const mode = serverAuthModeValues.find((value) => value === normalizedValue);
+  if (mode !== undefined) {
+    return mode;
+  }
+  throw new Error(`${args.name} must be "local" or "multi"`);
+}
+
 function parseBooleanEnvValue(args: EnvVarParseArgs): boolean {
   const normalizedValue = args.value.trim().toLowerCase();
   if (
@@ -184,6 +196,13 @@ export const BB_SERVER_BIND_HOST_ENV = defineEnvVar<ServerBindHost>({
   description: "HTTP bind host for the server",
   name: "BB_SERVER_BIND_HOST",
   parse: parseServerBindHostEnvValue,
+});
+
+export const BB_AUTH_MODE_ENV = defineEnvVar<ServerAuthMode>({
+  description:
+    'Server authentication mode: "local" maps every request to the local owner; "multi" requires a session or personal access token on every request, including loopback',
+  name: "BB_AUTH_MODE",
+  parse: parseServerAuthModeEnvValue,
 });
 
 export const BB_HOST_DAEMON_PORT_ENV = defineEnvVar<number>({
@@ -399,6 +418,7 @@ export const DEFAULT_BB_APP_VERSION = DEFAULTS.appVersion;
 export const DEFAULT_BB_APP_SURFACE = APP_SURFACE_WEB;
 export const DEFAULT_BB_APP_URL = "";
 export const DEFAULT_BB_SERVER_BIND_HOST: ServerBindHost = BB_LOOPBACK_HOST;
+export const DEFAULT_BB_AUTH_MODE: ServerAuthMode = "local";
 export const DEFAULT_BB_EXTERNAL_URL = "";
 export const DEFAULT_BB_POSTHOG_API_KEY =
   "phc_tejoYoNLV6vG8QAd5eYXXvcsENFYnP4brpZDGqG7zvpy";

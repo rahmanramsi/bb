@@ -4,7 +4,7 @@ import {
   threadScope,
   turnScope,
 } from "@bb/domain";
-import type { ClientTurnRequestId, Thread } from "@bb/domain";
+import type { ClientTurnRequestId, ThreadRecord } from "@bb/domain";
 import {
   createConnection,
   createProject,
@@ -30,7 +30,7 @@ const execution = {
 
 interface SetupResult {
   db: DbConnection;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 function setup(): SetupResult {
@@ -56,7 +56,7 @@ function requestId(value: number): ClientTurnRequestId {
 
 function insertCrossWindowSubagentEvents(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
 ): void {
   const firstRequestId = requestId(1);
   const secondRequestId = requestId(2);

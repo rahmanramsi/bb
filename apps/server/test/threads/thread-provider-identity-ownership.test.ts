@@ -1,5 +1,10 @@
 import { listEvents, listQueuedThreadMessages } from "@bb/db";
-import { threadScope, turnScope, type PromptInput } from "@bb/domain";
+import {
+  threadScope,
+  turnScope,
+  type PromptInput,
+  LOCAL_OWNER_USER_ID,
+} from "@bb/domain";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/errors.js";
 import { runQueuedMessageDispatch } from "../../src/services/threads/queued-message-dispatch.js";
@@ -162,6 +167,7 @@ async function sendUserMessage(
   },
 ): Promise<void> {
   await sendThreadMessage(harness.deps, {
+    authorUserId: LOCAL_OWNER_USER_ID,
     environment: args.environment,
     payload: {
       input: args.input ?? textInput("continue"),

@@ -64,8 +64,13 @@ import {
   type ClientConfig,
 } from "@bb/config/client-config";
 import { validateLogLevel } from "@bb/config/log-level";
+import { isLoopbackHostname } from "@bb/config/loopback";
 import { validateOptionalUrl } from "@bb/config/public-url";
-import { parseServerBindHost, type ServerBindHost } from "@bb/config/server";
+import {
+  parseServerBindHost,
+  SERVER_SERVICE_TOKEN_FILE_NAME,
+  type ServerBindHost,
+} from "@bb/config/server";
 import { toOptionalString } from "@bb/config/strings";
 import {
   BB_PROD_HOST_DAEMON_PORT,
@@ -174,6 +179,7 @@ const STARTUP_ONLY_MANAGED_CONFIG_KEYS = new Set<string>(["BB_LOG_LEVEL"]);
 const STARTUP_ONLY_MANAGED_ENV_KEYS = new Set<string>([
   "BB_APP_SURFACE",
   "BB_APP_URL",
+  "BB_AUTH_MODE",
   "BB_DATA_DIR",
   "BB_DEV_APP_PORT",
   "BB_EXTERNAL_URL",
@@ -596,6 +602,7 @@ interface WaitForHostDaemonStatusArgs {
 }
 
 interface RequestHostEnrollKeyArgs {
+  dataDir: string;
   requestedHostId: string | null;
   serverUrl: string;
 }
@@ -1564,7 +1571,7 @@ Usage:
   bb-app env unset <key>
 
 Startup-only server and launcher keys:
-  BB_APP_SURFACE, BB_APP_URL, BB_DATA_DIR, BB_DEV_APP_PORT,
+  BB_APP_SURFACE, BB_APP_URL, BB_AUTH_MODE, BB_DATA_DIR, BB_DEV_APP_PORT,
   BB_EXTERNAL_URL, BB_HOST_DAEMON_PORT, BB_INHERITED_SKILLS_ROOTS,
   BB_LOG_LEVEL, BB_MANAGED_DEV_BUILTIN_PLUGIN_HOT_RELOAD, BB_PERF_DIAGNOSTICS,
   BB_POSTHOG_API_KEY,
@@ -2264,6 +2271,12 @@ async function requireExpectedHostDaemonId(args: {
 async function requestMatchingHostEnrollKey(
   args: RequestHostEnrollKeyArgs,
 ): Promise<HostEnrollKeyResponse> {
+  const serviceToken = isLoopbackHostname(new URL(args.serverUrl).hostname)
+    ? await readFile(
+        join(args.dataDir, SERVER_SERVICE_TOKEN_FILE_NAME),
+        "utf8",
+      ).catch(() => null)
+    : null;
   const response = await fetch(`${args.serverUrl}/internal/hosts/enroll-key`, {
     body: JSON.stringify(
       createHostEnrollKeyRequestBody({
@@ -2272,6 +2285,9 @@ async function requestMatchingHostEnrollKey(
     ),
     headers: {
       "content-type": "application/json",
+      ...(serviceToken === null
+        ? {}
+        : { authorization: `Bearer ${serviceToken.trim()}` }),
     },
     method: "POST",
   });
@@ -2311,6 +2327,7 @@ async function maybeAddAutoJoinEnv(
     toOptionalString(args.env.BB_HOST_ID) ??
     (await readPersistedHostId(args.dataDir));
   const enrollKeyResponse = await requestMatchingHostEnrollKey({
+    dataDir: args.dataDir,
     requestedHostId,
     serverUrl: args.serverUrl,
   });
@@ -2697,6 +2714,7 @@ export async function createHostDaemonJoinEnv(
     };
   }
   const enrollKeyResponse = await requestMatchingHostEnrollKey({
+    dataDir: args.context.dataDir,
     requestedHostId,
     serverUrl: args.serverUrl,
   });

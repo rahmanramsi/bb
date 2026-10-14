@@ -48,6 +48,7 @@ import {
 import { TerminalSessionLifecycle } from "./services/terminals/terminal-session-lifecycle.js";
 import { createLifecycleDedupers } from "./lifecycle-dedupers.js";
 import type { ServerLogger, ServerRuntimeConfig } from "./types.js";
+import { createUserAuthService } from "./services/user-auth.js";
 import { NotificationHub } from "./ws/hub.js";
 import { startDaemonLivenessChecks } from "./ws/daemon-protocol.js";
 import { WatchInterestCoordinator } from "./ws/watch-interests.js";
@@ -160,6 +161,7 @@ export async function runServer(serverConfig: ServerConfig): Promise<void> {
     isProduction && existsSync(appDistDir) ? appDistDir : undefined;
   const runtimeConfig: ServerRuntimeConfig = {
     appVersion: serverConfig.BB_APP_VERSION,
+    authMode: serverConfig.BB_AUTH_MODE,
     builtinSkillsRootPath: resolveBuiltinSkillsRootPath(),
     marketplaceUrl: serverConfig.BB_MARKETPLACE_URL,
     customModels: [],
@@ -224,6 +226,11 @@ export async function runServer(serverConfig: ServerConfig): Promise<void> {
     logger,
   });
   await machineAuth.ensureReady();
+  const userAuth = await createUserAuthService({
+    dataDir: serverConfig.BB_DATA_DIR,
+    db,
+    logger,
+  });
   const skillTreeRegistry = new SkillTreeRegistry();
   const pluginHostArtifacts = new PluginHostArtifactRegistry();
   const providerNativeRoots = createProviderNativeRootsCache();
@@ -302,6 +309,7 @@ export async function runServer(serverConfig: ServerConfig): Promise<void> {
       skillTreeRegistry,
       telemetry,
       terminalSessions,
+      userAuth,
       watchInterests,
       sharedPorts,
       workspaceReadCaches,
@@ -393,7 +401,10 @@ export async function runServer(serverConfig: ServerConfig): Promise<void> {
     });
   }
 
-  if (!isLoopbackHostname(serverConfig.BB_SERVER_BIND_HOST)) {
+  if (
+    serverConfig.BB_AUTH_MODE === "local" &&
+    !isLoopbackHostname(serverConfig.BB_SERVER_BIND_HOST)
+  ) {
     logger.warn(
       { bindHost: serverConfig.BB_SERVER_BIND_HOST },
       "SECURITY WARNING: The public API is unauthenticated and permits command execution and file reads. Wildcard server binding must only be used behind a trusted network boundary.",
@@ -416,6 +427,7 @@ export async function runServer(serverConfig: ServerConfig): Promise<void> {
   );
   pluginService.bindSdk({
     baseUrl: `http://127.0.0.1:${serverConfig.BB_SERVER_PORT}`,
+    serviceToken: userAuth.serviceToken,
   });
   let sweepInterval: ReturnType<typeof setInterval> | null = null;
   if (pendingServerMove === null) {

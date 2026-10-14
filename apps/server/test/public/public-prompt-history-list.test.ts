@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { createPromptHistoryEntry, listQueuedThreadMessages } from "@bb/db";
 import { promptHistoryListResponseSchema } from "@bb/server-contract";
 import { describe, expect, it } from "vitest";
@@ -44,6 +45,7 @@ describe("public prompt history list route", () => {
           ),
         );
         createPromptHistoryEntry(harness.deps.db, {
+          userId: LOCAL_OWNER_USER_ID,
           projectId: source.id,
           threadId: sourceThread.id,
           scope: "thread",
@@ -131,6 +133,7 @@ describe("public prompt history list route", () => {
         });
       const source = threadOn(hostA.id);
       createPromptHistoryEntry(harness.deps.db, {
+        userId: LOCAL_OWNER_USER_ID,
         projectId: project.id,
         threadId: source.id,
         scope: "thread",
@@ -188,6 +191,7 @@ describe("public prompt history list route", () => {
         scope: "project" | "thread" = "thread",
       ) =>
         createPromptHistoryEntry(harness.deps.db, {
+          userId: LOCAL_OWNER_USER_ID,
           projectId: project.id,
           threadId,
           scope,

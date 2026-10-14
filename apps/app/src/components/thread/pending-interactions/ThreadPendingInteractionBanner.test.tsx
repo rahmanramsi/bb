@@ -28,6 +28,7 @@ import { resetAllCrashedPluginSlotsForTest } from "../../plugin/PluginSlotMount"
 import { ThreadPendingInteractionBanners } from "./ThreadPendingInteractionBanner";
 import { makePluginRegistrationSet as registrationSet } from "@/test/fixtures/plugins";
 import { BottomAnchorContext } from "@/components/ui/bottom-anchored-scroll-body";
+import { userDirectoryQueryKey } from "@/hooks/queries/query-keys";
 
 const mocks = vi.hoisted(() => ({
   resolveMutateAsync: vi.fn(async () => ({})),
@@ -76,6 +77,7 @@ const planReview: PendingInteraction = {
   statusReason: null,
   createdAt: 1,
   resolvedAt: null,
+  resolvedByUserId: null,
   resolution: null,
   payload: {
     kind: "approval",
@@ -135,6 +137,7 @@ const pluginRequest: PluginPendingInteraction = {
   createdAt: 1,
   expiresAt: null,
   resolvedAt: null,
+  resolvedByUserId: null,
   resolution: null,
   payload: { kind: "plugin", title: "Add secrets", data: { fields: ["KEY"] } },
 };
@@ -181,6 +184,33 @@ function renderBanner(interaction: PendingInteraction) {
     </QueryClientProvider>,
   );
 }
+
+it("names the user who is resolving a shared approval", () => {
+  const client = new QueryClient();
+  client.setQueryData(userDirectoryQueryKey(), {
+    users: [
+      {
+        id: "usr_alice",
+        name: "Alice",
+        email: "alice@example.test",
+        role: "admin",
+      },
+      { id: "usr_bob", name: "Bob", email: "bob@example.test", role: "member" },
+    ],
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        {bannerElement({
+          ...planReview,
+          status: "resolving",
+          resolvedByUserId: "usr_bob",
+        })}
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  expect(screen.getByText("Plan review · answered by Bob")).toBeTruthy();
+});
 
 function isHidden(element: HTMLElement): boolean {
   return element.closest("[hidden]") !== null;
@@ -708,6 +738,7 @@ describe("ThreadPendingInteractionBanners", () => {
       statusReason: null,
       createdAt: 1,
       resolvedAt: null,
+      resolvedByUserId: null,
       resolution: null,
       payload: {
         kind: "user_question",

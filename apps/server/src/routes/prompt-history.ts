@@ -10,6 +10,7 @@ import {
   type PublicApiSchema,
 } from "@bb/server-contract";
 import { ApiError } from "../errors.js";
+import { requirePrincipal } from "../request-context.js";
 import { parseBoundedPositiveOptionalInteger } from "../services/lib/validation.js";
 import {
   decodePromptHistoryCursor,
@@ -41,6 +42,12 @@ export function registerPromptHistoryRoutes(app: Hono, deps: AppDeps): void {
         );
       }
     }
-    return context.json(listPromptHistory(deps, { before, limit }));
+    return context.json(
+      listPromptHistory(deps, {
+        before,
+        limit,
+        userId: requirePrincipal(context).userId,
+      }),
+    );
   });
 }

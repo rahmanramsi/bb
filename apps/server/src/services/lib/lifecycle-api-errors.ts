@@ -1,4 +1,4 @@
-import type { Environment, Host, Thread, ThreadStatus } from "@bb/domain";
+import type { Environment, Host, ThreadRecord, ThreadStatus } from "@bb/domain";
 import type {
   EnvironmentNotReadyErrorDetails,
   HostUnavailableErrorDetails,
@@ -17,7 +17,10 @@ type EnvironmentReadinessFields = Pick<Environment, "path" | "status">;
 
 type ThreadEnvironmentStatusFields = Pick<Environment, "status">;
 
-type ThreadWritableFields = Pick<Thread, "archivedAt" | "deletedAt" | "status">;
+type ThreadWritableFields = Pick<
+  ThreadRecord,
+  "archivedAt" | "deletedAt" | "status"
+>;
 
 type HostUnavailableStatus = 404 | 502;
 

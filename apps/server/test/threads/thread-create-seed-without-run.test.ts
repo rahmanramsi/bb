@@ -10,6 +10,7 @@ import {
   turnRequestEventDataSchema,
   turnScope,
   type PermissionMode,
+  LOCAL_OWNER_USER_ID,
 } from "@bb/domain";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/errors.js";
@@ -75,6 +76,7 @@ describe("thread creation telemetry", () => {
       });
 
       await createThreadFromRequest(harness.deps, {
+        createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
           type: "host",
           hostId: host.id,
@@ -134,6 +136,7 @@ describe("thread creation with startedOnBehalfOf (seed-without-run)", () => {
 
       const input = textInput("Continue from the fork point");
       const fork = await createThreadFromRequest(harness.deps, {
+        createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
           type: "host",
           hostId: host.id,
@@ -228,6 +231,7 @@ describe("thread creation with startedOnBehalfOf (seed-without-run)", () => {
 
       const forkInput = textInput("Continue from the earlier source sequence");
       const fork = await createThreadFromRequest(harness.deps, {
+        createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
           type: "host",
           hostId: host.id,
@@ -281,6 +285,7 @@ describe("thread creation with startedOnBehalfOf (seed-without-run)", () => {
       });
 
       const thread = await createThreadFromRequest(harness.deps, {
+        createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
           type: "host",
           hostId: host.id,
@@ -373,6 +378,7 @@ describe("canThreadSpawnChild", () => {
       let caught: ApiError | null = null;
       try {
         await createThreadFromRequest(harness.deps, {
+          createdByUserId: LOCAL_OWNER_USER_ID,
           environment: {
             type: "host",
             hostId: host.id,
@@ -458,6 +464,7 @@ describe("thread creation child-thread boundary validation", () => {
       async ({ harness, hostId, path, projectId, sourceThreadId }) => {
         const error = await captureCreateError(() =>
           createThreadFromRequest(harness.deps, {
+            createdByUserId: LOCAL_OWNER_USER_ID,
             environment: {
               type: "host",
               hostId,
@@ -490,6 +497,7 @@ describe("thread creation child-thread boundary validation", () => {
       async ({ harness, hostId, path, projectId, sourceThreadId }) => {
         const error = await captureCreateError(() =>
           createThreadFromRequest(harness.deps, {
+            createdByUserId: LOCAL_OWNER_USER_ID,
             environment: {
               type: "host",
               hostId,
@@ -519,6 +527,7 @@ describe("thread creation child-thread boundary validation", () => {
       async ({ harness, hostId, path, projectId }) => {
         const error = await captureCreateError(() =>
           createThreadFromRequest(harness.deps, {
+            createdByUserId: LOCAL_OWNER_USER_ID,
             environment: {
               type: "host",
               hostId,
@@ -545,6 +554,7 @@ describe("thread creation child-thread boundary validation", () => {
       async ({ harness, hostId, path, projectId, sourceThreadId }) => {
         const error = await captureCreateError(() =>
           createThreadFromRequest(harness.deps, {
+            createdByUserId: LOCAL_OWNER_USER_ID,
             environment: {
               type: "host",
               hostId,
@@ -591,6 +601,7 @@ describe("thread creation child-thread boundary validation", () => {
           });
 
           const sideChat = await createThreadFromRequest(harness.deps, {
+            createdByUserId: LOCAL_OWNER_USER_ID,
             environment: {
               type: "host",
               hostId,
@@ -669,6 +680,7 @@ describe("thread creation child-thread boundary validation", () => {
         });
 
         const sideChat = await createThreadFromRequest(harness.deps, {
+          createdByUserId: LOCAL_OWNER_USER_ID,
           environment: {
             type: "host",
             hostId,
@@ -750,6 +762,7 @@ describe("thread creation child-thread boundary validation", () => {
       });
 
       const sideChat = await createThreadFromRequest(harness.deps, {
+        createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
           type: "host",
           hostId: host.id,
@@ -815,6 +828,7 @@ describe("thread creation child-thread boundary validation", () => {
       });
 
       const fork = await createThreadFromRequest(harness.deps, {
+        createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
           type: "reuse",
           environmentId: sourceEnvironment.id,
@@ -874,6 +888,7 @@ describe("thread creation child-thread boundary validation", () => {
 
       await expect(
         createThreadFromRequest(harness.deps, {
+          createdByUserId: LOCAL_OWNER_USER_ID,
           environment: {
             type: "reuse",
             environmentId: otherEnvironment.id,
@@ -910,6 +925,7 @@ describe("thread creation child-thread boundary validation", () => {
         });
 
         const sideChat = await createThreadFromRequest(harness.deps, {
+          createdByUserId: LOCAL_OWNER_USER_ID,
           environment: {
             type: "host",
             hostId,
@@ -989,6 +1005,7 @@ describe("thread creation child-thread boundary validation", () => {
 
       const error = await captureCreateError(() =>
         createThreadFromRequest(harness.deps, {
+          createdByUserId: LOCAL_OWNER_USER_ID,
           environment: {
             type: "host",
             hostId: host.id,
@@ -1016,6 +1033,7 @@ describe("thread creation child-thread boundary validation", () => {
         async ({ harness, hostId, path, projectId, sourceThreadId }) => {
           const error = await captureCreateError(() =>
             createThreadFromRequest(harness.deps, {
+              createdByUserId: LOCAL_OWNER_USER_ID,
               environment: {
                 type: "host",
                 hostId,

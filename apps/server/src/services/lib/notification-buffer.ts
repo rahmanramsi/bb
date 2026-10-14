@@ -54,6 +54,24 @@ export class NotificationBuffer implements DbNotifier {
     });
   }
 
+  notifyUserThread(
+    userId: string,
+    threadId: string,
+    changes: ThreadChangeKind[],
+    metadata?: ThreadChangeMetadata,
+  ): void {
+    this.notifications.push({
+      flush: (notifier) =>
+        notifier.notifyUserThread(userId, threadId, [...changes], metadata),
+    });
+  }
+
+  notifyUserSystem(userId: string, changes: SystemChangeKind[]): void {
+    this.notifications.push({
+      flush: (notifier) => notifier.notifyUserSystem(userId, [...changes]),
+    });
+  }
+
   flushInto(notifier: DbNotifier): void {
     for (const notification of this.notifications) {
       notification.flush(notifier);

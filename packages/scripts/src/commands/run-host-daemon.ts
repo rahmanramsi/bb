@@ -9,6 +9,8 @@ import {
   type BbRuntimeMode,
 } from "@bb/config/runtime";
 import { loadServerUrlValue } from "@bb/config/server-url";
+import { SERVER_SERVICE_TOKEN_FILE_NAME } from "@bb/config/server";
+import { isLoopbackHostname } from "@bb/config/loopback";
 import {
   HOST_AUTH_FILE_NAME,
   HOST_ID_FILE_NAME,
@@ -168,6 +170,12 @@ export async function maybeAddAutoJoinEnv(
   await waitForServerHealth(env.BB_SERVER_URL);
   const requestedHostId =
     env.BB_HOST_ID?.trim() || (await readPersistedHostId(env.BB_DATA_DIR));
+  const serviceToken = isLoopbackHostname(new URL(env.BB_SERVER_URL).hostname)
+    ? await readFile(
+        join(env.BB_DATA_DIR, SERVER_SERVICE_TOKEN_FILE_NAME),
+        "utf8",
+      ).catch(() => null)
+    : null;
 
   const response = await fetch(
     `${env.BB_SERVER_URL}/internal/hosts/enroll-key`,
@@ -175,6 +183,9 @@ export async function maybeAddAutoJoinEnv(
       body: JSON.stringify(createAutoJoinRequest({ requestedHostId })),
       headers: {
         "content-type": "application/json",
+        ...(serviceToken === null
+          ? {}
+          : { authorization: `Bearer ${serviceToken.trim()}` }),
       },
       method: "POST",
     },

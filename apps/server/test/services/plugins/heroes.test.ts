@@ -132,7 +132,10 @@ describe("hero plugin: slack-bot", () => {
         return realFetch(input, init);
       }) as typeof fetch;
 
-      server.pluginService.bindSdk({ baseUrl: server.baseUrl });
+      server.pluginService.bindSdk({
+        baseUrl: server.baseUrl,
+        serviceToken: server.deps.userAuth.serviceToken,
+      });
       const entry = await server.pluginService.installPath(
         join(EXAMPLES_DIR, "slack-bot"),
       );

@@ -30,6 +30,7 @@ import {
   PendingInteractionResolution,
   type UserQuestionPendingInteraction,
   type UserQuestionPendingInteractionPayload,
+  LOCAL_OWNER_USER_ID,
 } from "@bb/domain";
 import { action } from "../../action.js";
 import { createCliBbSdk } from "../../client.js";
@@ -299,6 +300,12 @@ function printInteraction(interaction: PendingInteraction): void {
     console.log(
       `  Resolved: ${new Date(interaction.resolvedAt).toLocaleString()}`,
     );
+  }
+  if (
+    interaction.resolvedByUserId !== null &&
+    interaction.resolvedByUserId !== LOCAL_OWNER_USER_ID
+  ) {
+    console.log(`  Resolved by: ${interaction.resolvedByUserId}`);
   }
   if (interaction.statusReason) {
     console.log(`  Reason: ${interaction.statusReason}`);

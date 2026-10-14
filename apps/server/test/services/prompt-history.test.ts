@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { describe, expect, it } from "vitest";
 import {
   archiveThread,
@@ -51,6 +52,7 @@ function setup() {
 
 function insertPromptHistoryEntry(args: InsertPromptHistoryEntryArgs) {
   return createPromptHistoryEntry(args.db, {
+    userId: LOCAL_OWNER_USER_ID,
     projectId: args.projectId,
     threadId: args.threadId,
     scope: args.scope,
@@ -126,6 +128,7 @@ describe("prompt history service", () => {
       listProjectPromptHistory(
         { db },
         {
+          userId: LOCAL_OWNER_USER_ID,
           projectId: firstProject.id,
           limit: 50,
         },
@@ -179,6 +182,7 @@ describe("prompt history service", () => {
       listProjectPromptHistory(
         { db },
         {
+          userId: LOCAL_OWNER_USER_ID,
           projectId: firstProject.id,
           limit: 50,
         },
@@ -232,6 +236,7 @@ describe("prompt history service", () => {
       listProjectPromptHistory(
         { db },
         {
+          userId: LOCAL_OWNER_USER_ID,
           projectId: firstProject.id,
           limit: 50,
         },
@@ -285,6 +290,7 @@ describe("prompt history service", () => {
       listProjectPromptHistory(
         { db },
         {
+          userId: LOCAL_OWNER_USER_ID,
           projectId: firstProject.id,
           limit: 50,
         },
@@ -316,8 +322,9 @@ describe("prompt history service", () => {
 
     expect(
       recordAcceptedPromptHistoryEntry(
-        { db },
+        { db, hub: noopNotifier },
         {
+          authorUserId: LOCAL_OWNER_USER_ID,
           thread: directThread,
           input: textInput("User-created thread"),
           initiator: "user",
@@ -328,8 +335,9 @@ describe("prompt history service", () => {
     ).toBe(true);
     expect(
       recordAcceptedPromptHistoryEntry(
-        { db },
+        { db, hub: noopNotifier },
         {
+          authorUserId: LOCAL_OWNER_USER_ID,
           thread: childThread,
           input: textInput("Parent-created worker"),
           initiator: "user",
@@ -343,6 +351,7 @@ describe("prompt history service", () => {
       listProjectPromptHistory(
         { db },
         {
+          userId: LOCAL_OWNER_USER_ID,
           projectId: firstProject.id,
           limit: 50,
         },
@@ -392,6 +401,7 @@ describe("prompt history service", () => {
     });
     createQueuedThreadMessage(db, noopNotifier, {
       threadId: thread.id,
+      authorUserId: LOCAL_OWNER_USER_ID,
       content: textInput("Add regression coverage"),
       model: "gpt-5",
       reasoningLevel: "medium",
@@ -407,6 +417,7 @@ describe("prompt history service", () => {
       listThreadPromptHistory(
         { db },
         {
+          userId: LOCAL_OWNER_USER_ID,
           threadId: thread.id,
           limit: 50,
         },
@@ -461,6 +472,7 @@ describe("prompt history service", () => {
       listProjectPromptHistory(
         { db },
         {
+          userId: LOCAL_OWNER_USER_ID,
           projectId: firstProject.id,
           limit: 50,
         },
@@ -482,8 +494,9 @@ describe("prompt history service", () => {
 
     expect(
       recordAcceptedPromptHistoryEntry(
-        { db },
+        { db, hub: noopNotifier },
         {
+          authorUserId: LOCAL_OWNER_USER_ID,
           thread,
           input: [],
           initiator: "user",
@@ -498,6 +511,7 @@ describe("prompt history service", () => {
       listProjectPromptHistory(
         { db },
         {
+          userId: LOCAL_OWNER_USER_ID,
           projectId: firstProject.id,
           limit: 50,
         },
@@ -515,8 +529,9 @@ describe("prompt history service", () => {
 
     expect(
       recordAcceptedPromptHistoryEntry(
-        { db },
+        { db, hub: noopNotifier },
         {
+          authorUserId: LOCAL_OWNER_USER_ID,
           thread,
           input: [
             {
@@ -534,7 +549,10 @@ describe("prompt history service", () => {
       ),
     ).toBe(true);
     expect(
-      listThreadPromptHistory({ db }, { threadId: thread.id, limit: 50 }),
+      listThreadPromptHistory(
+        { db },
+        { userId: LOCAL_OWNER_USER_ID, threadId: thread.id, limit: 50 },
+      ),
     ).toEqual([
       {
         id: expect.stringMatching(/^phist_/u),

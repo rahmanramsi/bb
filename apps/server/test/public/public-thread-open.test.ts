@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { getThread } from "@bb/db";
 import { threadOpenResponseSchema } from "@bb/server-contract";
 import { describe, expect, it } from "vitest";
@@ -47,7 +48,7 @@ describe("public thread open", () => {
       const thread = seedThread(harness.deps, { projectId: project.id });
 
       const socket = createMockHubSocket();
-      harness.deps.hub.registerClient(socket);
+      harness.deps.hub.registerClient(socket, LOCAL_OWNER_USER_ID);
 
       const before = getThread(harness.db, thread.id);
 
@@ -92,7 +93,7 @@ describe("public thread open", () => {
       const thread = seedThread(harness.deps, { projectId: project.id });
 
       const socket = createMockHubSocket();
-      harness.deps.hub.registerClient(socket);
+      harness.deps.hub.registerClient(socket, LOCAL_OWNER_USER_ID);
 
       const response = await postOpen(harness, thread.id, {
         file: {
@@ -136,7 +137,7 @@ describe("public thread open", () => {
         visibility: "hidden",
       });
       const socket = createMockHubSocket();
-      harness.deps.hub.registerClient(socket);
+      harness.deps.hub.registerClient(socket, LOCAL_OWNER_USER_ID);
 
       const response = await postOpen(harness, thread.id, { file: null });
       expect(response.status).toBe(200);
@@ -159,7 +160,7 @@ describe("public thread open", () => {
       });
       const thread = seedThread(harness.deps, { projectId: project.id });
       const socket = createMockHubSocket();
-      harness.deps.hub.registerClient(socket);
+      harness.deps.hub.registerClient(socket, LOCAL_OWNER_USER_ID);
 
       const response = await postOpen(harness, thread.id, {
         split: "right",
@@ -194,7 +195,7 @@ describe("public thread open", () => {
       });
       const thread = seedThread(harness.deps, { projectId: project.id });
       const socket = createMockHubSocket();
-      harness.deps.hub.registerClient(socket);
+      harness.deps.hub.registerClient(socket, LOCAL_OWNER_USER_ID);
 
       const response = await postPaneAction(harness, thread.id, {
         action: "spotlight",

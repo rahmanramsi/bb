@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { getThread } from "@bb/db";
 import { describe, expect, it } from "vitest";
 import { sendThreadMessage } from "../../src/services/threads/thread-send.js";
@@ -47,6 +48,7 @@ describe("errored thread correction", () => {
       const { environment, thread } = seedErroredThread(harness);
 
       await sendThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
           input: textInput("corrective text"),
@@ -83,6 +85,7 @@ describe("errored thread correction", () => {
 
       await expect(
         sendThreadMessage(harness.deps, {
+          authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           payload: {
             input: textInput("explicit steer"),

@@ -14,6 +14,7 @@ import { createThreadFromRequest } from "../../../src/services/threads/thread-cr
 import {
   encodeClientTurnRequestIdNumber,
   systemThreadProvisioningEventDataSchema,
+  LOCAL_OWNER_USER_ID,
 } from "@bb/domain";
 import { requireThreadCommandEnvironment } from "../../../src/services/threads/thread-command-environment.js";
 import { ensureThreadProvisionEnvironmentReady } from "../../../src/services/threads/thread-provisioning-environment.js";
@@ -115,7 +116,10 @@ function setup(
     decisionTimeoutMs: 10_000,
   });
   const context: ProviderOperationContext = {
-    thread: toThreadResponseFromThread(harness.deps, { thread }),
+    thread: toThreadResponseFromThread(harness.deps, {
+      viewerUserId: LOCAL_OWNER_USER_ID,
+      thread,
+    }),
     project,
     host: makeHost({ id: host.id, name: host.name }),
     machine: { type: "existing", hostId: host.id },
@@ -594,6 +598,7 @@ describe("core environment orchestration", () => {
         if (admission === "new reuse") {
           await expect(
             createThreadFromRequest(harness.deps, {
+              createdByUserId: LOCAL_OWNER_USER_ID,
               environment: { type: "reuse", environmentId: target.id },
               input: [{ type: "text", text: "Start", mentions: [] }],
               origin: "app",
@@ -910,6 +915,7 @@ describe("core environment orchestration", () => {
         prepareProviderEnvironment(harness.deps, record, {
           ...context,
           thread: toThreadResponseFromThread(harness.deps, {
+            viewerUserId: LOCAL_OWNER_USER_ID,
             thread: second,
           }),
           inputs: { branch: { kind: "existing", name: "feature" } },
@@ -1363,6 +1369,7 @@ describe("core environment orchestration", () => {
       const context = {
         ...fixture.context,
         thread: toThreadResponseFromThread(harness.deps, {
+          viewerUserId: LOCAL_OWNER_USER_ID,
           thread: competingThread,
         }),
       };
@@ -2108,6 +2115,7 @@ it("serializes concurrent branchless checkout attaches until the first thread is
       prepareProviderEnvironment(harness.deps, fixture.record, {
         ...fixture.context,
         thread: toThreadResponseFromThread(harness.deps, {
+          viewerUserId: LOCAL_OWNER_USER_ID,
           thread: competitor,
         }),
       });

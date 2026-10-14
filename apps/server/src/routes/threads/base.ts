@@ -21,7 +21,7 @@ import {
   type ThreadSearchResultGroup as DbThreadSearchResultGroup,
   type UpdateThreadInput,
 } from "@bb/db";
-import type { Environment, Thread, ThreadListEntry } from "@bb/domain";
+import type { Environment, ThreadRecord, ThreadListEntry } from "@bb/domain";
 import { toEnvironmentResponse } from "../../services/environments/environment-response.js";
 import {
   threadIncludeOptionSchema,
@@ -44,6 +44,7 @@ import {
 import type { Hono } from "hono";
 import type { AppDeps } from "../../types.js";
 import { ApiError } from "../../errors.js";
+import { requirePrincipal } from "../../request-context.js";
 import {
   parseInteger,
   parsePaginationQuery,
@@ -83,7 +84,8 @@ function parseThreadIncludes(query: ThreadGetQuery): Set<ThreadIncludeOption> {
 
 interface BuildThreadResponseArgs {
   includes: Set<ThreadIncludeOption>;
-  thread: Thread;
+  thread: ThreadRecord;
+  viewerUserId: string;
 }
 
 type ThreadSearchResultGroupResponse = ThreadSearchResponse["active"];
@@ -99,7 +101,7 @@ interface BuildThreadSearchResponseArgs {
 
 function resolveIncludedThreadEnvironment(
   deps: Pick<AppDeps, "db">,
-  thread: Thread,
+  thread: ThreadRecord,
 ): Environment | null {
   if (thread.environmentId === null) {
     return null;
@@ -118,6 +120,7 @@ function buildThreadResponse(
     deps,
     {
       thread: args.thread,
+      viewerUserId: args.viewerUserId,
     },
   );
   const shouldResolveEnvironment =
@@ -331,6 +334,7 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
         query.hasParent === undefined ? undefined : query.hasParent === "true",
       ...(limit !== undefined ? { limit } : {}),
       ...(offset !== undefined ? { offset } : {}),
+      viewerUserId: requirePrincipal(context).userId,
     });
     return context.json(
       toThreadListEntryResponses(deps, { threads }) satisfies ThreadListEntry[],
@@ -352,6 +356,7 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
         ...searchThreadsWithPendingInteractionState(deps.db, {
           query: searchQuery,
           limitPerGroup,
+          viewerUserId: requirePrincipal(context).userId,
         }),
       }) satisfies ThreadSearchResponse,
     );
@@ -385,16 +390,29 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
     if (payload.sectionId) {
       requireThreadSection(deps, payload.sectionId);
     }
+    const viewerUserId = requirePrincipal(context).userId;
     const thread = await createThreadFromRequest(deps, {
       ...payload,
+      createdByUserId: viewerUserId,
       origin: payload.origin,
     });
-    return context.json(toThreadResponseFromThread(deps, { thread }), 201);
+    return context.json(
+      toThreadResponseFromThread(deps, { thread, viewerUserId }),
+      201,
+    );
   });
 
   post(routes.fork, async (context, payload) => {
-    const thread = await createThreadForkFromRequest(deps, payload);
-    return context.json(toThreadResponseFromThread(deps, { thread }), 201);
+    const viewerUserId = requirePrincipal(context).userId;
+    const thread = await createThreadForkFromRequest(
+      deps,
+      payload,
+      viewerUserId,
+    );
+    return context.json(
+      toThreadResponseFromThread(deps, { thread, viewerUserId }),
+      201,
+    );
   });
 
   get(routes.get, (context, query) => {
@@ -403,11 +421,14 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
       buildThreadResponse(deps, {
         includes: parseThreadIncludes(query),
         thread,
+        viewerUserId: requirePrincipal(context).userId,
       }),
     );
   });
 
-  function getThreadChildSummary(thread: Thread): ThreadChildSummaryResponse {
+  function getThreadChildSummary(
+    thread: ThreadRecord,
+  ): ThreadChildSummaryResponse {
     const nonDeletedChildCount = countNonDeletedAssignedChildThreads(deps.db, {
       parentThreadId: thread.id,
     });
@@ -513,7 +534,12 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
       });
     }
 
-    return context.json(toThreadResponseFromThread(deps, { thread: updated }));
+    return context.json(
+      toThreadResponseFromThread(deps, {
+        thread: updated,
+        viewerUserId: requirePrincipal(context).userId,
+      }),
+    );
   });
 
   del(routes.delete, async (context, payload) => {

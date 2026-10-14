@@ -9,7 +9,7 @@ import {
   type AvailableModel,
   type CallerExecutionInputSource,
   type ReasoningLevel,
-  type Thread,
+  type ThreadRecord,
 } from "@bb/domain";
 import { ApiError } from "../../errors.js";
 import type { LoggedWorkSessionDeps } from "../../types.js";
@@ -32,7 +32,7 @@ interface ResolveThreadExecutionOverrideUpdateArgs {
 }
 
 interface ApplyThreadExecutionOverrideArgs {
-  thread: Thread;
+  thread: ThreadRecord;
   patch: ThreadExecutionOverridePatch;
 }
 
@@ -41,7 +41,7 @@ interface RecoverThreadModelOverrideArgs {
   modelSource: CallerExecutionInputSource | undefined;
   reasoningLevel: ReasoningLevel | undefined;
   reasoningLevelSource: CallerExecutionInputSource | undefined;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 export function resolveThreadExecutionOverrideUpdate(
@@ -179,7 +179,7 @@ export async function recoverThreadModelOverride(
 
 async function loadThreadProviderModels(
   deps: LoggedWorkSessionDeps,
-  thread: Thread,
+  thread: ThreadRecord,
   requiredModel: string | null,
 ): Promise<readonly AvailableModel[]> {
   const result = await resolveSystemExecutionOptionsForValidation(
@@ -204,7 +204,7 @@ async function loadThreadProviderModels(
 
 function resolveFallbackModel(
   deps: LoggedWorkSessionDeps,
-  thread: Thread,
+  thread: ThreadRecord,
 ): string | null {
   const lastExecution = getLastExecutionOptions(deps, thread.id);
   if (lastExecution?.model) {

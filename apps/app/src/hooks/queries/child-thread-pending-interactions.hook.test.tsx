@@ -38,6 +38,7 @@ function makeApproval(id: string, createdAt: number): PendingInteraction {
     statusReason: null,
     createdAt,
     resolvedAt: null,
+    resolvedByUserId: null,
     payload: {
       kind: "approval",
       subject: {

@@ -6,9 +6,11 @@ import {
   projects,
   promptHistoryEntries,
   threadSearchSegments,
+  threadUserState,
   threads,
   type DbConnection,
 } from "@bb/db";
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 
 export interface SeedPerfFixtureOptions {
   hostId: string;
@@ -783,6 +785,7 @@ export function seedPerfFixture(
   const sourceRows: (typeof projectSources.$inferInsert)[] = [];
   const environmentRows: EnvironmentInsert[] = [];
   const threadRows: ThreadInsert[] = [];
+  const threadUserStateRows: (typeof threadUserState.$inferInsert)[] = [];
   const searchSegmentRows: SearchSegmentInsert[] = [];
   const promptHistoryRows: PromptHistoryInsert[] = [];
 
@@ -938,12 +941,17 @@ export function seedPerfFixture(
         originKind: hidden ? "fork" : null,
         visibility: hidden ? "hidden" : "visible",
         archivedAt: archived ? endAt + rng.int(1, 48) * 60 * 60 * 1000 : null,
-        pinnedAt: pinned ? endAt : null,
-        pinSortKey: pinned ? "V" : null,
-        lastReadAt: unread ? startAt : endAt + 60_000,
+        createdByUserId: LOCAL_OWNER_USER_ID,
         latestAttentionAt: endAt,
         createdAt: startAt,
         updatedAt: endAt,
+      });
+      threadUserStateRows.push({
+        threadId,
+        userId: LOCAL_OWNER_USER_ID,
+        pinnedAt: pinned ? endAt : null,
+        pinSortKey: pinned ? "V" : null,
+        lastReadAt: unread ? startAt : endAt + 60_000,
       });
       seededThreads.push({
         row: threadRows[threadRows.length - 1],
@@ -974,6 +982,9 @@ export function seedPerfFixture(
     }
     for (const row of threadRows) {
       tx.insert(threads).values(row).run();
+    }
+    for (const row of threadUserStateRows) {
+      tx.insert(threadUserState).values(row).run();
     }
   });
 

@@ -1268,6 +1268,7 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
           "PluginBbSdk.hosts.get",
           "PluginBbSdk.hosts.experimental_discoverRepos",
           "PluginBbSdk.experimental_promptHistory.list",
+          "PluginBbSdk.experimental_users.list",
           "PluginBbSdk.environments.experimental_cleanup",
           "PluginBbSdk.plugins.experimental_getSafeMode",
           "PluginBbSdk.plugins.experimental_setSafeMode",

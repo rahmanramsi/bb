@@ -1,6 +1,6 @@
 import { getEnvironment, getThread } from "@bb/db";
 import type { EnvironmentRow } from "@bb/db";
-import type { PromptInput, Thread } from "@bb/domain";
+import type { PromptInput, ThreadRecord } from "@bb/domain";
 import type { ForkThreadRequest } from "@bb/server-contract";
 import type { LoggedPendingInteractionWorkSessionDeps } from "../../types.js";
 import { ApiError } from "../../errors.js";
@@ -13,7 +13,7 @@ type ThreadForkDeps = LoggedPendingInteractionWorkSessionDeps;
 function requireForkSourceThread(
   deps: Pick<ThreadForkDeps, "db">,
   sourceThreadId: string,
-): Thread {
+): ThreadRecord {
   const sourceThread = getThread(deps.db, sourceThreadId);
   if (!sourceThread || sourceThread.deletedAt !== null) {
     throw new ApiError(404, "thread_not_found", "Source thread not found");
@@ -30,7 +30,7 @@ function requireForkSourceThread(
 
 function requireForkCapableProvider(
   deps: Pick<ThreadForkDeps, "providerRegistry">,
-  sourceThread: Thread,
+  sourceThread: ThreadRecord,
 ): void {
   if (!deps.providerRegistry.supportsFork(sourceThread.providerId)) {
     throw new ApiError(
@@ -43,7 +43,7 @@ function requireForkCapableProvider(
 
 function requireSourceEnvironment(
   deps: Pick<ThreadForkDeps, "db">,
-  sourceThread: Thread,
+  sourceThread: ThreadRecord,
 ): EnvironmentRow {
   const environment =
     sourceThread.environmentId === null
@@ -62,6 +62,7 @@ function requireSourceEnvironment(
 export async function createThreadForkFromRequest(
   deps: ThreadForkDeps,
   request: ForkThreadRequest,
+  createdByUserId: string | null,
 ) {
   const sourceThread = requireForkSourceThread(deps, request.sourceThreadId);
   requireForkCapableProvider(deps, sourceThread);
@@ -76,6 +77,7 @@ export async function createThreadForkFromRequest(
   return createThreadFromRequest(
     deps,
     {
+      createdByUserId,
       environment: request.environment ?? {
         type: "reuse",
         environmentId: sourceEnvironment.id,

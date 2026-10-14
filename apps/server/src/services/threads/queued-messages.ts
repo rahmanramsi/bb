@@ -26,7 +26,7 @@ import {
 import type {
   PromptInput,
   QueuedMessageWaitingOn,
-  Thread,
+  ThreadRecord,
   ThreadQueuedMessage,
   ThreadTurnInitiator,
 } from "@bb/domain";
@@ -90,6 +90,7 @@ import {
   resolveMessageSenderThreadId,
 } from "./thread-send.js";
 import { recordAcceptedPromptHistoryEntry } from "../prompt-history.js";
+import { NotificationBuffer } from "../lib/notification-buffer.js";
 import { requireThreadCommandEnvironment } from "./thread-command-environment.js";
 import { applyLoggedThreadLifecycleEventInTransaction } from "./lifecycle-outcome.js";
 import { buildThreadStatusChangeMetadata } from "./thread-runtime-display.js";
@@ -130,12 +131,12 @@ interface SendClaimedQueuedMessageForThreadArgs {
   mode: SendQueuedMessageMode;
   queuedMessages: ClaimedQueuedMessage[];
   sendNow: boolean;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 export function createAutomaticQueuedMessageGroupEligibility(
   deps: Pick<AppDeps, "db" | "hub">,
-  args: { now: number; retryingFailure: boolean; thread: Thread },
+  args: { now: number; retryingFailure: boolean; thread: ThreadRecord },
 ): QueuedThreadMessageGroupEligibility {
   const activeTurnId = getActiveTurnId(deps, args.thread.id);
   return (group) =>
@@ -181,20 +182,21 @@ export function createAutomaticQueuedMessageGroupEligibility(
 
 async function requireReadyQueuedMessageEnvironment(
   deps: LoggedPendingInteractionWorkSessionDeps,
-  thread: Thread,
+  thread: ThreadRecord,
 ) {
   const environment = await requireThreadCommandEnvironment(deps, { thread });
   return requireReadyThreadEnvironment(environment);
 }
 
 export interface CreateQueuedMessageForThreadArgs {
+  authorUserId: string | null;
   payload: CreateQueuedMessageRequest;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 function admitQueuedMessage(
   db: DbQueryConnection,
-  thread: Thread,
+  thread: ThreadRecord,
 ): { hasProviderSession: boolean } {
   ensureThreadQueueIsWritable(thread);
   const hasProviderSession =
@@ -250,6 +252,7 @@ export async function createQueuedMessageForThread(
           threadId: thread.id,
           content: input,
           senderThreadId,
+          authorUserId: args.authorUserId,
           model: execution.model,
           reasoningLevel: execution.reasoningLevel,
           permissionMode: execution.permissionMode,
@@ -293,8 +296,8 @@ export async function createQueuedMessageForThread(
 }
 
 function isQueuedMessageAutoSendCandidate(
-  thread: Thread | null,
-): thread is Thread {
+  thread: ThreadRecord | null,
+): thread is ThreadRecord {
   return (
     thread !== null &&
     thread.archivedAt === null &&
@@ -538,6 +541,7 @@ async function sendClaimedQueuedMessageForIdleProviderThread(
     thread,
   });
 
+  const notifications = new NotificationBuffer();
   const { activeThread, command } = deps.db.transaction(
     (tx) => {
       if (
@@ -572,8 +576,9 @@ async function sendClaimedQueuedMessageForIdleProviderThread(
         type: "client/turn/requested",
       });
       recordAcceptedPromptHistoryEntry(
-        { db: tx },
+        { db: tx, hub: notifications },
         {
+          authorUserId: args.queuedMessages[0]!.authorUserId,
           thread,
           input,
           initiator,
@@ -597,6 +602,7 @@ async function sendClaimedQueuedMessageForIdleProviderThread(
     { behavior: "immediate" },
   );
 
+  notifications.flushInto(deps.hub);
   deps.hub.notifyThread(
     thread.id,
     ["events-appended", "queue-changed", "status-changed"],
@@ -702,6 +708,7 @@ async function sendClaimedQueuedMessageForThread(
   const lead = args.queuedMessages[0]!;
   const outcome = await attemptDispatch(deps, {
     thread: args.thread,
+    authorUserId: lead.authorUserId,
     payload: {
       ...sendQueuedMessagePayload(
         { ...queuedMessage, content: input },

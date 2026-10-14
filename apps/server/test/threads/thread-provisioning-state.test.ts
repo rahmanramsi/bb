@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { describe, expect, it } from "vitest";
 import {
   createConnection,
@@ -48,6 +49,7 @@ describe("thread provisioning state", () => {
     const context = requestThreadProvision(
       { db, hub },
       {
+        authorUserId: LOCAL_OWNER_USER_ID,
         thread,
         environmentIntent: {
           type: "provider",

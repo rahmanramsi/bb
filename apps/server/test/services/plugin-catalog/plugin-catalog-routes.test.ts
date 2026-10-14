@@ -1,3 +1,4 @@
+import { actAsLocalOwner } from "../../helpers/principal.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -60,6 +61,7 @@ describe("plugin catalog routes", () => {
       ...(fetchImpl === undefined ? {} : { fetch: fetchImpl }),
     });
     const app = new Hono();
+    actAsLocalOwner(app);
     registerPluginCatalogRoutes(
       app,
       catalog,

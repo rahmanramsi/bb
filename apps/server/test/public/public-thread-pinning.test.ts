@@ -1,5 +1,5 @@
-import { getThread, markThreadDeleted, pinThread } from "@bb/db";
-import { threadSchema } from "@bb/domain";
+import { markThreadDeleted, pinThread, getThreadForViewer } from "@bb/db";
+import { threadSchema, LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { apiErrorSchema, threadListResponseSchema } from "@bb/server-contract";
 import { describe, expect, it } from "vitest";
 import { readJson } from "../helpers/json.js";
@@ -32,7 +32,10 @@ describe("public thread pinning", () => {
       const pinnedThread = threadSchema.parse(await readJson(pinResponse));
       expect(pinnedThread.id).toBe(thread.id);
       expect(pinnedThread.pinnedAt).toEqual(expect.any(Number));
-      const pinnedRow = getThread(harness.db, thread.id);
+      const pinnedRow = getThreadForViewer(harness.db, {
+        threadId: thread.id,
+        userId: LOCAL_OWNER_USER_ID,
+      });
       if (!pinnedRow) {
         throw new Error("Expected pinned thread row");
       }
@@ -48,7 +51,10 @@ describe("public thread pinning", () => {
         await readJson(repeatedPinResponse),
       );
       expect(repeatedPinnedThread.pinnedAt).toBe(pinnedThread.pinnedAt);
-      const repeatedPinnedRow = getThread(harness.db, thread.id);
+      const repeatedPinnedRow = getThreadForViewer(harness.db, {
+        threadId: thread.id,
+        userId: LOCAL_OWNER_USER_ID,
+      });
       if (!repeatedPinnedRow) {
         throw new Error("Expected repeatedly pinned thread row");
       }
@@ -61,7 +67,10 @@ describe("public thread pinning", () => {
       expect(unpinResponse.status).toBe(200);
       const unpinnedThread = threadSchema.parse(await readJson(unpinResponse));
       expect(unpinnedThread.pinnedAt).toBeNull();
-      const unpinnedRow = getThread(harness.db, thread.id);
+      const unpinnedRow = getThreadForViewer(harness.db, {
+        threadId: thread.id,
+        userId: LOCAL_OWNER_USER_ID,
+      });
       if (!unpinnedRow) {
         throw new Error("Expected unpinned thread row");
       }
@@ -143,13 +152,22 @@ describe("public thread pinning", () => {
         title: "Third pinned thread",
       });
       expect(
-        pinThread(harness.db, harness.hub, { threadId: firstThread.id }),
+        pinThread(harness.db, harness.hub, {
+          userId: LOCAL_OWNER_USER_ID,
+          threadId: firstThread.id,
+        }),
       ).not.toBeNull();
       expect(
-        pinThread(harness.db, harness.hub, { threadId: secondThread.id }),
+        pinThread(harness.db, harness.hub, {
+          userId: LOCAL_OWNER_USER_ID,
+          threadId: secondThread.id,
+        }),
       ).not.toBeNull();
       expect(
-        pinThread(harness.db, harness.hub, { threadId: thirdThread.id }),
+        pinThread(harness.db, harness.hub, {
+          userId: LOCAL_OWNER_USER_ID,
+          threadId: thirdThread.id,
+        }),
       ).not.toBeNull();
 
       const response = await harness.app.request(
@@ -219,7 +237,10 @@ describe("public thread pinning", () => {
       });
 
       expect(
-        pinThread(harness.db, harness.hub, { threadId: pinnedThread.id }),
+        pinThread(harness.db, harness.hub, {
+          userId: LOCAL_OWNER_USER_ID,
+          threadId: pinnedThread.id,
+        }),
       ).not.toBeNull();
       const staleNeighborResponse = await harness.app.request(
         `/api/v1/threads/${pinnedThread.id}/pin-order`,

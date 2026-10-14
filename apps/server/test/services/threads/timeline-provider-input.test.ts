@@ -4,7 +4,7 @@ import {
   threadScope,
   turnScope,
 } from "@bb/domain";
-import type { Thread } from "@bb/domain";
+import type { ThreadRecord } from "@bb/domain";
 import {
   createConnection,
   createProject,
@@ -23,7 +23,7 @@ const PLUGIN_METADATA_MARKER = "timeline-plugin-metadata-must-stay-private";
 const PROCESS_EVENT =
   '<process_event kind="success" process_id="proc_551c">Process completed successfully</process_event>';
 
-function setup(): { db: DbConnection; thread: Thread } {
+function setup(): { db: DbConnection; thread: ThreadRecord } {
   const db = createConnection(":memory:");
   migrate(db);
   const host = upsertHost(db, noopNotifier, {
@@ -47,7 +47,10 @@ function setup(): { db: DbConnection; thread: Thread } {
 
 type EventInput = Parameters<typeof insertEvents>[2][number];
 
-function seedExtensionTriggeredTurn(db: DbConnection, thread: Thread): void {
+function seedExtensionTriggeredTurn(
+  db: DbConnection,
+  thread: ThreadRecord,
+): void {
   const events: EventInput[] = [];
   let sequence = 0;
   const push = (event: Omit<EventInput, "sequence" | "threadId">): void => {

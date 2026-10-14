@@ -20,6 +20,7 @@ import { initDb } from "../../src/db.js";
 import { createApp } from "../../src/server.js";
 import { PendingInteractionLifecycle } from "../../src/services/interactions/pending-interactions.js";
 import { createMachineAuthService } from "../../src/services/machine-auth.js";
+import { createUserAuthService } from "../../src/services/user-auth.js";
 import { createProviderRegistryService } from "../../src/services/providers/provider-registry.js";
 import { registerFirstPartyProviders } from "./provider-registry.js";
 import { validatePluginProviderDeclaration } from "@get-bb/plugin-sdk/internal/host-policy";
@@ -220,6 +221,7 @@ export async function createTestAppHarness(
     logger,
   });
   await machineAuth.ensureReady();
+  const userAuth = await createUserAuthService({ dataDir, db, logger });
   const testMachineAuth = {
     ...machineAuth,
     async verifyDaemonHostKey(token: string) {
@@ -235,6 +237,7 @@ export async function createTestAppHarness(
   };
   const config: ServerRuntimeConfig = {
     appVersion: "0.0.0-test",
+    authMode: "local",
     builtinSkillsRootPath: join(dataDir, "builtin-skills"),
     customModels: [],
     dataDir,
@@ -327,6 +330,7 @@ export async function createTestAppHarness(
     lifecycleDedupers,
     logger,
     machineAuth: testMachineAuth,
+    userAuth,
     pendingInteractions,
     providerRegistry,
     pluginHostArtifacts,

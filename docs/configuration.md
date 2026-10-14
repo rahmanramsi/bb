@@ -257,6 +257,7 @@ child; do not set them yourself.
 | `BB_MARKETPLACE_URL`           | `bb-app env`, or environment                       | Startup-only testing    | Manifest URL of the reserved `bb-community` plugin marketplace. It defaults to `https://getbb.app/marketplace/v2/marketplace.json`. If the default v2 request returns 404, the server requests v1. Set another URL to test catalog refreshes. The server requests that URL without fallback. It changes only `bb-community`. Add other marketplaces with `bb marketplace add`. Restart the app after a change. |
 | `BB_SERVER_URL`                | `bb-app config`                                    | Remote CLI/host use     | Server URL for standalone `bb` CLI and `host-daemon` commands on the current machine. The CLI defaults to `http://127.0.0.1:38886` when unset.                                                                                                                                                                                                                                                                 |
 | `BB_SERVER_BIND_HOST`          | `bb-app env`, environment, or `--server-bind-host` | Startup-only            | Server listener host. Defaults to `127.0.0.1`; accepts only `127.0.0.1` or `0.0.0.0`. A full launcher or desktop app restart is required; until then, a previous `0.0.0.0` listener remains exposed. This is not a `bb-app config` key.                                                                                                                                                                        |
+| `BB_AUTH_MODE`                 | `bb-app env` or environment                        | Startup-only            | Server authentication mode, `local` (default) or `multi`. See [Authentication](#authentication). A full launcher or desktop app restart is required. This is not a `bb-app config` key.                                                                                                                                                                                                                        |
 | `BB_SERVER_PORT`               | `bb-app env`, environment, or `--server-port`      | Startup-only            | HTTP listener port. Defaults to `38886`. A full launcher or desktop app restart is required after a persistent set or unset.                                                                                                                                                                                                                                                                                   |
 | `BB_HOST_DAEMON_PORT`          | `bb-app env`, environment, or `--host-daemon-port` | Startup-only            | Local host-daemon API port. Defaults to `38887`. A full launcher or desktop app restart is required after a persistent set or unset.                                                                                                                                                                                                                                                                           |
 | `BB_LOG_LEVEL`                 | `bb-app config`                                    | Startup-only debugging  | Log level: `trace`, `debug`, `info`, `warn`, `error`, or `fatal`. A full launcher or desktop app restart is required.                                                                                                                                                                                                                                                                                          |
@@ -1820,11 +1821,78 @@ npx bb-app --data-dir ~/.bb-test --server-port 48886 --host-daemon-port 48887
 
 The server listens on `127.0.0.1` by default. Set
 `--server-bind-host 0.0.0.0` (or `BB_SERVER_BIND_HOST=0.0.0.0`) only when a
-trusted network boundary must reach the listener directly. The public API is
-unauthenticated and permits command execution and file reads, so never expose a
-wildcard-bound server to an untrusted network. The only accepted bind hosts are
+trusted network boundary must reach the listener directly. In the default
+`local` auth mode the public API is unauthenticated and permits command
+execution and file reads, so never expose a wildcard-bound `local` server to an
+untrusted network. The only accepted bind hosts are
 `127.0.0.1` and `0.0.0.0`; this startup-only setting is not available through
 `bb-app config`.
+
+## Authentication
+
+`BB_AUTH_MODE` selects how the server identifies callers. It is startup-only;
+set it with `npx bb-app env set BB_AUTH_MODE multi` or in the server
+environment, then restart.
+
+- `local` (default) keeps single-user behavior: every request to `/api/v1`,
+  `/ws`, and `/ws/terminals` acts as the built-in local owner account
+  (`usr_local_owner`, an admin). No sign-in is needed.
+- `multi` requires a credential on every one of those requests, including
+  requests from loopback, because BB Connect tunnel traffic also arrives from
+  loopback. Requests without a valid credential get `401`.
+
+`multi` accepts two credentials:
+
+- A session cookie from `POST /api/v1/auth/sign-in` (email and password). The
+  app uses this. `POST /api/v1/auth/sign-out` ends the session.
+- A personal access token sent as `Authorization: Bearer bbpat_…`, for the CLI,
+  SDK, and scripts. Create one with `POST /api/v1/auth/tokens` (`{"name": …}`);
+  the token is shown once. `GET /api/v1/auth/tokens` lists your tokens and
+  `DELETE /api/v1/auth/tokens/:id` revokes one.
+
+`GET /api/v1/auth/session` needs no credential and reports the auth mode,
+whether the server still needs its first account (`needsBootstrap`), and the
+signed-in user, if any.
+
+On a fresh `multi` server the first account registered with
+`POST /api/v1/auth/sign-up` becomes an admin. After that, sign-up requires an
+`inviteToken` from `POST /api/v1/auth/invites` (`{"role": "member" | "admin",
+"email"?: …}`), which only admins can create. Invites expire after seven days
+and work once; an invite with an email only registers that address.
+
+Every signed-in user sees all projects, threads, machines, and secrets on the
+server. Roles only guard administration: admins manage users and invites,
+machine enrollment and removal, plugin installs, enablement, and settings,
+provider and AI service selection, global machine environment secrets, and
+server settings, updates, and moves. Members get `403` on those actions. Roles
+are guardrails for a trusted team, not isolation: a member who runs an agent
+on a machine effectively has shell access to that machine.
+
+Some state belongs to each user rather than to the server. Each user has their
+own thread read and unread state, pinned threads and pin order, UI preferences
+(`/api/v1/preferences/ui`), appearance (theme and favicon color), and prompt
+history. Changing them affects only that user, and realtime updates for them
+reach only that user's connected apps. A user who has never opened a thread
+sees it as read up to its creation. Projects, threads, and everything else stay
+shared. `GET /api/v1/users` lists everyone on the server, so
+clients can show attribution: threads record `createdByUserId`, queued
+messages record `authorUserId`, and resolved interactions record
+`resolvedByUserId`. In `local` mode all of this belongs to the local owner.
+
+Host daemons keep authenticating with their machine keys on the `/internal`
+routes; those keys are not user credentials. Plugins that run inside the
+server reach the API through `bb.sdk` with a per-process server credential.
+All plugin HTTP routes require a signed-in caller in `multi` mode, including
+routes declared with `auth: "none"`. Routes declared with `auth: "token"` also
+require their plugin token. In `local` mode each plugin keeps its declared HTTP
+authentication behavior. The plugin token endpoint requires a signed-in
+caller, and rotating the token requires an admin.
+
+The loopback enrollment-key endpoint also requires an admin in `multi` mode.
+The colocated launcher and in-process plugins use a server credential that
+rotates on each server start and is stored in the owner-only
+`server-service-token` file under the server data directory. The launcher sends
+it only to a loopback server when preparing the local daemon's enrollment.
 
 The startup `Server listening` and `app` lines show the actual listener address.
 With wildcard binding they show `http://0.0.0.0:<port>`, while bb's health check

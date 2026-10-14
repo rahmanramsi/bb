@@ -18,6 +18,7 @@ import {
   dropIdleLifecycleIndexes,
   rewindThreadPruningWork,
   dropMarketplaceSourceGitSubdirectoryColumn,
+  restoreLegacyPerUserSettingsTables,
   rewindMultiUser,
   dropQueuedMessageEditHeldUntilColumn,
 } from "./helpers/rewind.js";
@@ -87,6 +88,7 @@ it.each([false, true])(
       db.$client
         .prepare("DELETE FROM __drizzle_migrations WHERE created_at >= ?")
         .run(THREAD_DRAFTS_MIGRATION_TIMESTAMP);
+      restoreLegacyPerUserSettingsTables(db);
 
       if (alreadyMigrated) {
         db.$client.exec(originalMigration);

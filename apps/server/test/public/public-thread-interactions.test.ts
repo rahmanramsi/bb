@@ -3,6 +3,7 @@ import {
   turnScope,
   USER_QUESTION_MAX_FREE_TEXT_LENGTH,
   USER_QUESTION_MAX_SELECTED,
+  LOCAL_OWNER_USER_ID,
 } from "@bb/domain";
 import type { PendingInteractionCreate } from "@bb/domain";
 import type {
@@ -1277,6 +1278,7 @@ describe("public thread interaction routes", () => {
       }
 
       harness.deps.pendingInteractions.resolvePendingInteraction({
+        resolvedByUserId: LOCAL_OWNER_USER_ID,
         threadId: thread.id,
         interactionId: registered.interaction.id,
         resolution: createAllowOnceResolution(),
@@ -1359,6 +1361,7 @@ describe("public thread interaction routes", () => {
       }
 
       harness.deps.pendingInteractions.resolvePendingInteraction({
+        resolvedByUserId: LOCAL_OWNER_USER_ID,
         threadId: thread.id,
         interactionId: registered.interaction.id,
         resolution: createDenyResolution(),

@@ -11,6 +11,7 @@ import {
 } from "@bb/server-contract";
 import type { Hono } from "hono";
 import { ApiError } from "../errors.js";
+import { requirePrincipal } from "../request-context.js";
 import {
   readUiPreferences,
   resetUiPreference,
@@ -35,7 +36,9 @@ export function registerUiPreferenceRoutes(app: Hono, deps: AppDeps): void {
   const routes = publicApiRoutes.system;
 
   get(routes.uiPreferences, (context) =>
-    context.json({ preferences: readUiPreferences(deps) }),
+    context.json({
+      preferences: readUiPreferences(deps, requirePrincipal(context).userId),
+    }),
   );
 
   put(routes.updateUiPreference, (context, payload) => {
@@ -51,6 +54,7 @@ export function registerUiPreferenceRoutes(app: Hono, deps: AppDeps): void {
     const result = writeUiPreference(deps, {
       expectedRevision: payload.expectedRevision,
       key,
+      userId: requirePrincipal(context).userId,
       value: parsed.value,
     });
     if (result.outcome === "conflict") {
@@ -66,6 +70,12 @@ export function registerUiPreferenceRoutes(app: Hono, deps: AppDeps): void {
 
   del(routes.resetUiPreference, (context) => {
     const key = requireUiPreferenceKey(context.req.param("key"));
-    return context.json({ key, ...resetUiPreference(deps, key) });
+    return context.json({
+      key,
+      ...resetUiPreference(deps, {
+        key,
+        userId: requirePrincipal(context).userId,
+      }),
+    });
   });
 }

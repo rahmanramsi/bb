@@ -21,6 +21,7 @@ import {
   BB_APP_URL_ENV,
   BB_APP_SURFACE_ENV,
   BB_APP_VERSION_ENV,
+  BB_AUTH_MODE_ENV,
   BB_EXTERNAL_URL_ENV,
   BB_INHERITED_SKILLS_ROOTS_ENV,
   BB_MARKETPLACE_URL_ENV,
@@ -34,12 +35,15 @@ import {
   DEFAULT_BB_APP_URL,
   DEFAULT_BB_APP_SURFACE,
   DEFAULT_BB_APP_VERSION,
+  DEFAULT_BB_AUTH_MODE,
   DEFAULT_BB_EXTERNAL_URL,
   DEFAULT_BB_MARKETPLACE_URL,
   DEFAULT_BB_POSTHOG_API_KEY,
   DEFAULT_BB_SERVER_BIND_HOST,
   DEFAULT_BB_TELEMETRY,
   parseServerBindHost,
+  serverAuthModeValues,
+  type ServerAuthMode,
   type ServerBindHost,
 } from "./env-vars.js";
 import { loadFeatureFlags } from "./feature-flags.js";
@@ -55,6 +59,7 @@ export interface ServerConfig
   BB_APP_URL: string;
   BB_APP_SURFACE: AppSurface;
   BB_APP_VERSION: string;
+  BB_AUTH_MODE: ServerAuthMode;
   BB_DEV_APP_PORT?: number;
   BB_EXTERNAL_URL: string;
   BB_HOST_DAEMON_PORT: number;
@@ -72,8 +77,9 @@ export interface ServerConfig
 
 type LoadServerConfigArgs = LoadCommonConfigArgs;
 
-export { parseServerBindHost };
-export type { ServerBindHost };
+export { parseServerBindHost, serverAuthModeValues };
+export type { ServerAuthMode, ServerBindHost };
+export const SERVER_SERVICE_TOKEN_FILE_NAME = "server-service-token";
 
 export function loadServerConfig(
   args: LoadServerConfigArgs = {},
@@ -123,6 +129,12 @@ export function loadServerConfig(
       context: loader.context,
       defaultValue: DEFAULT_BB_APP_VERSION,
       definition: BB_APP_VERSION_ENV,
+      env: loader.env,
+    }),
+    BB_AUTH_MODE: readEnvVarWithDefault({
+      context: loader.context,
+      defaultValue: DEFAULT_BB_AUTH_MODE,
+      definition: BB_AUTH_MODE_ENV,
       env: loader.env,
     }),
     BB_EXTERNAL_URL: readEnvVarWithDefault({

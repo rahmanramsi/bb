@@ -3,7 +3,7 @@ import type {
   ResolvedThreadExecutionOptions,
   SystemMessageKind,
   SystemMessageSubject,
-  Thread,
+  ThreadRecord,
   ThreadTurnInitiator,
 } from "@bb/domain";
 import { getThread, type DbTransaction, type EnvironmentRow } from "@bb/db";
@@ -27,6 +27,7 @@ export interface ReadyThreadEnvironment extends EnvironmentRow {
 
 interface DispatchTurnDuringReprovisionArgs {
   beforeRequestAppendInTransaction?: (args: { tx: DbTransaction }) => void;
+  authorUserId: string | null;
   deps: LoggedPendingInteractionWorkSessionDeps;
   environment: EnvironmentRow;
   execution: ResolvedThreadExecutionOptions;
@@ -36,7 +37,7 @@ interface DispatchTurnDuringReprovisionArgs {
   senderThreadId: string | null;
   systemMessageKind?: SystemMessageKind;
   systemMessageSubject?: SystemMessageSubject | null;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 export function requireReadyThreadEnvironment(
@@ -80,6 +81,7 @@ export async function dispatchTurnDuringReprovision(
           throwEnvironmentNotReady(args.environment);
         }
       },
+      authorUserId: args.authorUserId,
       environment: args.environment,
       execution: args.execution,
       initiator: args.initiator,

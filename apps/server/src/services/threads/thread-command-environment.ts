@@ -1,6 +1,6 @@
 import { assertEnvironmentPathAvailable } from "../environments/path-admission.js";
 import type { EnvironmentRow } from "@bb/db";
-import type { Thread } from "@bb/domain";
+import type { ThreadRecord } from "@bb/domain";
 import type { DbConnection } from "@bb/db";
 import type { WorkSessionDeps } from "../../types.js";
 import { requireEnvironment } from "../lib/entity-lookup.js";
@@ -10,10 +10,10 @@ import {
   throwThreadEnvironmentUnavailable,
 } from "../lib/lifecycle-api-errors.js";
 
-type ThreadCommandEnvironmentSource = Pick<Thread, "environmentId">;
+type ThreadCommandEnvironmentSource = Pick<ThreadRecord, "environmentId">;
 
 interface RequireThreadCommandEnvironmentArgs {
-  thread: ThreadCommandEnvironmentSource & Pick<Thread, "id">;
+  thread: ThreadCommandEnvironmentSource & Pick<ThreadRecord, "id">;
 }
 
 interface RequireThreadHostCommandEnvironmentArgs {

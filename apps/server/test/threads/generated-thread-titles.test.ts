@@ -9,6 +9,7 @@ import {
   systemThreadProvisioningEventDataSchema,
   threadSchema,
   turnScope,
+  LOCAL_OWNER_USER_ID,
 } from "@bb/domain";
 import { groupHostDaemonEvents } from "@bb/host-daemon-contract";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -246,6 +247,7 @@ describe("generated thread titles", () => {
       });
       const input = textInput("Stop during metadata inference before setup");
       requestThreadProvision(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environmentIntent: {
           type: "provider",
           environmentProviderId: "git-worktree",
@@ -456,6 +458,7 @@ describe("generated thread titles", () => {
 
       const input = textInput("Continue this fork and generate a useful title");
       const fork = await createThreadFromRequest(harness.deps, {
+        createdByUserId: LOCAL_OWNER_USER_ID,
         environment: { type: "reuse", environmentId: environment.id },
         input,
         model: "gpt-5",
@@ -581,6 +584,7 @@ describe("generated thread titles", () => {
       });
 
       requestThreadProvision(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environmentIntent: {
           type: "reuse",
           environmentId: environment.id,
@@ -692,6 +696,7 @@ describe("generated thread titles", () => {
       });
 
       requestThreadProvision(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environmentIntent: {
           type: "reuse",
           environmentId: environment.id,

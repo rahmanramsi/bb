@@ -341,6 +341,7 @@ export const threadQueuedMessageSchema = z.object({
   originPluginId: z.string().nullable(),
   initiator: z.enum(["user", "agent", "system"]),
   senderThreadId: z.string().nullable(),
+  authorUserId: z.string().nullable(),
   /**
    * The thread this row is waiting on. Redundant on the thread-scoped list
    * route that first served this DTO, and load-bearing everywhere else it is
@@ -393,7 +394,7 @@ export const threadQueuedMessageSchema = z.object({
 });
 export type ThreadQueuedMessage = z.infer<typeof threadQueuedMessageSchema>;
 
-export const threadSchema = z.object({
+export const threadRecordSchema = z.object({
   id: z.string(),
   projectId: z.string(),
   environmentId: z.string().nullable(),
@@ -409,12 +410,17 @@ export const threadSchema = z.object({
   originPluginId: z.string().nullable(),
   visibility: threadVisibilitySchema,
   archivedAt: z.number().nullable(),
-  pinnedAt: z.number().nullable(),
   deletedAt: z.number().nullable(),
-  lastReadAt: z.number().nullable(),
+  createdByUserId: z.string().nullable(),
   latestAttentionAt: z.number(),
   createdAt: z.number(),
   updatedAt: z.number(),
+});
+export type ThreadRecord = z.infer<typeof threadRecordSchema>;
+
+export const threadSchema = threadRecordSchema.extend({
+  pinnedAt: z.number().nullable(),
+  lastReadAt: z.number().nullable(),
 });
 export type Thread = z.infer<typeof threadSchema>;
 

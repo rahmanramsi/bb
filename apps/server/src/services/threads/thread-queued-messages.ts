@@ -37,6 +37,7 @@ interface StoredQueuedThreadMessageRow {
   sendAt: number | null;
   serviceTier: string;
   senderThreadId: string | null;
+  authorUserId: string | null;
   requestedByInitiator: StartedOnBehalfOfInitiator | null;
   requestedByThreadId: string | null;
   systemNotice: string | null;
@@ -173,6 +174,7 @@ export function toThreadQueuedMessage(
     originPluginId: row.originPluginId,
     initiator: author.initiator,
     senderThreadId: author.senderThreadId,
+    authorUserId: row.authorUserId,
     threadId: row.threadId,
     content: parseStoredQueuedThreadMessageContent(row),
     model: row.model,

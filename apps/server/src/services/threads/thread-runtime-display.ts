@@ -1,6 +1,7 @@
 import {
   getEnvironment,
   getSessionById,
+  getThreadViewerState,
   listActiveBackgroundTaskCountsByThreadIds,
   listLatestClosedSessionsForHosts,
   listLatestThreadStateEventRowsByThreadIds,
@@ -10,11 +11,13 @@ import {
   type HostDaemonSessionRow,
   type StoredEventRow,
   type ThreadClientTurnRequestKey,
+  type ThreadViewerState,
   type ThreadWithPendingInteractionState,
 } from "@bb/db";
 import { LEGACY_CODEX_GOAL_EXTENSION_KIND } from "@bb/domain";
 import type {
   Thread,
+  ThreadRecord,
   ThreadActivityState,
   ThreadChangeMetadata,
   ThreadListEntry,
@@ -70,11 +73,14 @@ interface ResolveThreadRuntimeStateFromLatestSessionArgs {
 
 interface ToThreadResponseFromThreadArgs {
   now?: number;
-  thread: Thread;
+  thread: ThreadRecord;
+  viewerUserId: string;
 }
 
-interface ToThreadResponseWithHostArgs extends ToThreadResponseFromThreadArgs {
+interface ToThreadResponseWithHostArgs {
   environmentHostId: string | null;
+  now?: number;
+  thread: ThreadRecord & ThreadViewerState;
 }
 
 interface ToThreadListEntryResponsesArgs {
@@ -93,13 +99,13 @@ interface ToThreadListEntryResponseFromLatestSessionArgs {
 
 interface BuildThreadStatusChangeMetadataByThreadIdArgs {
   environmentHostId: string;
-  threads: readonly Thread[];
+  threads: readonly ThreadRecord[];
 }
 
 interface ToThreadStatusChangeMetadataArgs {
   activity: ThreadActivityState;
   runtime: ThreadRuntimeState;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 interface PromptBannerActivityState extends Pick<
@@ -141,7 +147,7 @@ function hasOpenDaemonSessionForHost(
   return session?.hostId === hostId && session.status === "active";
 }
 
-function toPublicThread(thread: Thread): Thread {
+function toPublicThread(thread: ThreadRecord & ThreadViewerState): Thread {
   return {
     id: thread.id,
     projectId: thread.projectId,
@@ -161,6 +167,7 @@ function toPublicThread(thread: Thread): Thread {
     pinnedAt: thread.pinnedAt,
     deletedAt: thread.deletedAt,
     lastReadAt: thread.lastReadAt,
+    createdByUserId: thread.createdByUserId,
     latestAttentionAt: thread.latestAttentionAt,
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
@@ -233,7 +240,7 @@ function getLatestClosedSessionForHost(
 
 function resolveThreadEnvironmentHostId(
   deps: ThreadRuntimeDisplayDeps,
-  thread: Thread,
+  thread: ThreadRecord,
 ): string | null {
   if (thread.environmentId === null) {
     return null;
@@ -243,7 +250,7 @@ function resolveThreadEnvironmentHostId(
 
 export function buildThreadStatusChangeMetadata(
   deps: ThreadPromptBannerDeps,
-  thread: Thread,
+  thread: ThreadRecord,
 ): ThreadChangeMetadata {
   return toThreadStatusChangeMetadata({
     activity:
@@ -328,8 +335,15 @@ export function toThreadResponseFromThread(
   args: ToThreadResponseFromThreadArgs,
 ): ThreadResponse {
   const threadWithRuntime = toThreadResponseWithHost(deps, {
-    ...args,
     environmentHostId: resolveThreadEnvironmentHostId(deps, args.thread),
+    now: args.now,
+    thread: {
+      ...args.thread,
+      ...getThreadViewerState(deps.db, {
+        threadId: args.thread.id,
+        userId: args.viewerUserId,
+      }),
+    },
   });
   return {
     ...threadWithRuntime,
@@ -350,7 +364,7 @@ export function toThreadResponseFromThread(
 
 function getThreadPromptBannerActivityState(
   deps: ThreadPromptBannerDeps,
-  thread: Thread,
+  thread: ThreadRecord,
   events: readonly ThreadEventWithMeta[],
 ): PromptBannerActivityState {
   const activePlanTurn = extractThreadTimelineActivePlanTurn({
@@ -373,7 +387,7 @@ function getThreadPromptBannerActivityState(
 
 function canThreadShowActivePlanMode(
   deps: ThreadPromptBannerDeps,
-  thread: Thread,
+  thread: ThreadRecord,
 ): boolean {
   return (
     thread.status === "active" &&
@@ -384,7 +398,7 @@ function canThreadShowActivePlanMode(
 
 function listPromptBannerActivityCandidateRows(
   deps: ThreadPromptBannerDeps,
-  threads: readonly Thread[],
+  threads: readonly ThreadRecord[],
 ): StoredEventRow[] {
   const latestGoalRows = listLatestThreadStateEventRowsByThreadIds(deps.db, {
     threadIds: threads.map((thread) => thread.id),
@@ -415,7 +429,7 @@ function listPromptBannerActivityCandidateRows(
 
 function buildThreadPromptBannerActivityByThreadId(
   deps: ThreadPromptBannerDeps,
-  threads: readonly Thread[],
+  threads: readonly ThreadRecord[],
 ): Map<string, PromptBannerActivityState> {
   const rows = listPromptBannerActivityCandidateRows(deps, threads);
   const eventsByThreadId = new Map<string, ThreadEventWithMeta[]>();
@@ -445,7 +459,7 @@ function buildThreadPromptBannerActivityByThreadId(
 
 export function getThreadPromptBannerActivity(
   deps: ThreadPromptBannerDeps,
-  thread: Thread,
+  thread: ThreadRecord,
 ): PromptBannerActivityState {
   return (
     buildThreadPromptBannerActivityByThreadId(deps, [thread]).get(
@@ -460,7 +474,7 @@ export function getThreadPromptBannerActivity(
 
 function buildThreadActivityStateByThreadId(
   deps: ThreadPromptBannerDeps,
-  threads: readonly Thread[],
+  threads: readonly ThreadRecord[],
 ): Map<string, ThreadActivityState> {
   const backgroundTaskActivityByThreadId = new Map(
     listActiveBackgroundTaskCountsByThreadIds(deps.db, {
@@ -506,7 +520,7 @@ function buildThreadActivityStateByThreadId(
  */
 function buildThreadQueuedWorkByThreadId(
   deps: ThreadRuntimeDisplayDeps,
-  threads: readonly Thread[],
+  threads: readonly ThreadRecord[],
 ): Map<string, ThreadQueuedWork> {
   const result = new Map<string, ThreadQueuedWork>();
   for (const counts of listQueuedThreadMessageCountsByThreadIds(deps.db, {

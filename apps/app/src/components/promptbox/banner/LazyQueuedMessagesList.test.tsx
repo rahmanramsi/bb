@@ -28,6 +28,10 @@ afterEach(() => {
   cleanup();
 });
 
+vi.mock("@/hooks/queries/user-queries", () => ({
+  useUserAttribution: () => ({ nameFor: () => null }),
+}));
+
 const noop = () => {};
 
 function Queue({

@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { describe, expect, it, vi } from "vitest";
 import {
   onClientSocketMessage,
@@ -23,7 +24,7 @@ describe("client websocket protocol", () => {
     const deps = createProtocolDeps(hub);
     const socket = createMockHubSocket();
 
-    onClientSocketOpen(hub, socket);
+    onClientSocketOpen(hub, socket, LOCAL_OWNER_USER_ID);
     onClientSocketMessage(
       deps,
       socket,
@@ -49,7 +50,7 @@ describe("client websocket protocol", () => {
     const deps = createProtocolDeps(hub);
     const socket = createMockHubSocket();
 
-    onClientSocketOpen(hub, socket);
+    onClientSocketOpen(hub, socket, LOCAL_OWNER_USER_ID);
     onClientSocketMessage(
       deps,
       socket,
@@ -69,7 +70,7 @@ describe("client websocket protocol", () => {
     const deps = createProtocolDeps(hub);
     const socket = createMockHubSocket();
 
-    onClientSocketOpen(hub, socket);
+    onClientSocketOpen(hub, socket, LOCAL_OWNER_USER_ID);
     onClientSocketMessage(
       deps,
       socket,
@@ -97,7 +98,7 @@ describe("client websocket protocol", () => {
     const deps = createProtocolDeps(hub);
     const socket = createMockHubSocket();
 
-    onClientSocketOpen(hub, socket);
+    onClientSocketOpen(hub, socket, LOCAL_OWNER_USER_ID);
     onClientSocketMessage(
       deps,
       socket,
@@ -116,7 +117,7 @@ describe("client websocket protocol", () => {
     const deps = createProtocolDeps(hub);
     const socket = createMockHubSocket();
 
-    onClientSocketOpen(hub, socket);
+    onClientSocketOpen(hub, socket, LOCAL_OWNER_USER_ID);
     onClientSocketMessage(
       deps,
       socket,
@@ -134,7 +135,7 @@ describe("client websocket protocol", () => {
     const deps = createProtocolDeps(hub);
     const socket = createMockHubSocket();
 
-    onClientSocketOpen(hub, socket);
+    onClientSocketOpen(hub, socket, LOCAL_OWNER_USER_ID);
 
     expect(() => onClientSocketMessage(deps, socket, "{")).not.toThrow();
     expect(socket.closed).toEqual([{ code: 1008, reason: "invalid-message" }]);
@@ -145,7 +146,7 @@ describe("client websocket protocol", () => {
     const deps = createProtocolDeps(hub);
     const socket = createMockHubSocket();
 
-    onClientSocketOpen(hub, socket);
+    onClientSocketOpen(hub, socket, LOCAL_OWNER_USER_ID);
     onClientSocketMessage(
       deps,
       socket,
@@ -179,8 +180,8 @@ describe("client websocket protocol", () => {
     const socket = createMockHubSocket();
     const otherSocket = createMockHubSocket();
 
-    onClientSocketOpen(hub, socket);
-    onClientSocketOpen(hub, otherSocket);
+    onClientSocketOpen(hub, socket, LOCAL_OWNER_USER_ID);
+    onClientSocketOpen(hub, otherSocket, LOCAL_OWNER_USER_ID);
     onClientSocketMessage(deps, socket, JSON.stringify({ type: "ping" }));
 
     expect(socket.closed).toHaveLength(0);
@@ -196,7 +197,7 @@ describe("client websocket protocol", () => {
     const deps = createProtocolDeps(hub);
     const socket = createMockHubSocket();
 
-    onClientSocketOpen(hub, socket);
+    onClientSocketOpen(hub, socket, LOCAL_OWNER_USER_ID);
     onClientSocketMessage(
       deps,
       socket,

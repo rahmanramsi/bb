@@ -20,7 +20,6 @@ import type {
   EnvironmentProviderSelection,
   JsonValue,
   EnvironmentStatus,
-  FaviconColorPreference,
   PendingInteractionStatus,
   PermissionMode,
   PromptHistoryScope,
@@ -304,13 +303,6 @@ export const uiPreferenceDefaults = sqliteTable("ui_preference_defaults", {
   valueJson: text("value_json").notNull(),
 });
 
-export const uiPreferences = sqliteTable("ui_preferences", {
-  key: text("key").primaryKey(),
-  valueJson: text("value_json").notNull(),
-  revision: integer("revision").notNull(),
-  updatedAt: integer("updated_at").notNull(),
-});
-
 export const appSettings = sqliteTable("app_settings", {
   id: text("id").primaryKey(),
   caffeinate: integer("caffeinate", { mode: "boolean" })
@@ -545,16 +537,6 @@ export const pluginSchedules = sqliteTable(
   (table) => [primaryKey({ columns: [table.pluginId, table.name] })],
 );
 
-export const appTheme = sqliteTable("app_theme", {
-  id: text("id").primaryKey(),
-  themeId: text("theme_id").notNull(),
-  faviconColor: text("favicon_color")
-    .$type<FaviconColorPreference>()
-    .notNull()
-    .default("default"),
-  updatedAt: integer("updated_at").notNull(),
-});
-
 export const projectSources = sqliteTable(
   "project_sources",
   {
@@ -709,11 +691,8 @@ export const threads = sqliteTable(
       .notNull()
       .default("visible"),
     archivedAt: integer("archived_at"),
-    pinnedAt: integer("pinned_at"),
-    pinSortKey: text("pin_sort_key"),
     deletedAt: integer("deleted_at"),
     storageDeletedAt: integer("storage_deleted_at"),
-    lastReadAt: integer("last_read_at"),
     createdByUserId: text("created_by_user_id").references(() => authUsers.id, {
       onDelete: "set null",
     }),
@@ -730,9 +709,6 @@ export const threads = sqliteTable(
       table.deletedAt,
       table.id,
     ),
-    index("threads_pin_sort_idx")
-      .on(table.archivedAt, table.deletedAt, table.pinSortKey, table.id)
-      .where(sql`${table.pinnedAt} IS NOT NULL`),
     index("threads_environment_idx").on(table.environmentId),
     index("threads_lifecycle_owner_idx").on(table.lifecycleOwnerThreadId),
     index("threads_parent_idx").on(table.parentThreadId),

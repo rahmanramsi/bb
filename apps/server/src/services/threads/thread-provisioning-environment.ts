@@ -9,7 +9,7 @@ import {
 import {
   threadScope,
   type ProvisioningTranscriptEntry,
-  type Thread,
+  type ThreadRecord,
 } from "@bb/domain";
 import type {
   AppDeps,
@@ -103,7 +103,7 @@ export function ensureWorkspaceReadyEventInTransaction(
 interface FailThreadProvisioningArgs {
   detail: string;
   environmentId: string | null;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 export function failThreadProvisioning(
   deps: ThreadProvisioningDeps,
@@ -159,7 +159,7 @@ export function failThreadProvisioning(
 
 export function queueChildSetupFailureNotification(
   deps: LoggedPendingInteractionWorkSessionDeps,
-  thread: Thread,
+  thread: ThreadRecord,
 ): void {
   if (!isParentNotifiableChildThread(thread)) return;
   void queueChildThreadTurnNotificationBestEffort(deps, {
@@ -172,11 +172,11 @@ export function queueChildSetupFailureNotification(
 
 export async function ensureThreadProvisionEnvironmentReady(
   deps: ThreadProvisioningDeps,
-  args: { context: ThreadProvisionContext; thread: Thread },
+  args: { context: ThreadProvisionContext; thread: ThreadRecord },
 ): Promise<{
   context: ThreadProvisionContext;
   environment: EnvironmentRow;
-  thread: Thread;
+  thread: ThreadRecord;
 } | null> {
   const { context, thread } = args;
   if (

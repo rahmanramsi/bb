@@ -13,6 +13,7 @@ import type {
 } from "@get-bb/plugin-sdk";
 import type { ServerRuntimeConfig } from "../types.js";
 import { ApiError } from "../errors.js";
+import { assertAdmin, getRequestPrincipal } from "../request-context.js";
 import {
   browserRequestProblem,
   type BrowserRequestProblem,
@@ -201,6 +202,9 @@ function localAuthProblem(
   context: Context,
   deps: PluginRoutesDeps,
 ): WireAuthProblem | null {
+  if (getRequestPrincipal(context) === null) {
+    return { status: 401, error: "Unauthorized" };
+  }
   return browserRequestProblem(context, deps, {
     requireJsonForMutation: true,
   });
@@ -652,6 +656,7 @@ export function registerPluginRoutes(
   });
 
   app.post("/plugins/updates/check", async (context) => {
+    assertAdmin(context);
     const json: unknown = await context.req.json().catch(() => null);
     const body = pluginUpdateCheckRequestSchema.safeParse(json);
     if (!body.success) {
@@ -680,6 +685,7 @@ export function registerPluginRoutes(
   });
 
   app.post("/plugins/cache/prune", async (context) => {
+    assertAdmin(context);
     const json: unknown = await context.req.json().catch(() => null);
     const body = pluginCachePruneRequestSchema.safeParse(json);
     if (!body.success) {
@@ -689,6 +695,7 @@ export function registerPluginRoutes(
   });
 
   app.post("/plugins/:id/update", async (context) => {
+    assertAdmin(context);
     const json: unknown = await context.req.json().catch(() => null);
     const body = pluginApplyUpdateRequestSchema.safeParse(json);
     if (!body.success) {
@@ -720,6 +727,7 @@ export function registerPluginRoutes(
   });
 
   app.post("/plugins/install", async (context) => {
+    assertAdmin(context);
     const problem = localAuthProblem(context, deps);
     if (problem) {
       return context.json({ ok: false, error: problem.error }, problem.status);
@@ -757,6 +765,7 @@ export function registerPluginRoutes(
   });
 
   app.post("/plugins/reload", async (context) => {
+    assertAdmin(context);
     const id = context.req.query("id") ?? undefined;
     const outcome = await plugins.reload(id);
     if (!outcome.ok) return context.json(outcome, 422);
@@ -768,6 +777,7 @@ export function registerPluginRoutes(
   );
 
   app.put("/plugins/safe-mode", async (context) => {
+    assertAdmin(context);
     const json: unknown = await context.req.json().catch(() => null);
     const body = pluginSafeModeRequestSchema.safeParse(json);
     if (!body.success) {
@@ -780,6 +790,7 @@ export function registerPluginRoutes(
   });
 
   app.post("/plugins/:id/enable", async (context) => {
+    assertAdmin(context);
     const plugin = await plugins.setEnabled(context.req.param("id"), true);
     if (!plugin)
       return context.json({ ok: false, error: "unknown plugin" }, 404);
@@ -787,6 +798,7 @@ export function registerPluginRoutes(
   });
 
   app.post("/plugins/:id/disable", async (context) => {
+    assertAdmin(context);
     const plugin = await plugins.setEnabled(context.req.param("id"), false);
     if (!plugin)
       return context.json({ ok: false, error: "unknown plugin" }, 404);
@@ -806,6 +818,7 @@ export function registerPluginRoutes(
   });
 
   app.put("/plugins/:id/settings", async (context) => {
+    assertAdmin(context);
     const json: unknown = await context.req.json().catch(() => null);
     const body = pluginSettingsUpdateRequestSchema.safeParse(json);
     if (!body.success) {
@@ -830,6 +843,7 @@ export function registerPluginRoutes(
   });
 
   app.delete("/plugins/:id", async (context) => {
+    assertAdmin(context);
     const id = context.req.param("id");
     if (plugins.isBuiltin(id)) {
       return context.json(
@@ -863,6 +877,7 @@ export function registerPluginRoutes(
         400,
       );
     }
+    if (body.data.rotate === true) assertAdmin(context);
     const token = await plugins.httpToken(context.req.param("id"), {
       rotate: body.data.rotate,
     });

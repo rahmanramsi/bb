@@ -15,7 +15,7 @@ import type {
   QueuedMessageWaitingOn,
   ResolvedThreadExecutionOptions,
   StartedOnBehalfOf,
-  Thread,
+  ThreadRecord,
   ThreadCreateOrigin,
   ThreadQueuedMessage,
 } from "@bb/domain";
@@ -65,6 +65,7 @@ export interface QueuedDispatchMessage {
   input: PromptInput[];
   execution: ResolvedThreadExecutionOptions;
   senderThreadId: string | null;
+  authorUserId: string | null;
   /**
    * The provenance of the dispatch being queued, written onto the row so the
    * drain re-decides on what the first attempt saw rather than on null.
@@ -78,7 +79,7 @@ export interface QueuedDispatchMessage {
 }
 
 export interface RecordQueuedMessageWaitArgs {
-  thread: Thread;
+  thread: ThreadRecord;
   message: QueuedDispatchMessage;
   waitingOn: QueuedMessageWaitingOn;
   /**
@@ -125,6 +126,7 @@ export function recordQueuedMessageWait(
           threadId: args.thread.id,
           content: args.message.input,
           senderThreadId: args.message.senderThreadId,
+          authorUserId: args.message.authorUserId,
           origin: args.message.origin,
           originPluginId: args.message.originPluginId,
           requestedBy: args.message.requestedBy,

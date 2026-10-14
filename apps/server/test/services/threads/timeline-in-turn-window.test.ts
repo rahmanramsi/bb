@@ -5,7 +5,7 @@ import {
   threadScope,
   turnScope,
 } from "@bb/domain";
-import type { ClientTurnRequestId, Thread } from "@bb/domain";
+import type { ClientTurnRequestId, ThreadRecord } from "@bb/domain";
 import {
   createConnection,
   createProject,
@@ -49,7 +49,7 @@ function requestId(value: number): ClientTurnRequestId {
   return encodeClientTurnRequestIdNumber({ value });
 }
 
-function setup(): { db: DbConnection; thread: Thread } {
+function setup(): { db: DbConnection; thread: ThreadRecord } {
   const db = createConnection(":memory:");
   migrate(db);
   const host = upsertHost(db, noopNotifier, {
@@ -99,7 +99,7 @@ interface SeedOptions {
 
 function seedTurns(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   options: SeedOptions,
 ): void {
   const events: EventInput[] = [];
@@ -343,7 +343,7 @@ function seedTurns(
 
 function appendCommandItems(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   args: { commandChars: number; count: number; itemStart: number },
 ): void {
   let sequence = getLatestThreadSequence(db, { threadId: thread.id });
@@ -400,7 +400,7 @@ function appendCommandItems(
 
 function buildPage(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   eventBudget: number,
   cursor: TimelinePaginationCursor | null,
   segmentLimit = 20,
@@ -426,7 +426,7 @@ function buildPage(
 
 function buildNestedPage(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   eventBudget: number,
   cursor: TimelinePaginationCursor | null,
   responseByteBudget = THREAD_TIMELINE_EVENT_DATA_BYTE_LIMIT,
@@ -450,7 +450,7 @@ type TurnDetailsPageOptions = Parameters<typeof buildTurnDetailsPage>[2];
 
 function walkTurnDetailsPages(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   options: TurnDetailsPageOptions,
 ) {
   const response = buildTurnDetailsPage(db, thread, options);
@@ -474,7 +474,7 @@ function walkTurnDetailsPages(
 
 function expandDeferredDelegations(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   options: TurnDetailsPageOptions,
   rows: TimelineRow[],
 ): TimelineRow[] {
@@ -544,7 +544,7 @@ function expandDeferredDelegations(
 
 function buildTimelineTurnSummaryDetails(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   options: Omit<TurnDetailsPageOptions, "deferContent" | "itemId">,
 ) {
   const pageOptions = { ...options, deferContent: true, itemId: null };
@@ -580,7 +580,7 @@ interface WalkResult {
 
 function walkAllPages(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   eventBudget: number,
   segmentLimit = 20,
   includeNestedRows = false,
@@ -2223,7 +2223,7 @@ describe("in-turn windows and items that only stream", () => {
 
 function seedCrossTurnCompletion(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   options: { reuseCallIdInLaterTurn: boolean },
 ): void {
   const events: EventInput[] = [];
@@ -2321,7 +2321,7 @@ function seedCrossTurnCompletion(
 
 function collectTurnDetailsAndChildren(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
 ): Map<string, { children: TimelineRow[]; details: TimelineRow[] }> {
   const byTurnId = new Map<
     string,

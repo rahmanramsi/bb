@@ -36,6 +36,8 @@ function createNotifierSpy(): DbNotifier {
     notifyEnvironment: vi.fn(),
     notifyHost: vi.fn(),
     notifySystem: vi.fn(),
+    notifyUserThread: vi.fn(),
+    notifyUserSystem: vi.fn(),
   };
 }
 
@@ -527,7 +529,10 @@ describe("environment path claims", () => {
       )?.id,
     ).toBe(windowsOwned.id);
     expect(
-      findProviderEnvironmentContainingPath(fixture.db, "/repos/fooXbarYZ/child"),
+      findProviderEnvironmentContainingPath(
+        fixture.db,
+        "/repos/fooXbarYZ/child",
+      ),
     ).toBeNull();
     expect(
       findProviderEnvironmentContainingPath(fixture.db, "/repos/foo_bar%/child")

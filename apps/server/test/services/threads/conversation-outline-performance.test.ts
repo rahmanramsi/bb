@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { threadScope, turnScope, type Thread } from "@bb/domain";
+import { threadScope, turnScope, type ThreadRecord } from "@bb/domain";
 import {
   createConnection,
   createProject,
@@ -21,7 +21,7 @@ import {
   loadThreadConversationOutline,
 } from "../../../src/services/threads/timeline.js";
 
-function setup(status: Thread["status"] = "starting") {
+function setup(status: ThreadRecord["status"] = "starting") {
   const queries: SlowDbQueryLogFields[] = [];
   const db = createConnection(":memory:", {
     slowQueryThresholdMs: 0,

@@ -7,7 +7,7 @@ import {
 import {
   resolveEnvironmentHostLifecycle,
   type EnvironmentProviderSelection,
-  type Thread,
+  type ThreadRecord,
 } from "@bb/domain";
 import { ApiError } from "../../errors.js";
 import {
@@ -39,11 +39,11 @@ export type ThreadEnvironmentRestoreResolution =
   | { restorable: false; refusal: ThreadEnvironmentRestoreRefusal };
 
 type RestoreCandidateThread = Pick<
-  Thread,
+  ThreadRecord,
   "archivedAt" | "deletedAt" | "environmentId" | "status"
 >;
 
-function isRestoreReadyThreadStatus(status: Thread["status"]): boolean {
+function isRestoreReadyThreadStatus(status: ThreadRecord["status"]): boolean {
   return status === "idle" || status === "error";
 }
 
@@ -69,10 +69,7 @@ export function resolveThreadEnvironmentRestore(
     return { restorable: false, refusal: "not_destroyed" };
   }
   const { environmentProviderId, environmentProviderSelection } = environment;
-  if (
-    environmentProviderId === null ||
-    environmentProviderSelection === null
-  ) {
+  if (environmentProviderId === null || environmentProviderSelection === null) {
     return { restorable: false, refusal: "unrecoverable" };
   }
   const record = getEnvironmentProvider(environmentProviderId);
@@ -108,7 +105,7 @@ export function canRestoreThreadEnvironment(
 
 export function throwThreadEnvironmentRestoreRefusal(
   refusal: ThreadEnvironmentRestoreRefusal,
-  thread: Pick<Thread, "archivedAt" | "deletedAt" | "status">,
+  thread: Pick<ThreadRecord, "archivedAt" | "deletedAt" | "status">,
 ): never {
   switch (refusal) {
     case "never_attached":

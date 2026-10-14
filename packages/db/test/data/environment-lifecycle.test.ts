@@ -54,6 +54,8 @@ function spyNotifier(): DbNotifier {
     notifyHost: vi.fn(),
     notifyProject: vi.fn(),
     notifySystem: vi.fn(),
+    notifyUserThread: vi.fn(),
+    notifyUserSystem: vi.fn(),
   };
 }
 
@@ -178,7 +180,8 @@ describe("applyEnvironmentLifecycleEvent", () => {
 
     expect(outcome).toEqual({
       applied: false,
-      detail: "state changed while applying provision.requested from status ready",
+      detail:
+        "state changed while applying provision.requested from status ready",
       reason: "cas-conflict",
     });
     expect(getEnvironment(db, environment.id)?.status).toBe("error");

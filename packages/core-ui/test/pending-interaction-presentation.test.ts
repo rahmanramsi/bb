@@ -17,6 +17,7 @@ function createInteraction(
     statusReason: null,
     createdAt: 1,
     resolvedAt: null,
+    resolvedByUserId: null,
   };
   switch (payload.kind) {
     case "approval":

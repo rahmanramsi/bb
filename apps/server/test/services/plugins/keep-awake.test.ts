@@ -34,7 +34,10 @@ describe("builtin Keep Awake plugin", () => {
         },
       });
 
-      server.pluginService.bindSdk({ baseUrl: server.baseUrl });
+      server.pluginService.bindSdk({
+        baseUrl: server.baseUrl,
+        serviceToken: server.deps.userAuth.serviceToken,
+      });
       await installTestBuiltinPlugin(server, "keep-awake");
 
       await vi.waitFor(() => expect(responder.requests).toHaveLength(1));

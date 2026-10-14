@@ -73,6 +73,7 @@ export function toPendingInteraction(
       createdAt: row.createdAt,
       expiresAt: row.expiresAt,
       resolvedAt: row.resolvedAt,
+      resolvedByUserId: row.resolvedByUserId,
     });
   } catch {
     throw new PendingInteractionSerializationError(row.id, "payload");

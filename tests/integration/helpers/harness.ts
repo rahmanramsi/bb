@@ -21,6 +21,7 @@ import { createApp } from "../../../apps/server/src/server.js";
 import { createAiServiceRegistry } from "../../../apps/server/src/services/ai/ai-service-registry.js";
 import { PendingInteractionLifecycle } from "../../../apps/server/src/services/interactions/pending-interactions.js";
 import { createMachineAuthService } from "../../../apps/server/src/services/machine-auth.js";
+import { createUserAuthService } from "../../../apps/server/src/services/user-auth.js";
 import {
   createProviderRegistryService,
   type ProviderRegistryService,
@@ -187,6 +188,7 @@ async function startIntegrationServer(
   const workspaceReadCaches = new WorkspaceReadCaches({ hub });
   const config: ServerRuntimeConfig = {
     appVersion: "0.0.0-dev",
+    authMode: "local",
     builtinSkillsRootPath,
     customModels: [],
     dataDir: serverDataDir,
@@ -214,6 +216,11 @@ async function startIntegrationServer(
     logger: testLogger,
   });
   await machineAuth.ensureReady();
+  const userAuth = await createUserAuthService({
+    dataDir: serverDataDir,
+    db,
+    logger: testLogger,
+  });
   const lifecycleDedupers = createLifecycleDedupers();
   const bbAppManagedConfig = await createBbAppManagedConfigReloader({
     config,
@@ -284,6 +291,7 @@ async function startIntegrationServer(
     lifecycleDedupers,
     logger: testLogger,
     machineAuth,
+    userAuth,
     pendingInteractions,
     sharedPorts,
     skillTreeRegistry,
@@ -320,7 +328,7 @@ async function startIntegrationServer(
   config.serverPort = port;
   const baseUrl = `http://${TEST_SERVER_HOST}:${port}`;
 
-  pluginService.bindSdk({ baseUrl });
+  pluginService.bindSdk({ baseUrl, serviceToken: userAuth.serviceToken });
   const builtinPlugins = new Set([
     PROJECT_CHECKOUT_BUILTIN_PLUGIN,
     ...(options.builtinPlugins ?? []),

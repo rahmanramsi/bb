@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { getThread, listEvents } from "@bb/db";
 import { afterEach, expect, it, vi } from "vitest";
 import { dispatchTurnDuringReprovision } from "../../src/services/threads/thread-turn-dispatch.js";
@@ -51,6 +52,7 @@ it("leaves reprovision unstarted when dispatch admission rejects the request", a
 
     await expect(
       dispatchTurnDuringReprovision({
+        authorUserId: LOCAL_OWNER_USER_ID,
         deps: harness.deps,
         environment,
         execution,

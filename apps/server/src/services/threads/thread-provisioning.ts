@@ -12,7 +12,7 @@ import {
   type ResolvedThreadExecutionOptions,
   type SystemMessageKind,
   type SystemMessageSubject,
-  type Thread,
+  type ThreadRecord,
   type ThreadTurnInitiator,
   type TurnRequestTarget,
 } from "@bb/domain";
@@ -54,19 +54,22 @@ import { applyLoggedThreadLifecycleEventInTransaction } from "./lifecycle-outcom
 import { buildThreadStatusChangeMetadata } from "./thread-runtime-display.js";
 import { runtimeErrorLogFields } from "../lib/error-log-fields.js";
 import { recordAcceptedPromptHistoryEntry } from "../prompt-history.js";
+import { NotificationBuffer } from "../lib/notification-buffer.js";
 
 interface RequestThreadProvisionArgs {
+  authorUserId: string | null;
   environmentIntent: ThreadProvisionEnvironmentIntent;
   execution: ResolvedThreadExecutionOptions;
   fork: ThreadForkDescriptor | null;
   input: PromptInput[];
   providerInput?: PromptInput[];
   startedOnBehalfOf: StartedOnBehalfOf | null;
-  thread: Thread;
+  thread: ThreadRecord;
   titleProvided: boolean;
 }
 
 interface RequestThreadTargetReprovisionArgs {
+  authorUserId: string | null;
   beforeRequestAppendInTransaction?: (args: { tx: DbTransaction }) => void;
   environment: EnvironmentRow;
   execution: ResolvedThreadExecutionOptions;
@@ -80,7 +83,7 @@ interface RequestThreadTargetReprovisionArgs {
     environmentProviderId: string;
     selection: EnvironmentProviderSelection;
   };
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 interface RequestThreadEnvironmentRestoreArgs {
@@ -89,7 +92,7 @@ interface RequestThreadEnvironmentRestoreArgs {
     environmentProviderId: string;
     selection: EnvironmentProviderSelection;
   };
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 interface AdvanceThreadProvisioningArgs {
@@ -104,13 +107,13 @@ interface CurrentProvisioningFailureThreadArgs {
 interface EnvironmentPayloadThreadArgs {
   context: ThreadProvisionContext;
   environment: EnvironmentRow;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 function getCurrentProvisioningFailureThread(
   deps: Pick<AppDeps, "db">,
   args: CurrentProvisioningFailureThreadArgs,
-): Thread | null {
+): ThreadRecord | null {
   const currentThread = getThread(deps.db, args.threadId);
   if (!currentThread || currentThread.deletedAt !== null) {
     clearThreadProvisionSchedule(args.threadId);
@@ -311,6 +314,7 @@ export function requestThreadProvision(
       target,
     });
     recordAcceptedPromptHistoryEntry(deps, {
+      authorUserId: args.authorUserId,
       thread: args.thread,
       input: args.input,
       initiator,
@@ -429,6 +433,7 @@ function appendReprovisionTurnRequest(
   args: Omit<RequestThreadTargetReprovisionArgs, "provider">,
 ) {
   const requestId = createClientTurnRequestId();
+  const notifications = new NotificationBuffer();
   const request = deps.db.transaction(
     (tx) => {
       args.beforeRequestAppendInTransaction?.({ tx });
@@ -455,8 +460,9 @@ function appendReprovisionTurnRequest(
           },
         );
       recordAcceptedPromptHistoryEntry(
-        { db: tx },
+        { db: tx, hub: notifications },
         {
+          authorUserId: args.authorUserId,
           thread: args.thread,
           input: args.input,
           initiator: args.initiator,
@@ -473,6 +479,7 @@ function appendReprovisionTurnRequest(
     request.notificationChanges,
     request.notificationMetadata,
   );
+  notifications.flushInto(deps.hub);
   return request;
 }
 

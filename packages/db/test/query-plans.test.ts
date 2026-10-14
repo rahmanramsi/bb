@@ -5,7 +5,7 @@ import {
   releaseFinishedEnvironmentPreparationOwners,
 } from "../src/data/environments.js";
 import { describe, expect, it } from "vitest";
-import { threadScope, turnScope } from "@bb/domain";
+import { threadScope, turnScope, LOCAL_OWNER_USER_ID } from "@bb/domain";
 import {
   createConnection,
   type DbConnection,
@@ -255,9 +255,11 @@ describe("slow query index plans", () => {
         "USING INDEX events_delegating_item_lookup_idx (thread_id=?)",
       );
       db.$client
-        .prepare(`INSERT INTO events
+        .prepare(
+          `INSERT INTO events
         (id, thread_id, scope_kind, sequence, type, item_kind, data, created_at)
-        VALUES (?, ?, 'thread', ?, 'item/started', ?, ?, 0)`)
+        VALUES (?, ?, 'thread', ?, 'item/started', ?, ?, 0)`,
+        )
         .run(
           "ordinary-tool",
           thread.id,
@@ -267,9 +269,11 @@ describe("slow query index plans", () => {
         );
       expect(hasStoredSpawnAgentToolCall(db, thread.id)).toBe(false);
       db.$client
-        .prepare(`INSERT INTO events
+        .prepare(
+          `INSERT INTO events
         (id, thread_id, scope_kind, sequence, type, item_kind, data, created_at)
-        VALUES (?, ?, 'thread', 3, 'item/completed', 'delegation', ?, 0)`)
+        VALUES (?, ?, 'thread', 3, 'item/completed', 'delegation', ?, 0)`,
+        )
         .run(
           "delegation",
           thread.id,
@@ -277,9 +281,11 @@ describe("slow query index plans", () => {
         );
       expect(hasStoredSpawnAgentToolCall(db, thread.id)).toBe(false);
       db.$client
-        .prepare(`INSERT INTO events
+        .prepare(
+          `INSERT INTO events
         (id, thread_id, scope_kind, sequence, type, item_kind, data, created_at)
-        VALUES (?, ?, 'thread', ?, 'item/completed', ?, ?, 0)`)
+        VALUES (?, ?, 'thread', ?, 'item/completed', ?, ?, 0)`,
+        )
         .run(
           "spawn-tool",
           thread.id,
@@ -1670,7 +1676,10 @@ describe("slow query index plans", () => {
     const { db } = setup();
 
     const captured = captureStatements(db, () => {
-      listThreadsWithPendingInteractionState(db, { includeHidden: false });
+      listThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
+        includeHidden: false,
+      });
     });
     const statement = captured.find(
       (entry) =>

@@ -39,7 +39,7 @@ import type {
   ClientTurnRequestId,
   CompletedTurnDisplay,
   ProviderComposerCommand,
-  Thread,
+  ThreadRecord,
   ThreadEvent,
   ThreadEventItemType,
 } from "@bb/domain";
@@ -131,7 +131,7 @@ interface TimelineTurnSummarySelection {
 
 function resolveThreadWorkspaceRoot(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
 ): string | null {
   if (thread.environmentId === null) {
     return null;
@@ -943,7 +943,7 @@ function listLatestTimelineHeadStateRows(
 
 function selectStandardTimelineEventRows(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   page: ThreadTimelinePageRequest,
   eventBudget: number,
   maxInlineOutputChars: InlineOutputCharLimit,
@@ -1282,7 +1282,7 @@ function completeThreadTimelineBuildProfile(
 
 function buildThreadTimelineInternal(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   options: BuildThreadTimelineOptions,
 ): BuildThreadTimelineInternalResult {
   const workspaceRoot = resolveThreadWorkspaceRoot(db, thread);
@@ -1547,7 +1547,7 @@ function buildThreadTimelineInternal(
 
 export function buildThreadTimelineWithProfile(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   options: BuildThreadTimelineOptions,
 ): { profile: ThreadTimelineBuildProfile; response: ThreadTimelineResponse } {
   return runEventLoopWorkSync(`timeline-build ${thread.id}`, () =>
@@ -1667,7 +1667,7 @@ function collectConversationRows(
 
 function resolveConversationHistorySequenceStart(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   options: BuildThreadConversationOutlineOptions,
 ): number {
   if (options.includeClearedContextHistory) return 0;
@@ -1681,7 +1681,7 @@ function resolveConversationHistorySequenceStart(
 
 function buildThreadConversationRows(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   options: BuildThreadConversationRowsOptions,
 ): TimelineConversationRow[] {
   return runEventLoopWorkSync(`conversation-rows ${thread.id}`, () => {
@@ -1733,7 +1733,7 @@ function buildThreadConversationRows(
 
 function selectThreadConversationOutline(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   options: BuildThreadConversationOutlineOptions,
   sequenceStart: number,
   precedingAgentMessageDeltaCount: number,
@@ -1814,7 +1814,7 @@ function selectThreadConversationOutline(
 
 export function buildThreadConversationOutline(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   options: BuildThreadConversationOutlineOptions,
 ): ThreadConversationOutlineResponse {
   return runEventLoopWorkSync(`conversation-outline ${thread.id}`, () => {
@@ -1846,7 +1846,7 @@ interface GetThreadMessageOptions extends BuildThreadConversationOutlineOptions 
 
 export function getThreadMessage(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   options: GetThreadMessageOptions,
 ): ThreadMessageResponse {
   const rows = buildThreadConversationRows(db, thread, {
@@ -1870,7 +1870,7 @@ export function getThreadMessage(
 }
 
 export function buildThreadConversationOutlineProjectionKey(
-  thread: Thread,
+  thread: ThreadRecord,
   outlineSequence: number,
   options: BuildThreadConversationOutlineOptions,
 ): string {
@@ -1901,13 +1901,15 @@ function parseThreadConversationOutlineItems(
   return result.success ? result.data : null;
 }
 
-function shouldMaterializeThreadConversationOutline(thread: Thread): boolean {
+function shouldMaterializeThreadConversationOutline(
+  thread: ThreadRecord,
+): boolean {
   return thread.status === "idle" || thread.status === "error";
 }
 
 export function loadThreadConversationOutline(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   options: LoadThreadConversationOutlineOptions,
 ): ThreadConversationOutlineResponse {
   const projectionKey = buildThreadConversationOutlineProjectionKey(
@@ -2039,7 +2041,7 @@ function scopeTimelineTurnDetailsRows(
 
 function resolveTimelineTurnDetailsRange(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   options: BuildTimelineTurnSummaryDetailsOptions,
 ): Pick<TimelineTurnSummarySelection, "sourceSeqEnd" | "sourceSeqStart"> {
   const lifecycle =
@@ -2064,7 +2066,7 @@ function resolveTimelineTurnDetailsRange(
 
 export function buildTimelineTurnSummaryDetails(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   options: BuildTimelineTurnSummaryDetailsOptions,
 ): TimelineTurnSummaryDetailsResponse {
   return db.transaction(() =>
@@ -2077,7 +2079,7 @@ export function buildTimelineTurnSummaryDetails(
 
 function buildTimelineTurnSummaryDetailsPage(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   options: BuildTimelineTurnSummaryDetailsOptions,
 ): TimelineTurnSummaryDetailsResponse {
   if (options.sourceSeqStart > options.sourceSeqEnd) {

@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -444,6 +445,7 @@ describe("retrying a failed turn", () => {
       failThread(harness, thread.id);
 
       const result = await retryFailedTurn(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         thread: requireThread(harness, thread.id),
         request: { turnRequestId: requestId, sendAt, reason: "Rate limited" },
       });
@@ -508,6 +510,7 @@ describe("retrying a failed turn", () => {
       failThread(harness, thread.id);
 
       const result = await retryFailedTurn(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         thread: requireThread(harness, thread.id),
         request: {
           turnRequestId: requestId,
@@ -540,6 +543,7 @@ describe("retrying a failed turn", () => {
       failThread(harness, thread.id);
 
       const result = await retryFailedTurn(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         thread: requireThread(harness, thread.id),
         request: { turnRequestId: null, sendAt: null, reason: "Retry" },
       });
@@ -567,6 +571,7 @@ describe("retrying a failed turn", () => {
       });
 
       await retryFailedTurn(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         thread: requireThread(harness, thread.id),
         request: { turnRequestId: requestId, sendAt: null, reason: "Retry" },
       });
@@ -588,6 +593,7 @@ describe("retrying a failed turn", () => {
       failThread(harness, thread.id);
       const retry = () =>
         retryFailedTurn(harness.deps, {
+          authorUserId: LOCAL_OWNER_USER_ID,
           thread: requireThread(harness, thread.id),
           request: {
             turnRequestId: requestId,
@@ -622,6 +628,7 @@ describe("retrying a failed turn", () => {
       );
       failThread(harness, thread.id);
       await retryFailedTurn(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         thread: requireThread(harness, thread.id),
         request: {
           turnRequestId: requestId,
@@ -640,6 +647,7 @@ describe("retrying a failed turn", () => {
       expect(failedAgain?.requestId).not.toBe(requestId);
 
       await retryFailedTurn(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         thread: requireThread(harness, thread.id),
         request: {
           turnRequestId: failedAgain?.requestId ?? null,
@@ -680,6 +688,7 @@ describe("retrying a failed turn", () => {
       const { thread } = seedFailableThread(harness, "host-limit");
       failThread(harness, thread.id);
       await retryFailedTurn(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         thread: requireThread(harness, thread.id),
         request: {
           turnRequestId: null,
@@ -711,6 +720,7 @@ describe("retrying a failed turn", () => {
       const { requestId, thread } = seedFailableThread(harness, "host-refuse");
       const retry = (turnRequestId: string | null) =>
         retryFailedTurn(harness.deps, {
+          authorUserId: LOCAL_OWNER_USER_ID,
           thread: requireThread(harness, thread.id),
           request: {
             turnRequestId,
@@ -821,6 +831,7 @@ describe("pooled provider retry integration", () => {
           threads: {
             retry: async (request) =>
               retryFailedTurn(harness.deps, {
+                authorUserId: LOCAL_OWNER_USER_ID,
                 thread: requireThread(harness, request.threadId),
                 request: {
                   turnRequestId: request.turnRequestId ?? null,

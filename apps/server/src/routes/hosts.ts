@@ -23,8 +23,10 @@ import type { PluginService } from "../services/plugins/plugin-service.js";
 import { COMMAND_TIMEOUT_MS } from "../constants.js";
 import { ApiError } from "../errors.js";
 import {
+  assertAdmin,
   getGateAuthKind,
   type GateAuthHeaderReader,
+  type PrincipalReader,
 } from "../request-context.js";
 import {
   listPublicHostsWithStatus,
@@ -78,7 +80,9 @@ function requireMutableHost(deps: AppDeps, hostId: string) {
   return host;
 }
 
-function assertHostManagementAllowed(context: GateAuthHeaderReader): void {
+function assertHostManagementAllowed(
+  context: GateAuthHeaderReader & PrincipalReader,
+): void {
   if (getGateAuthKind(context) === "machine") {
     throw new ApiError(
       403,
@@ -86,6 +90,7 @@ function assertHostManagementAllowed(context: GateAuthHeaderReader): void {
       "Machine credentials cannot manage hosts",
     );
   }
+  assertAdmin(context);
 }
 
 function assertNotServerMachine(deps: AppDeps, hostId: string): void {
@@ -432,6 +437,7 @@ export function registerHostRoutes(
   });
 
   post(routes.providerCliInstall, async (context, payload) => {
+    assertHostManagementAllowed(context);
     const hostId = context.req.param("id");
     assertUsableHostId(deps, { hostId });
     await deps.providerRegistry.whenProviderRegistered(payload.provider);

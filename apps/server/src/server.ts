@@ -40,6 +40,11 @@ import { registerPluginCatalogRoutes } from "./routes/plugin-catalog.js";
 import { registerPluginInstallJobRoutes } from "./routes/plugin-install-jobs.js";
 import { createPluginInstallJobs } from "./services/plugins/plugin-install-jobs.js";
 import { registerPromptHistoryRoutes } from "./routes/prompt-history.js";
+import { registerAuthRoutes } from "./routes/auth.js";
+import {
+  authenticateApiRequests,
+  authenticateRequest,
+} from "./authenticate.js";
 import { registerSkillsRegistryRoutes } from "./routes/skills-registry.js";
 import {
   createPluginService,
@@ -73,6 +78,7 @@ import {
   verifyAuthenticatedDaemon,
 } from "./internal/auth.js";
 import {
+  assertAdmin,
   captureTrustedRemoteAddress,
   resolveRequestAppSurface,
 } from "./request-context.js";
@@ -722,6 +728,10 @@ export function createApp(
   app.use("/internal/*", async (context, next) => {
     const normalizedPath = normalizeInternalAuthPath(context.req.path);
     if (normalizedPath === "/internal/hosts/enroll-key") {
+      if (deps.config.authMode === "multi") {
+        await authenticateRequest(deps, context);
+        assertAdmin(context);
+      }
       return next();
     }
     if (normalizedPath === "/internal/hosts/enroll") {
@@ -855,8 +865,12 @@ export function createApp(
     app.use(path, serverMoveWriteFreezeMiddleware(daemonWriteFreezeState));
   }
   const publicApi = new Hono();
+  publicApi.use("*", authenticateApiRequests(deps));
   publicApi.use("*", async (context, next) => {
-    if (PLUGIN_WIRE_HTTP_PATH.test(context.req.path)) {
+    if (
+      deps.config.authMode === "local" &&
+      PLUGIN_WIRE_HTTP_PATH.test(context.req.path)
+    ) {
       return next();
     }
     const problem = browserRequestProblem(context, deps);
@@ -874,6 +888,7 @@ export function createApp(
     notifyCatalogChanged: () => deps.hub.notifySystem(["plugins-changed"]),
     warn: (message) => deps.logger.warn(message),
   });
+  registerAuthRoutes(publicApi, deps);
   registerProjectRoutes(publicApi, deps);
   registerPromptHistoryRoutes(publicApi, deps);
   registerThreadSectionRoutes(publicApi, deps);
@@ -951,10 +966,12 @@ export function createApp(
 
   app.get(
     "/ws",
-    upgradeWebSocket((context) => {
+    upgradeWebSocket(async (context) => {
+      const principal = await authenticateRequest(deps, context);
       assertBrowserWebSocketAllowed(context);
       return {
-        onOpen: (_event, socket) => onClientSocketOpen(deps.hub, socket),
+        onOpen: (_event, socket) =>
+          onClientSocketOpen(deps.hub, socket, principal.userId),
         onMessage: (event, socket) =>
           onClientSocketMessage(deps, socket, event.data),
         onClose: (_event, socket) => onClientSocketClose(deps, socket),
@@ -964,7 +981,8 @@ export function createApp(
 
   app.get(
     "/ws/terminals/:terminalId",
-    upgradeWebSocket((context) => {
+    upgradeWebSocket(async (context) => {
+      await authenticateRequest(deps, context);
       assertBrowserWebSocketAllowed(context);
       const terminalId = context.req.param("terminalId");
       const query = terminalWebSocketQuerySchema.safeParse({

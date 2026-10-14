@@ -23,6 +23,7 @@ function toolUseInteraction(args: {
     statusReason: null,
     createdAt: 1,
     resolvedAt: null,
+    resolvedByUserId: null,
     resolution: null,
     payload: {
       kind: "approval",

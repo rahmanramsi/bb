@@ -7,7 +7,13 @@ import {
   machineEnvironmentView,
   replaceMachineEnvironment,
 } from "../services/machines/environment-settings.js";
-import { getGateAuthKind } from "../request-context.js";
+import {
+  assertAdmin,
+  getGateAuthKind,
+  requirePrincipal,
+  type GateAuthHeaderReader,
+  type PrincipalReader,
+} from "../request-context.js";
 import { serverAccessStatus } from "../services/machines/server-access.js";
 import {
   getAppSettings,
@@ -164,7 +170,12 @@ export function registerSystemRoutes(
   });
 
   get(routes.attention, (context) =>
-    context.json({ hasAttention: hasActiveThreadAttention(deps.db) }),
+    context.json({
+      hasAttention: hasActiveThreadAttention(
+        deps.db,
+        requirePrincipal(context).userId,
+      ),
+    }),
   );
 
   function readAppKeybindingOverrides(): AppKeybindingOverrides {
@@ -198,7 +209,7 @@ export function registerSystemRoutes(
     return resolveAppTheme(themeRoot, themeId, faviconColor);
   }
 
-  async function buildSystemConfigResponse(serverUrl: string) {
+  async function buildSystemConfigResponse(serverUrl: string, userId: string) {
     const keybindingOverrides = readAppKeybindingOverrides();
     const primaryHostId = resolvePrimaryHostId(deps);
     const localHelperPorts = [
@@ -220,8 +231,8 @@ export function registerSystemRoutes(
       performanceDiagnosticsAvailable:
         deps.config.performanceDiagnosticsAvailable,
       appearance: await resolveSelectedTheme(
-        getStoredThemeId(deps.db),
-        getStoredFaviconColor(deps.db),
+        getStoredThemeId(deps.db, userId),
+        getStoredFaviconColor(deps.db, userId),
       ),
       customThemes: listCustomThemeNames(themeRoot),
       pluginThemes: pluginService.listThemes(),
@@ -241,7 +252,12 @@ export function registerSystemRoutes(
 
   get(routes.config, async (context) => {
     const serverUrl = resolveSystemServerUrl(context.req, deps.config);
-    return context.json(await buildSystemConfigResponse(serverUrl));
+    return context.json(
+      await buildSystemConfigResponse(
+        serverUrl,
+        requirePrincipal(context).userId,
+      ),
+    );
   });
 
   function compatibleGeneralSettings() {
@@ -252,6 +268,7 @@ export function registerSystemRoutes(
     };
   }
   post(routes.setMachineEnvironmentVariable, async (context, payload) => {
+    assertAdmin(context);
     if (getGateAuthKind(context) === "machine")
       throw new ApiError(
         403,
@@ -270,6 +287,7 @@ export function registerSystemRoutes(
   });
 
   del(routes.deleteMachineEnvironmentVariable, async (context, payload) => {
+    assertAdmin(context);
     if (getGateAuthKind(context) === "machine")
       throw new ApiError(
         403,
@@ -286,6 +304,7 @@ export function registerSystemRoutes(
     context.json(await machineEnvironmentView(deps.db)),
   );
   put(routes.replaceMachineEnvironment, async (context, payload) => {
+    assertAdmin(context);
     if (getGateAuthKind(context) === "machine")
       throw new ApiError(
         403,
@@ -299,6 +318,7 @@ export function registerSystemRoutes(
   });
 
   put(routes.generalSettings, (context, payload) => {
+    assertAdmin(context);
     const { showUnhandledProviderEvents, ...settings } = payload;
     const current = getAppSettings(deps.db);
     const diagnosticValue =
@@ -342,12 +362,14 @@ export function registerSystemRoutes(
   });
 
   put(routes.keyboardSettings, (context, payload) => {
+    assertAdmin(context);
     setAppKeybindingOverrides(deps.db, payload);
     deps.hub.notifySystem(["config-changed"]);
     return context.json(getAppKeybindingOverrides(deps.db));
   });
 
   put(routes.experiments, (context, payload) => {
+    assertAdmin(context);
     setExperiments(deps.db, payload);
     deps.hub.notifySystem(["config-changed"]);
     return context.json(getExperiments(deps.db));
@@ -375,8 +397,9 @@ export function registerSystemRoutes(
   put(routes.appearance, async (context, payload) => {
     const { themeId, faviconColor } = payload;
     await requireKnownTheme(themeId);
-    setStoredAppearance(deps.db, { themeId, faviconColor });
-    deps.hub.notifySystem(["config-changed"]);
+    const userId = requirePrincipal(context).userId;
+    setStoredAppearance(deps.db, userId, { themeId, faviconColor });
+    deps.hub.notifyUserSystem(userId, ["config-changed"]);
     return context.json(await resolveSelectedTheme(themeId, faviconColor));
   });
 
@@ -384,7 +407,10 @@ export function registerSystemRoutes(
     const themeId = context.req.param("id");
     await requireKnownTheme(themeId);
     return context.json(
-      await resolveSelectedTheme(themeId, getStoredFaviconColor(deps.db)),
+      await resolveSelectedTheme(
+        themeId,
+        getStoredFaviconColor(deps.db, requirePrincipal(context).userId),
+      ),
     );
   });
 
@@ -394,13 +420,14 @@ export function registerSystemRoutes(
       custom: listCustomThemeNames(themeRoot),
       plugins: pluginService.listThemes(),
       active: await resolveSelectedTheme(
-        getStoredThemeId(deps.db),
-        getStoredFaviconColor(deps.db),
+        getStoredThemeId(deps.db, requirePrincipal(context).userId),
+        getStoredFaviconColor(deps.db, requirePrincipal(context).userId),
       ),
     }),
   );
 
   post(routes.reloadConfig, async (context) => {
+    assertAdmin(context);
     try {
       await deps.bbAppManagedConfig.reload({ notify: true });
     } catch (error) {
@@ -604,16 +631,17 @@ export function registerSystemRoutes(
     await deps.providerRegistry.whenRegistrationsSettled();
     return context.json(providerManagementCatalog(deps, pluginService));
   });
-  put(routes.providerEnabled, async (context, payload) =>
-    context.json(
+  put(routes.providerEnabled, async (context, payload) => {
+    assertAdmin(context);
+    return context.json(
       await setProviderEnabled(
         deps,
         pluginService,
         context.req.param("id"),
         payload.enabled,
       ),
-    ),
-  );
+    );
+  });
 
   get(routes.providerLogo, async (context) => {
     const providerId = context.req.param("id");
@@ -656,9 +684,10 @@ export function registerSystemRoutes(
     context.json(await buildAiServicesView(deps)),
   );
 
-  put(routes.setAiServiceSelection, async (context, payload) =>
-    context.json(await updateAiServiceSelection(deps, payload)),
-  );
+  put(routes.setAiServiceSelection, async (context, payload) => {
+    assertAdmin(context);
+    return context.json(await updateAiServiceSelection(deps, payload));
+  });
 
   post(routes.testAiService, async (context, payload) =>
     context.json(
@@ -736,7 +765,7 @@ export function registerSystemRoutes(
 }
 
 function assertCliCommandChangeAllowed(
-  context: Parameters<typeof getGateAuthKind>[0],
+  context: GateAuthHeaderReader & PrincipalReader,
 ): void {
   if (getGateAuthKind(context) === "machine") {
     throw new ApiError(
@@ -745,10 +774,11 @@ function assertCliCommandChangeAllowed(
       "Machine credentials cannot change the bb command on the bb server's computer",
     );
   }
+  assertAdmin(context);
 }
 
 function assertAppUpdateAllowed(
-  context: Parameters<typeof getGateAuthKind>[0],
+  context: GateAuthHeaderReader & PrincipalReader,
 ): void {
   if (getGateAuthKind(context) === "machine") {
     throw new ApiError(
@@ -757,4 +787,5 @@ function assertAppUpdateAllowed(
       "Machine credentials cannot update the bb server",
     );
   }
+  assertAdmin(context);
 }

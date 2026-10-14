@@ -5,7 +5,7 @@ import {
   type Host,
   type Project,
   type PromptInput,
-  type Thread,
+  type ThreadRecord,
   type StartedOnBehalfOf,
   type ThreadCreateOrigin,
   type ThreadQueuedMessage,
@@ -80,7 +80,7 @@ export type MessageDispatchHookPassOutcome =
 
 export interface MessageDispatchHookPassRequest {
   /** The target thread; a `pending` row for a first message. */
-  thread: Thread;
+  thread: ThreadRecord;
   /** The thread's public DTO, as the hook context carries it. */
   threadResponse: ThreadResponse;
   project: Project;

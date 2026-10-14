@@ -1,9 +1,11 @@
 import type { CustomProviderModel } from "@bb/config/bb-app-managed-config";
+import type { ServerAuthMode } from "@bb/config/server";
 import type { DbConnection } from "@bb/db";
 import type { FeatureFlags, ProviderNativeSkillRoots } from "@bb/domain";
 import type { Logger } from "@bb/logger";
 import type { PendingInteractionLifecycle } from "./services/interactions/pending-interactions.js";
 import type { MachineAuthService } from "./services/machine-auth.js";
+import type { UserAuthService } from "./services/user-auth.js";
 import type { AppUpdateService } from "./services/system/app-update.js";
 import type { CliCommandService } from "./services/system/cli-command.js";
 import type { AppVersionService } from "./services/system/app-version.js";
@@ -25,6 +27,7 @@ export type ServerLogger = Pick<Logger, "debug" | "error" | "info" | "warn">;
 
 export interface ServerRuntimeConfig {
   appVersion: string;
+  authMode: ServerAuthMode;
   builtinSkillsRootPath: string;
   customModels: CustomProviderModel[];
   dataDir: string;
@@ -66,6 +69,7 @@ export interface ServerAppDeps extends AppDeps {
   appVersion: AppVersionService;
   bbAppManagedConfig: BbAppManagedConfigReloader;
   cliCommand: CliCommandService;
+  userAuth: UserAuthService;
 }
 
 export type WorkSessionDeps = Pick<

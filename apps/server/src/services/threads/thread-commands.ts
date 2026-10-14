@@ -7,7 +7,7 @@ import {
   PermissionEscalation,
   ResolvedThreadExecutionOptions,
   RuntimeThreadExecutionOptions,
-  Thread,
+  ThreadRecord,
   ClientTurnRequestId,
   EnvironmentStatus,
   promptInputHasCommandMention,
@@ -80,7 +80,7 @@ export interface ThreadStartCommandArgs {
   providerId: string;
   requestId: ClientTurnRequestId;
   syncGeneratedTitle: boolean;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 interface PreparedTurnSubmitCommandBuildArgs {
@@ -108,7 +108,7 @@ interface PrepareTurnSubmitCommandPayloadArgs {
   inputGroups?: PromptInput[][];
   providerThreadId?: string;
   target: TurnSubmitTarget;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 interface FinalizeTurnSubmitCommandPayloadArgs {
@@ -148,7 +148,7 @@ interface DispatchThreadRenameCommandArgs {
 interface DispatchThreadUnarchiveCommandArgs {
   environment: ThreadUnarchiveCommandEnvironment;
   providerThreadId: string;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 interface DispatchArchivedThreadProviderArchiveCommandArgs {

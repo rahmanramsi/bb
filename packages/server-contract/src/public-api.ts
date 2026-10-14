@@ -424,6 +424,23 @@ import {
   type ServerMoveStatus,
   type ServerMoveStatusResponse,
 } from "./api/server-move.js";
+import {
+  authSignInRequestSchema,
+  authSignUpRequestSchema,
+  createPersonalAccessTokenRequestSchema,
+  createUserInviteRequestSchema,
+  type AuthSessionResponse,
+  type AuthSignInRequest,
+  type AuthSignUpRequest,
+  type AuthUserResponse,
+  type CreatePersonalAccessTokenRequest,
+  type CreatePersonalAccessTokenResponse,
+  type CreateUserInviteRequest,
+  type CreateUserInviteResponse,
+  type PathPersonalAccessTokenId,
+  type PersonalAccessTokenListResponse,
+  type UserListResponse,
+} from "./api/auth.js";
 import type { ApiError } from "./errors.js";
 
 type PathProjectSourceId = { param: { id: string; sourceId: string } };
@@ -433,6 +450,74 @@ type PathThreadInteractionId = {
 };
 
 export const publicApiRoutes = {
+  auth: {
+    session: defineRoute({
+      path: "/auth/session",
+      method: "get",
+      request: noRequest(),
+      response: jsonResponse<AuthSessionResponse>(),
+    }),
+    signIn: defineRoute({
+      path: "/auth/sign-in",
+      method: "post",
+      request: jsonRequest<EmptyInput, AuthSignInRequest>(
+        authSignInRequestSchema,
+      ),
+      response: jsonResponse<AuthUserResponse>(),
+    }),
+    signUp: defineRoute({
+      path: "/auth/sign-up",
+      method: "post",
+      request: jsonRequest<EmptyInput, AuthSignUpRequest>(
+        authSignUpRequestSchema,
+      ),
+      response: jsonResponse<AuthUserResponse>({ status: 201 }),
+    }),
+    signOut: defineRoute({
+      path: "/auth/sign-out",
+      method: "post",
+      request: noRequest<EmptyInput>(),
+      response: jsonResponse<{ ok: true }>(),
+    }),
+    listTokens: defineRoute({
+      path: "/auth/tokens",
+      method: "get",
+      request: noRequest(),
+      response: jsonResponse<PersonalAccessTokenListResponse>(),
+    }),
+    createToken: defineRoute({
+      path: "/auth/tokens",
+      method: "post",
+      request: jsonRequest<EmptyInput, CreatePersonalAccessTokenRequest>(
+        createPersonalAccessTokenRequestSchema,
+      ),
+      response: jsonResponse<CreatePersonalAccessTokenResponse>({
+        status: 201,
+      }),
+    }),
+    revokeToken: defineRoute({
+      path: "/auth/tokens/:id",
+      method: "delete",
+      request: noRequest<PathPersonalAccessTokenId>(),
+      response: jsonResponse<{ ok: true }>(),
+    }),
+    createInvite: defineRoute({
+      path: "/auth/invites",
+      method: "post",
+      request: jsonRequest<EmptyInput, CreateUserInviteRequest>(
+        createUserInviteRequestSchema,
+      ),
+      response: jsonResponse<CreateUserInviteResponse>({ status: 201 }),
+    }),
+  },
+  users: {
+    list: defineRoute({
+      path: "/users",
+      method: "get",
+      request: noRequest(),
+      response: jsonResponse<UserListResponse>(),
+    }),
+  },
   promptHistory: {
     list: defineRoute({
       path: "/prompt-history",

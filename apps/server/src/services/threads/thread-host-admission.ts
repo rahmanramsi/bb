@@ -1,10 +1,10 @@
 import { getEnvironment, getHost, type DbQueryConnection } from "@bb/db";
-import type { Thread } from "@bb/domain";
+import type { ThreadRecord } from "@bb/domain";
 import { ApiError } from "../../errors.js";
 
 export function assertThreadHostAcceptsWork(
   db: DbQueryConnection,
-  thread: Pick<Thread, "environmentId">,
+  thread: Pick<ThreadRecord, "environmentId">,
 ): void {
   if (thread.environmentId === null) return;
   const environment = getEnvironment(db, thread.environmentId);

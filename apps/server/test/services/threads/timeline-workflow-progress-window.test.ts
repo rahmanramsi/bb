@@ -5,7 +5,7 @@ import {
   threadScope,
   turnScope,
 } from "@bb/domain";
-import type { Thread } from "@bb/domain";
+import type { ThreadRecord } from "@bb/domain";
 import {
   createConnection,
   createProject,
@@ -42,7 +42,7 @@ const execution = {
 
 type EventInput = Parameters<typeof insertEvents>[2][number];
 
-function setup(): { db: DbConnection; thread: Thread } {
+function setup(): { db: DbConnection; thread: ThreadRecord } {
   const db = createConnection(":memory:");
   migrate(db);
   const host = upsertHost(db, noopNotifier, {
@@ -96,7 +96,7 @@ function workflowTaskData(args: {
 
 function seedWorkflowThread(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   options: {
     pendingTurnItems?: number;
     snapshotCount: number;
@@ -284,7 +284,7 @@ function seedWorkflowThread(
 
 function buildPage(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   cursor: TimelinePaginationCursor | null,
   eventBudget = LARGE_BUDGET,
 ) {
@@ -308,7 +308,7 @@ interface WalkResult {
   rows: TimelineRow[];
 }
 
-function walkAllPages(db: DbConnection, thread: Thread): WalkResult {
+function walkAllPages(db: DbConnection, thread: ThreadRecord): WalkResult {
   const rowsByPage: TimelineRow[][] = [];
   let cursor: TimelinePaginationCursor | null = null;
   let maxEventDataBytes = 0;

@@ -6,7 +6,7 @@ import {
   setMachineEnvironmentVariable,
   deleteMachineEnvironmentVariable,
 } from "../services/machines/environment-storage.js";
-import { getGateAuthKind } from "../request-context.js";
+import { getGateAuthKind, requirePrincipal } from "../request-context.js";
 import {
   countProjectSources,
   findOrCreateProjectByLocalPathSource,
@@ -214,22 +214,25 @@ function parseProjectListIncludes(
 function buildProjectsWithThreadsResponse(
   deps: AppDeps,
   options: ProjectListOptions,
+  viewerUserId: string,
 ): ProjectWithThreadsResponse[] {
   return buildProjectsWithThreadsResponseFromRows(
     deps,
     listDiscoverableProjects(deps, options),
+    viewerUserId,
   );
 }
 
 function buildProjectsWithThreadsResponseFromRows(
   deps: AppDeps,
   projectRows: ProjectResponseProjectFields[],
+  viewerUserId: string,
 ): ProjectWithThreadsResponse[] {
   const projects = buildProjectResponsesFromRows(deps, projectRows);
   const projectIds = projects.map((project) => project.id);
   const threadRows = listThreadsWithPendingInteractionStateForProjects(
     deps.db,
-    { archived: false, projectIds },
+    { archived: false, projectIds, viewerUserId },
   );
   const threadResponses = toThreadListEntryResponses(deps, {
     threads: threadRows,
@@ -258,7 +261,7 @@ function buildProjectsWithThreadsResponseFromRows(
   }));
 }
 
-function buildSidebarBootstrapResponse(deps: AppDeps) {
+function buildSidebarBootstrapResponse(deps: AppDeps, viewerUserId: string) {
   const personalProject = getPersonalProject(deps.db);
   if (!personalProject) {
     throw new ApiError(
@@ -270,6 +273,7 @@ function buildSidebarBootstrapResponse(deps: AppDeps) {
   const personalProjectResponse = buildProjectsWithThreadsResponseFromRows(
     deps,
     [personalProject],
+    viewerUserId,
   )[0];
   if (!personalProjectResponse) {
     throw new ApiError(
@@ -283,6 +287,7 @@ function buildSidebarBootstrapResponse(deps: AppDeps) {
     projects: buildProjectsWithThreadsResponseFromRows(
       deps,
       listPublicProjects(deps.db),
+      viewerUserId,
     ),
     personalProject: personalProjectResponse,
   };
@@ -422,7 +427,13 @@ export function registerProjectRoutes(app: Hono, deps: AppDeps): void {
       includePersonal: query.includePersonal === "true",
     };
     if (includes.has("threads")) {
-      return context.json(buildProjectsWithThreadsResponse(deps, options));
+      return context.json(
+        buildProjectsWithThreadsResponse(
+          deps,
+          options,
+          requirePrincipal(context).userId,
+        ),
+      );
     }
     return context.json(
       buildProjectResponsesFromRows(
@@ -433,7 +444,9 @@ export function registerProjectRoutes(app: Hono, deps: AppDeps): void {
   });
 
   get(routes.sidebarBootstrap, (context) =>
-    context.json(buildSidebarBootstrapResponse(deps)),
+    context.json(
+      buildSidebarBootstrapResponse(deps, requirePrincipal(context).userId),
+    ),
   );
 
   post(routes.create, async (context, payload) => {
@@ -498,6 +511,7 @@ export function registerProjectRoutes(app: Hono, deps: AppDeps): void {
       listProjectPromptHistory(deps, {
         projectId,
         limit,
+        userId: requirePrincipal(context).userId,
       }),
     );
   });

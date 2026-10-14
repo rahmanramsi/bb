@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { threadStatusSchema, type Thread } from "@bb/domain";
+import { threadStatusSchema, type ThreadRecord } from "@bb/domain";
 import { getLatestThreadSequence, type DbConnection } from "@bb/db";
 import type { TimelinePaginationCursor } from "@bb/server-contract";
 import { ApiError } from "../../errors.js";
@@ -36,7 +36,7 @@ function decodeTimelineCursor(anchorId: string): z.infer<typeof cursorSchema> {
 
 export function resolveTimelineSnapshot(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   page: ThreadTimelinePageRequest,
   surface: string,
   requestedMaxSeq?: number,

@@ -1,5 +1,9 @@
 import { overwriteStoredUiPreference } from "@bb/db";
-import { defaultUiPreferences, UI_PREFERENCE_KEYS } from "@bb/domain";
+import {
+  defaultUiPreferences,
+  UI_PREFERENCE_KEYS,
+  LOCAL_OWNER_USER_ID,
+} from "@bb/domain";
 import { describe, expect, it, vi } from "vitest";
 import { readJson } from "../helpers/json.js";
 import { withTestHarness, type TestAppHarness } from "../helpers/test-app.js";
@@ -38,6 +42,7 @@ describe("public ui preferences", () => {
         const expected =
           previous === "__builtin__" ? "thread-list/thread-list" : previous;
         overwriteStoredUiPreference(harness.deps.db, {
+          userId: LOCAL_OWNER_USER_ID,
           key,
           valueJson: JSON.stringify(previous),
         });
@@ -67,6 +72,7 @@ describe("public ui preferences", () => {
       const retired = ["sidebar.navigationProvider", "sidebar.headerProvider"];
       for (const key of retired) {
         overwriteStoredUiPreference(harness.deps.db, {
+          userId: LOCAL_OWNER_USER_ID,
           key,
           valueJson: JSON.stringify("garden/icons"),
         });
@@ -280,7 +286,7 @@ describe("public ui preferences", () => {
       });
       expect(
         harness.db.$client
-          .prepare("SELECT key FROM ui_preferences WHERE key = ?")
+          .prepare("SELECT key FROM user_settings WHERE key = ?")
           .get("sidebar.organizationMode"),
       ).toBeUndefined();
     });
@@ -334,7 +340,7 @@ describe("public ui preferences", () => {
         );
         harness.db.$client
           .prepare(
-            "INSERT INTO ui_preferences (key, value_json, revision, updated_at) VALUES (?, ?, 3, 1)",
+            `INSERT INTO user_settings (user_id, key, value_json, revision, updated_at) VALUES ('${LOCAL_OWNER_USER_ID}', ?, ?, 3, 1)`,
           )
           .run("sidebar.organizationMode", JSON.stringify(value));
         expect(await readJson(await listPreferences(harness))).toMatchObject({
@@ -348,7 +354,7 @@ describe("public ui preferences", () => {
 
   it("writes with revision checks, broadcasts, and rejects stale writes", async () => {
     await withTestHarness(async (harness) => {
-      const notifySystem = vi.spyOn(harness.hub, "notifySystem");
+      const notifyUserSystem = vi.spyOn(harness.hub, "notifyUserSystem");
 
       const first = await putPreference(harness, "sidebar.organizationMode", {
         expectedRevision: 0,
@@ -360,7 +366,9 @@ describe("public ui preferences", () => {
         revision: 1,
         value: "machine",
       });
-      expect(notifySystem).toHaveBeenCalledWith(["ui-preferences-changed"]);
+      expect(notifyUserSystem).toHaveBeenCalledWith(LOCAL_OWNER_USER_ID, [
+        "ui-preferences-changed",
+      ]);
 
       const stale = await putPreference(harness, "sidebar.organizationMode", {
         expectedRevision: 0,
@@ -372,7 +380,7 @@ describe("public ui preferences", () => {
         details: { currentRevision: 1 },
         message: "UI preference changed on another client",
       });
-      expect(notifySystem).toHaveBeenCalledTimes(1);
+      expect(notifyUserSystem).toHaveBeenCalledTimes(1);
 
       const listed = (await readJson(await listPreferences(harness))) as {
         preferences: Record<string, { revision: number; value: unknown }>;
@@ -457,7 +465,7 @@ describe("public ui preferences", () => {
   it("falls back to the default when a stored value no longer parses", async () => {
     await withTestHarness(async (harness) => {
       harness.db.$client.exec(
-        `INSERT INTO ui_preferences (key, value_json, revision, updated_at) VALUES ('sidebar.organizationMode', '"by-color"', 4, 1), ('sidebar.unknownKey', '1', 2, 1)`,
+        `INSERT INTO user_settings (user_id, key, value_json, revision, updated_at) VALUES ('${LOCAL_OWNER_USER_ID}', 'sidebar.organizationMode', '"by-color"', 4, 1), ('${LOCAL_OWNER_USER_ID}', 'sidebar.unknownKey', '1', 2, 1)`,
       );
       const listed = (await readJson(await listPreferences(harness))) as {
         preferences: Record<string, { revision: number; value: unknown }>;

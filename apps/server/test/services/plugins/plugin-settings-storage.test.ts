@@ -1,3 +1,4 @@
+import { actAsLocalOwner } from "../../helpers/principal.js";
 import { createPluginUpdateJobs } from "../../../src/services/plugins/plugin-update-jobs.js";
 import {
   mkdtemp,
@@ -292,6 +293,8 @@ describe("plugin settings + storage", () => {
       ).rejects.toThrow("lowercase letters only");
 
       const app = new Hono();
+
+      actAsLocalOwner(app);
       registerPluginRoutes(
         app,
         { config: { serverPort: 3334 }, db },
@@ -357,6 +360,7 @@ describe("plugin settings + storage", () => {
     it("serves schema+values over the routes; PUT validates with 400s", async () => {
       await installConfigurable();
       const app = new Hono();
+      actAsLocalOwner(app);
       registerPluginRoutes(
         app,
         { config: { serverPort: 3334 }, db },

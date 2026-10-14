@@ -4,7 +4,7 @@ import {
   removeCommandMentionsFromPromptInput,
   type PromptInput,
   type PromptMentionCommandTrigger,
-  type Thread,
+  type ThreadRecord,
 } from "@bb/domain";
 import {
   countWords,
@@ -77,7 +77,7 @@ export function deriveTitleFallback(input: PromptInput[]): string | null {
 const FORK_TITLE_PATTERN = /^\((\d+)\) (.+)$/s;
 
 export function deriveForkTitle(
-  source: Pick<Thread, "title" | "titleFallback">,
+  source: Pick<ThreadRecord, "title" | "titleFallback">,
 ): string | null {
   const sourceTitle = source.title?.trim() || source.titleFallback?.trim();
   if (!sourceTitle) {

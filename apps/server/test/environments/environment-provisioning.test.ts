@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import {
   environments,
   getEnvironment,
@@ -33,6 +34,7 @@ describe("environment reprovisioning", () => {
       let thrownError: ApiError | null = null;
       try {
         await createThreadFromRequest(harness.deps, {
+          createdByUserId: LOCAL_OWNER_USER_ID,
           startedOnBehalfOf: null,
           environment: {
             type: "host",

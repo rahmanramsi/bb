@@ -8,8 +8,6 @@ import {
   getStoredTurnRequestEventForTurn,
   getThread,
   listStoredTurnStartedKeys,
-  noopNotifier,
-  updateThread,
   type StoredTurnRequestEventRow,
 } from "@bb/db";
 import {
@@ -44,7 +42,7 @@ import type {
   ThreadTurnInitiator,
   ThreadChangeKind,
   ThreadChangeMetadata,
-  Thread,
+  ThreadRecord,
 } from "@bb/domain";
 import { ApiError, TurnStartGuardError } from "../../errors.js";
 import type { AppDeps } from "../../types.js";
@@ -224,25 +222,16 @@ function buildClientTurnRequestedEventData(
 
 type AppendClientTurnEvent = (args: AppendThreadEventArgs) => number;
 
-interface ThreadReadStateUpdate {
-  changed: boolean;
-  projectId: string;
-  threadId: string;
-}
-
 interface AppendThreadEventTransactionResult {
-  readStateUpdate: ThreadReadStateUpdate | null;
   sequence: number;
 }
 
 interface AppendThreadEventsTransactionResult {
-  readStateUpdates: readonly ThreadReadStateUpdate[];
   sequences: number[];
 }
 
 interface BuildAppendThreadEventNotificationMetadataArgs {
   sequence: number;
-  readStateUpdate: ThreadReadStateUpdate | null;
   eventType: ThreadEventType;
 }
 
@@ -297,49 +286,14 @@ function appendBuiltClientTurnEvent(
   }
 }
 
-function isThreadReadStateUpdate(
-  result: ThreadReadStateUpdate | null,
-): result is ThreadReadStateUpdate {
-  return result !== null;
-}
-
-function applyUserTurnReadForEvent(
-  db: DbTransaction,
-  args: AppendThreadEventArgs,
-): ThreadReadStateUpdate | null {
-  if (args.type !== "client/turn/requested") {
-    return null;
-  }
-  if (args.data.initiator !== "user") {
-    return null;
-  }
-
-  const previousThread = getThread(db, args.threadId);
-  const updatedThread = updateThread(db, noopNotifier, args.threadId, {
-    lastReadAt: Date.now(),
-  });
-  if (!previousThread || !updatedThread) {
-    return null;
-  }
-
-  return {
-    changed: updatedThread.lastReadAt !== previousThread.lastReadAt,
-    projectId: updatedThread.projectId,
-    threadId: updatedThread.id,
-  };
-}
-
 function appendThreadEventsInTransactionWithAttention(
   db: DbTransaction,
   args: readonly AppendThreadEventArgs[],
 ): AppendThreadEventsTransactionResult {
   assertStoredTurnStartedForEvents(db, args);
   const sequences = appendStoredThreadEventsInTransaction(db, args);
-  const readStateUpdates = args
-    .map((eventArgs) => applyUserTurnReadForEvent(db, eventArgs))
-    .filter(isThreadReadStateUpdate);
 
-  return { readStateUpdates, sequences };
+  return { sequences };
 }
 
 function appendThreadEventInTransactionWithAttention(
@@ -352,35 +306,21 @@ function appendThreadEventInTransactionWithAttention(
     throw new Error("Expected one appended thread event sequence");
   }
 
-  return {
-    readStateUpdate: result.readStateUpdates[0] ?? null,
-    sequence,
-  };
+  return { sequence };
 }
 
-function buildAppendThreadEventNotificationChanges(
-  readStateUpdate: ThreadReadStateUpdate | null,
-): ThreadChangeKind[] {
-  const changes: ThreadChangeKind[] = ["events-appended"];
-  if (readStateUpdate?.changed === true) {
-    changes.push("read-state-changed");
-  }
-  return changes;
+function buildAppendThreadEventNotificationChanges(): ThreadChangeKind[] {
+  return ["events-appended"];
 }
 
 function buildAppendThreadEventNotificationMetadata({
   sequence,
-  readStateUpdate,
   eventType,
 }: BuildAppendThreadEventNotificationMetadataArgs): ThreadChangeMetadata {
-  const metadata: ThreadChangeMetadata = {
+  return {
     eventTypes: [eventType],
     timelineSequence: sequence,
   };
-  if (readStateUpdate?.changed === true) {
-    metadata.projectId = readStateUpdate.projectId;
-  }
-  return metadata;
 }
 
 function getTurnStartKey(args: TurnStartKey): string {
@@ -474,10 +414,9 @@ export function appendThreadEvent(
   );
   deps.hub.notifyThread(
     args.threadId,
-    buildAppendThreadEventNotificationChanges(result.readStateUpdate),
+    buildAppendThreadEventNotificationChanges(),
     buildAppendThreadEventNotificationMetadata({
       sequence: result.sequence,
-      readStateUpdate: result.readStateUpdate,
       eventType: args.type,
     }),
   );
@@ -545,12 +484,9 @@ export function appendPreparedClientTurnRequestedEventWithNotificationInTransact
   return {
     requestId: args.requestId,
     sequence: result.sequence,
-    notificationChanges: buildAppendThreadEventNotificationChanges(
-      result.readStateUpdate,
-    ),
+    notificationChanges: buildAppendThreadEventNotificationChanges(),
     notificationMetadata: buildAppendThreadEventNotificationMetadata({
       sequence: result.sequence,
-      readStateUpdate: result.readStateUpdate,
       eventType: args.type,
     }),
   };
@@ -846,7 +782,7 @@ export function getActiveTurnId(
 
 export function isManualCompactionActive(
   deps: ThreadEventReadDeps,
-  thread: Pick<Thread, "id" | "status">,
+  thread: Pick<ThreadRecord, "id" | "status">,
 ): boolean {
   if (thread.status !== "active") {
     return false;

@@ -13,7 +13,8 @@ import {
   type Environment,
   type ProjectSource,
   type ProvisioningTranscriptEntry,
-  type Thread,
+  type ThreadRecord,
+  LOCAL_OWNER_USER_ID,
 } from "@bb/domain";
 import { type ThreadProvisionContext } from "./thread-startup-store.js";
 import { type ThreadProvisioningDeps } from "./thread-provisioning-environment.js";
@@ -598,7 +599,7 @@ export async function resolveThreadEnvironmentPlacement(
 }
 export async function resolveProviderOperationContext(
   deps: ThreadProvisioningDeps,
-  thread: Thread,
+  thread: ThreadRecord,
   intent: Extract<
     import("./thread-startup-store.js").ThreadProvisionEnvironmentIntent,
     { type: "provider" }
@@ -737,10 +738,13 @@ function buildProviderOperationContext(
   args: Pick<
     ProviderOperationContext,
     "host" | "inputs" | "machine" | "project" | "projectCheckout"
-  > & { record: PluginEnvironmentProviderRecord; thread: Thread },
+  > & { record: PluginEnvironmentProviderRecord; thread: ThreadRecord },
 ): ProviderOperationContext {
   return {
-    thread: toThreadResponseFromThread(deps, { thread: args.thread }),
+    thread: toThreadResponseFromThread(deps, {
+      thread: args.thread,
+      viewerUserId: LOCAL_OWNER_USER_ID,
+    }),
     project: args.project,
     host: args.host,
     machine: args.machine,
@@ -925,7 +929,7 @@ async function reserveEnvironmentBeforeMachine(
     context: ThreadProvisionContext;
     intent: Extract<ThreadProvisionEnvironmentIntent, { type: "provider" }>;
     record: PluginEnvironmentProviderRecord;
-    thread: Thread;
+    thread: ThreadRecord;
   },
 ): Promise<ProviderEnvironmentCreationDecision> {
   const selection = args.intent.selectionResolved
@@ -1008,7 +1012,7 @@ async function reserveEnvironmentBeforeMachine(
 
 export async function resolveEnvironmentProvider(
   deps: ThreadProvisioningDeps,
-  args: { context: ThreadProvisionContext; thread: Thread },
+  args: { context: ThreadProvisionContext; thread: ThreadRecord },
 ): Promise<
   { kind: "resolved"; environment: EnvironmentRow } | { kind: "waiting" }
 > {

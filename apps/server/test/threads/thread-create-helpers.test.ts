@@ -8,8 +8,9 @@ import {
   migrate,
   noopNotifier,
   upsertHost,
+  getThreadViewerState,
 } from "@bb/db";
-import { DEFAULT_MANAGED_BRANCH_PREFIX } from "@bb/domain";
+import { DEFAULT_MANAGED_BRANCH_PREFIX, LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { ApiError } from "../../src/errors.js";
 import {
   buildSuggestedBranchName,
@@ -120,6 +121,7 @@ describe("createThreadRecord", () => {
               ...mode,
               environment: { type: "reuse", environmentId: "env_unused" },
               sectionId: section.section.id,
+              createdByUserId: LOCAL_OWNER_USER_ID,
               pinned: true,
               input: [],
               origin: "app",
@@ -133,8 +135,13 @@ describe("createThreadRecord", () => {
           },
         );
         expect(thread.sectionId).toBe(section.section.id);
-        expect(thread.pinnedAt).not.toBeNull();
-        expect(thread.pinSortKey).not.toBeNull();
+        expect(thread.createdByUserId).toBe(LOCAL_OWNER_USER_ID);
+        const viewerState = getThreadViewerState(db, {
+          threadId: thread.id,
+          userId: LOCAL_OWNER_USER_ID,
+        });
+        expect(viewerState.pinnedAt).not.toBeNull();
+        expect(viewerState.pinSortKey).not.toBeNull();
       } finally {
         db.$client.close();
       }
@@ -178,6 +185,7 @@ describe("createThreadRecord", () => {
         createThreadRecord(deps, {
           environmentId: environment.id,
           request: {
+            createdByUserId: LOCAL_OWNER_USER_ID,
             environment: {
               environmentId: environment.id,
               type: "reuse",

@@ -70,6 +70,9 @@ export {
   countThreads,
   countNonDeletedAssignedChildThreads,
   getThread,
+  getThreadForViewer,
+  getThreadViewerState,
+  setThreadLastReadAt,
   getThreadExecutionOverride,
   hasActiveThreadAttention,
   setThreadExecutionOverride,
@@ -118,7 +121,9 @@ export type {
   ThreadSearchResultGroup,
   ThreadWithPendingInteractionState,
   ThreadExecutionOverride,
+  ThreadViewerState,
   UpdateThreadInput,
+  ViewerThreadRow,
 } from "./threads.js";
 
 export {
@@ -139,6 +144,7 @@ export {
 export { getStoredThreadTabs, replaceStoredThreadTabs } from "./thread-tabs.js";
 export {
   getStoredUiPreferenceDefault,
+  getStoredUserSetting,
   listStoredUiPreferenceDefaults,
   listStoredUiPreferences,
   overwriteStoredUiPreference,
@@ -234,6 +240,7 @@ export {
 } from "./plugin-state-snapshots.js";
 
 export {
+  getStoredAppearance,
   getStoredThemeId,
   getStoredFaviconColor,
   setStoredAppearance,

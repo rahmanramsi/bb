@@ -224,6 +224,7 @@ type ExpectedBbSdkKey =
   | "experimental_desktopBrowsers"
   | "experimental_promptHistory"
   | "experimental_server"
+  | "experimental_users"
   | "environments"
   | "files"
   | "guide"

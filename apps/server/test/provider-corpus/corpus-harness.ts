@@ -14,7 +14,7 @@ import {
 } from "@bb/db";
 import type { DbConnection } from "@bb/db";
 import { defaultFeatureFlags } from "@bb/domain";
-import type { Thread } from "@bb/domain";
+import type { ThreadRecord } from "@bb/domain";
 import type { ThreadTimelineResponse } from "@bb/server-contract";
 import type { CorpusThread } from "@bb/test-helpers";
 import { sql } from "drizzle-orm";
@@ -71,7 +71,7 @@ export function resolveSnapshotMode(
 
 export interface LoadedCorpusThread {
   db: DbConnection;
-  thread: Thread;
+  thread: ThreadRecord;
   close(): void;
 }
 
@@ -109,10 +109,7 @@ export function loadCorpusThreadIntoDb(
           originPluginId: null,
           visibility: row.visibility,
           archivedAt: row.archivedAt,
-          pinnedAt: null,
-          pinSortKey: null,
           deletedAt: row.deletedAt,
-          lastReadAt: null,
           latestAttentionAt: row.updatedAt,
           createdAt: row.createdAt,
           updatedAt: row.updatedAt,
@@ -159,7 +156,7 @@ export interface BuildRouteTimelinePageArgs {
   maxSeq?: number;
   page: ThreadTimelinePageRequest;
   registry: ProviderRegistryService;
-  thread: Thread;
+  thread: ThreadRecord;
   variant: TimelineVariant;
 }
 

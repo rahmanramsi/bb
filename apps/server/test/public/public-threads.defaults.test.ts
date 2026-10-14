@@ -10,7 +10,11 @@ import {
   setExperiments,
   upsertProjectExecutionDefaults,
 } from "@bb/db";
-import { defaultExperiments, threadSchema } from "@bb/domain";
+import {
+  defaultExperiments,
+  threadSchema,
+  LOCAL_OWNER_USER_ID,
+} from "@bb/domain";
 import { sidebarBootstrapResponseSchema } from "@bb/server-contract";
 import { waitForQueuedCommand } from "../helpers/commands.js";
 import { availableModelFixture } from "../helpers/available-models.js";
@@ -76,6 +80,7 @@ describe("public thread default routes", () => {
 
       expect(response.status).toBe(201);
       const createdThread = threadSchema.parse(await readJson(response));
+      expect(createdThread.createdByUserId).toBe(LOCAL_OWNER_USER_ID);
       const queuedStart = await waitForQueuedCommand(
         harness,
         ({ command }) =>
@@ -533,6 +538,7 @@ describe("public thread default routes", () => {
       });
       expect(
         listThreadsWithPendingInteractionState(harness.db, {
+          viewerUserId: LOCAL_OWNER_USER_ID,
           projectId: project.id,
         }),
       ).toHaveLength(0);

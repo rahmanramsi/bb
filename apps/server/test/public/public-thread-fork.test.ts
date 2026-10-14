@@ -19,6 +19,7 @@ import {
   type ClientTurnRequestId,
   type EnvironmentProviderSelection,
   type PromptInput,
+  LOCAL_OWNER_USER_ID,
 } from "@bb/domain";
 import {
   threadResponseSchema,
@@ -812,6 +813,7 @@ describe("public thread fork route", () => {
       const inputGroups = [textInput("First group"), textInput("Second group")];
 
       await sendThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
           input: [],
@@ -934,6 +936,7 @@ describe("public thread fork route", () => {
 
       await expect(
         sendThreadMessage(harness.deps, {
+          authorUserId: LOCAL_OWNER_USER_ID,
           beforeAppendInTransaction: ({ tx }) => {
             appendClientTurnEventInTransaction(tx, {
               environmentId: thread.environmentId,

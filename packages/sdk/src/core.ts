@@ -21,6 +21,7 @@ import {
   createPromptHistoryArea,
   type ExperimentalPromptHistoryArea,
 } from "./areas/prompt-history.js";
+import { createUsersArea, type ExperimentalUsersArea } from "./areas/users.js";
 import { createBbRealtimeClient } from "./realtime-client.js";
 import type { BbRealtime } from "./realtime-types.js";
 import { createStatusArea, type StatusArea } from "./areas/status.js";
@@ -50,6 +51,7 @@ export interface BbSdkAreas extends BbRealtime {
   experimental_desktopBrowsers: ExperimentalDesktopBrowsersArea;
   experimental_promptHistory: ExperimentalPromptHistoryArea;
   experimental_server: ExperimentalServerArea;
+  experimental_users: ExperimentalUsersArea;
   environments: EnvironmentsArea;
   files: FilesArea;
   hosts: HostsArea;
@@ -82,6 +84,7 @@ export function createBbSdk(
     experimental_desktopBrowsers: createDesktopBrowsersArea(sdkContext),
     experimental_promptHistory: createPromptHistoryArea(sdkContext),
     experimental_server: createServerArea(sdkContext),
+    experimental_users: createUsersArea(sdkContext),
     environments: createEnvironmentsArea(sdkContext),
     files: createFilesArea(sdkContext),
     hosts: createHostsArea(sdkContext),

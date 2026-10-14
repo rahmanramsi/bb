@@ -7,7 +7,7 @@ import type {
   DynamicTool,
   InstructionMode,
   PermissionEscalation,
-  Thread,
+  ThreadRecord,
   ThreadTurnInitiator,
   EnvironmentStatus,
 } from "@bb/domain";
@@ -53,7 +53,7 @@ export interface ThreadRuntimeCommandEnvironment {
 interface ResolveThreadRuntimeCommandConfigArgs {
   environment: ThreadRuntimeCommandEnvironment;
   model: string;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 interface ResolvePermissionEscalationArgs {

@@ -8,7 +8,7 @@ import {
   type ProjectExecutionDefaults,
   type Project,
   type SessionOptionSelections,
-  type Thread,
+  type ThreadRecord,
   type ThreadOriginKind,
   type ThreadVisibility,
 } from "@bb/domain";
@@ -84,7 +84,7 @@ interface ResolveForkPointArgs {
   originKind: ThreadOriginKind | null;
   providerId: string;
   sourceSeqEnd: number | undefined;
-  sourceThread: Thread | null;
+  sourceThread: ThreadRecord | null;
 }
 
 interface ResolveCatalogExecutionDefaultsArgs {
@@ -253,7 +253,7 @@ function assertForkSourceHost(
   args: {
     childHostId: string | null;
     originKind: ThreadOriginKind | null;
-    sourceThread: Thread | null;
+    sourceThread: ThreadRecord | null;
   },
 ): void {
   if (args.originKind !== "fork" || args.sourceThread === null) {
@@ -362,7 +362,7 @@ function requireLiveSourceThread(
     projectId: string;
     sourceThreadId: string;
   },
-): Thread {
+): ThreadRecord {
   const sourceThread = getThread(deps.db, args.sourceThreadId);
   if (sourceThread === null) {
     throw new ApiError(400, "invalid_request", "sourceThreadId not found");
@@ -477,6 +477,7 @@ async function createPendingThreadAndAttemptFirstDispatch(
     );
     await attemptDispatch(deps, {
       thread,
+      authorUserId: args.request.createdByUserId,
       payload: {
         input: args.request.input,
         mode: "start",
@@ -526,7 +527,7 @@ async function createPendingThreadAndAttemptFirstDispatch(
 }
 
 interface ResolveCreateThreadVisibilityArgs {
-  parentThread: Pick<Thread, "visibility"> | null;
+  parentThread: Pick<ThreadRecord, "visibility"> | null;
   requestedVisibility: ThreadVisibility | undefined;
 }
 

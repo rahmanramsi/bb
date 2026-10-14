@@ -99,13 +99,24 @@ it("backfills single-user state onto the local owner", () => {
         pinned_at: null,
         pin_sort_key: null,
       },
+      {
+        thread_id: "thr_untouched",
+        user_id: LOCAL_OWNER_USER_ID,
+        last_read_at: null,
+        pinned_at: null,
+        pin_sort_key: null,
+      },
     ]);
-    expect(
-      all(
-        db,
-        "SELECT last_read_at, pinned_at, pin_sort_key FROM threads WHERE id = 'thr_pinned'",
-      ),
-    ).toEqual([{ last_read_at: 600, pinned_at: 700, pin_sort_key: "a0" }]);
+    for (const column of ["last_read_at", "pinned_at", "pin_sort_key"]) {
+      expect(
+        all(db, "SELECT name FROM pragma_table_info('threads')"),
+      ).not.toContainEqual({ name: column });
+    }
+    for (const table of ["ui_preferences", "app_theme"]) {
+      expect(
+        all(db, `SELECT name FROM sqlite_master WHERE name = '${table}'`),
+      ).toEqual([]);
+    }
     expect(
       all(
         db,

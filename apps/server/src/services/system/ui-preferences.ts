@@ -53,7 +53,10 @@ function toEntry<Key extends UiPreferenceKey>(
     : defaultEntry;
 }
 
-export function readUiPreferences(deps: AppDeps): UiPreferenceEntries {
+export function readUiPreferences(
+  deps: AppDeps,
+  userId: string,
+): UiPreferenceEntries {
   const defaults = new Map(
     listStoredUiPreferenceDefaults(deps.db).map((row) => [
       row.key,
@@ -61,7 +64,7 @@ export function readUiPreferences(deps: AppDeps): UiPreferenceEntries {
     ]),
   );
   const stored = new Map<string, StoredUiPreference>();
-  for (const row of listStoredUiPreferences(deps.db)) {
+  for (const row of listStoredUiPreferences(deps.db, userId)) {
     if (isUiPreferenceKey(row.key)) stored.set(row.key, row);
   }
   return Object.fromEntries(
@@ -82,17 +85,23 @@ export type WriteUiPreferenceResult<Key extends UiPreferenceKey> =
 
 export function writeUiPreference<Key extends UiPreferenceKey>(
   deps: AppDeps,
-  args: { expectedRevision: number; key: Key; value: UiPreferenceValue<Key> },
+  args: {
+    expectedRevision: number;
+    key: Key;
+    userId: string;
+    value: UiPreferenceValue<Key>;
+  },
 ): WriteUiPreferenceResult<Key> {
   const result = replaceStoredUiPreference(deps.db, {
     expectedRevision: args.expectedRevision,
     key: args.key,
+    userId: args.userId,
     valueJson: JSON.stringify(args.value),
   });
   if (result.outcome === "conflict") {
     return { outcome: "conflict", revision: result.revision };
   }
-  deps.hub.notifySystem(["ui-preferences-changed"]);
+  deps.hub.notifyUserSystem(args.userId, ["ui-preferences-changed"]);
   return {
     outcome: "updated",
     entry: { revision: result.revision, value: args.value },
@@ -101,16 +110,18 @@ export function writeUiPreference<Key extends UiPreferenceKey>(
 
 export function resetUiPreference<Key extends UiPreferenceKey>(
   deps: AppDeps,
-  key: Key,
+  args: { key: Key; userId: string },
 ): UiPreferenceEntry<Key> {
+  const { key, userId } = args;
   const value = installationDefault(
     key,
     getStoredUiPreferenceDefault(deps.db, key),
   );
   const { revision } = overwriteStoredUiPreference(deps.db, {
     key,
+    userId,
     valueJson: JSON.stringify(value),
   });
-  deps.hub.notifySystem(["ui-preferences-changed"]);
+  deps.hub.notifyUserSystem(userId, ["ui-preferences-changed"]);
   return { revision, value };
 }

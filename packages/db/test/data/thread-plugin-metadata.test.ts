@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -272,16 +273,18 @@ describe("thread plugin metadata persistence", () => {
     ).toThrow(/thread plugin metadata insert aborted/u);
     expect(
       db.$client
-        .prepare<[], { count: number }>(
-          "SELECT COUNT(*) AS count FROM threads WHERE title = 'rollback-metadata-title'",
-        )
+        .prepare<
+          [],
+          { count: number }
+        >("SELECT COUNT(*) AS count FROM threads WHERE title = 'rollback-metadata-title'")
         .get(),
     ).toEqual({ count: 0 });
     expect(
       db.$client
-        .prepare<[], { count: number }>(
-          "SELECT COUNT(*) AS count FROM thread_search_segments WHERE text = 'rollback-metadata-title'",
-        )
+        .prepare<
+          [],
+          { count: number }
+        >("SELECT COUNT(*) AS count FROM thread_search_segments WHERE text = 'rollback-metadata-title'")
         .get(),
     ).toEqual({ count: 0 });
   });
@@ -299,11 +302,13 @@ describe("thread plugin metadata persistence", () => {
     });
     expect(
       searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "discoverable-metadata-title",
         limitPerGroup: 20,
       }).active.results.map((result) => result.thread.id),
     ).toEqual([thread.id]);
     const privateResults = searchThreadsWithPendingInteractionState(db, {
+      viewerUserId: LOCAL_OWNER_USER_ID,
       query: "metadata-only-search-marker",
       limitPerGroup: 20,
     });

@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { threadScope, turnScope } from "@bb/domain";
+import { threadScope, turnScope, LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { applyLoggedThreadLifecycleEvent } from "../../../src/services/threads/lifecycle-outcome.js";
 import { beginProjectDeletion } from "../../../src/services/projects/project-deletion.js";
 import { createThreadRecord } from "../../../src/services/threads/thread-create-helpers.js";
@@ -291,6 +291,7 @@ describe("plugin thread lifecycle events", () => {
     try {
       const { environment, project } = seedThreadFixture(harness);
       const request: ThreadCreateServiceRequest = {
+        createdByUserId: LOCAL_OWNER_USER_ID,
         environment: { type: "reuse", environmentId: environment.id },
         input: [],
         origin: null,
@@ -337,6 +338,7 @@ describe("plugin thread lifecycle events", () => {
           {
             environmentId: environment.id,
             request: {
+              createdByUserId: LOCAL_OWNER_USER_ID,
               environment: { type: "reuse", environmentId: environment.id },
               input: [],
               origin: "plugin",

@@ -172,6 +172,7 @@ describe("interaction lifecycle record", () => {
         statusReason: null,
         createdAt: 1,
         resolvedAt: 2,
+        resolvedByUserId: null,
         payload: approvalPayload,
         resolution: userAnswer,
       }).success,
@@ -190,6 +191,7 @@ describe("interaction lifecycle record", () => {
       statusReason: null,
       createdAt: 1,
       resolvedAt: 2,
+      resolvedByUserId: null,
       payload: approvalPayload,
       resolution: { decision: "deny" },
     });
@@ -218,6 +220,7 @@ describe("interaction lifecycle record", () => {
         statusReason: null,
         createdAt: 1,
         resolvedAt: null,
+        resolvedByUserId: null,
         origin: {
           kind: "plugin",
           pluginId: "secrets",
@@ -290,6 +293,7 @@ describe("plugin-defined request on the wire", () => {
         statusReason: null,
         createdAt: 1,
         resolvedAt: 2,
+        resolvedByUserId: null,
         payload: request,
         resolution: { kind: "request_answer", value: { TOKEN: "x" } },
       }),

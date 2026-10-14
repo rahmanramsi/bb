@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { DbConnection, DbQueryConnection } from "../connection.js";
-import { uiPreferenceDefaults, uiPreferences } from "../schema.js";
+import { uiPreferenceDefaults, userSettings } from "../schema.js";
 
 export interface StoredUiPreference {
   key: string;
@@ -14,15 +14,39 @@ export type ReplaceUiPreferenceResult =
 
 export function listStoredUiPreferences(
   db: DbConnection,
+  userId: string,
 ): StoredUiPreference[] {
   return db
     .select({
-      key: uiPreferences.key,
-      revision: uiPreferences.revision,
-      valueJson: uiPreferences.valueJson,
+      key: userSettings.key,
+      revision: userSettings.revision,
+      valueJson: userSettings.valueJson,
     })
-    .from(uiPreferences)
+    .from(userSettings)
+    .where(eq(userSettings.userId, userId))
     .all();
+}
+
+export function getStoredUserSetting(
+  db: DbQueryConnection,
+  args: { key: string; userId: string },
+): StoredUiPreference | null {
+  return (
+    db
+      .select({
+        key: userSettings.key,
+        revision: userSettings.revision,
+        valueJson: userSettings.valueJson,
+      })
+      .from(userSettings)
+      .where(
+        and(
+          eq(userSettings.userId, args.userId),
+          eq(userSettings.key, args.key),
+        ),
+      )
+      .get() ?? null
+  );
 }
 
 export function listStoredUiPreferenceDefaults(
@@ -42,20 +66,21 @@ export function getStoredUiPreferenceDefault(
     .get()?.valueJson;
 }
 
-function upsertStoredUiPreference(
+function upsertStoredUserSetting(
   db: DbQueryConnection,
-  args: { key: string; revision: number; valueJson: string },
+  args: { key: string; revision: number; userId: string; valueJson: string },
 ): void {
   const updatedAt = Date.now();
-  db.insert(uiPreferences)
+  db.insert(userSettings)
     .values({
+      userId: args.userId,
       key: args.key,
       revision: args.revision,
       updatedAt,
       valueJson: args.valueJson,
     })
     .onConflictDoUpdate({
-      target: uiPreferences.key,
+      target: [userSettings.userId, userSettings.key],
       set: { revision: args.revision, updatedAt, valueJson: args.valueJson },
     })
     .run();
@@ -63,22 +88,23 @@ function upsertStoredUiPreference(
 
 export function replaceStoredUiPreference(
   db: DbConnection,
-  args: { expectedRevision: number; key: string; valueJson: string },
+  args: {
+    expectedRevision: number;
+    key: string;
+    userId: string;
+    valueJson: string;
+  },
 ): ReplaceUiPreferenceResult {
   return db.transaction((tx) => {
-    const current = tx
-      .select({ revision: uiPreferences.revision })
-      .from(uiPreferences)
-      .where(eq(uiPreferences.key, args.key))
-      .get();
-    const currentRevision = current?.revision ?? 0;
+    const currentRevision = getStoredUserSetting(tx, args)?.revision ?? 0;
     if (currentRevision !== args.expectedRevision) {
       return { outcome: "conflict", revision: currentRevision };
     }
     const revision = currentRevision + 1;
-    upsertStoredUiPreference(tx, {
+    upsertStoredUserSetting(tx, {
       key: args.key,
       revision,
+      userId: args.userId,
       valueJson: args.valueJson,
     });
     return { outcome: "updated", revision };
@@ -87,18 +113,14 @@ export function replaceStoredUiPreference(
 
 export function overwriteStoredUiPreference(
   db: DbConnection,
-  args: { key: string; valueJson: string },
+  args: { key: string; userId: string; valueJson: string },
 ): { revision: number } {
   return db.transaction((tx) => {
-    const current = tx
-      .select({ revision: uiPreferences.revision })
-      .from(uiPreferences)
-      .where(eq(uiPreferences.key, args.key))
-      .get();
-    const revision = (current?.revision ?? 0) + 1;
-    upsertStoredUiPreference(tx, {
+    const revision = (getStoredUserSetting(tx, args)?.revision ?? 0) + 1;
+    upsertStoredUserSetting(tx, {
       key: args.key,
       revision,
+      userId: args.userId,
       valueJson: args.valueJson,
     });
     return { revision };

@@ -3,7 +3,7 @@ import {
   encodeClientTurnRequestIdNumber,
   threadScope,
   turnScope,
-  type Thread,
+  type ThreadRecord,
 } from "@bb/domain";
 import { createConnection, getAppSettings } from "@bb/db";
 import {
@@ -47,7 +47,7 @@ async function getTimeline(
 
 function buildColdLatestRows(
   harness: TestAppHarness,
-  thread: Thread,
+  thread: ThreadRecord,
 ): TimelineRow[] {
   const clone = createConnection(harness.deps.db.$client.serialize());
   try {

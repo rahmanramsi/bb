@@ -19,6 +19,7 @@ import {
   setQueuedThreadMessageGroupBoundary,
   setThreadExecutionOverride,
   threads as threadRows,
+  getThreadForViewer,
 } from "@bb/db";
 import {
   encodeClientTurnRequestIdNumber,
@@ -26,6 +27,7 @@ import {
   threadScope,
   threadSchema,
   turnScope,
+  LOCAL_OWNER_USER_ID,
 } from "@bb/domain";
 import {
   type TimelineRow,
@@ -2678,7 +2680,10 @@ describe("public thread data routes", () => {
         await readJson(readResponse),
       );
       expect(readThread.lastReadAt).toBeTypeOf("number");
-      const threadAfterRead = getThread(harness.db, thread.id);
+      const threadAfterRead = getThreadForViewer(harness.db, {
+        threadId: thread.id,
+        userId: LOCAL_OWNER_USER_ID,
+      });
       expect(threadAfterRead?.lastReadAt).toBeTypeOf("number");
       expect(threadAfterRead?.latestAttentionAt).toBe(thread.latestAttentionAt);
 
@@ -2692,7 +2697,10 @@ describe("public thread data routes", () => {
       await expect(readJson(unreadResponse)).resolves.toMatchObject({
         lastReadAt: null,
       });
-      const threadAfterUnread = getThread(harness.db, thread.id);
+      const threadAfterUnread = getThreadForViewer(harness.db, {
+        threadId: thread.id,
+        userId: LOCAL_OWNER_USER_ID,
+      });
       expect(threadAfterUnread?.lastReadAt).toBeNull();
       expect(threadAfterUnread?.latestAttentionAt).toBe(
         thread.latestAttentionAt,
