@@ -9,10 +9,17 @@ from pathlib import Path
 
 SKILL = Path('.bb/skills/verify-bb')
 CLI_OWNERS = {
+    'auth': 'authentication', 'user': 'authentication',
+    'browser': 'workspace-panels', 'diagnostics': 'compatibility-api',
     'environment': 'projects-environments', 'project': 'projects-environments',
     'file': 'workspace-panels', 'terminal': 'workspace-panels',
-    'machine': 'hosts-updates', 'updates': 'hosts-updates',
-    'settings': 'settings', 'theme': 'settings', 'voice': 'composer',
+    'machine': 'hosts-updates', 'machine-enrollment': 'hosts-updates',
+    'server': 'hosts-updates', 'server-local': 'hosts-updates',
+    'server-machine-service': 'hosts-updates', 'server-move': 'hosts-updates',
+    'updates': 'hosts-updates',
+    'machine-environment': 'settings', 'settings': 'settings',
+    'theme': 'settings', 'voice': 'composer',
+    'prompt-history': 'composer',
     'skill': 'extensions', 'plugin': 'extensions', 'marketplace': 'extensions',
     'provider': 'composer', 'guide': 'compatibility-api',
     'status': 'compatibility-api',
@@ -20,7 +27,8 @@ CLI_OWNERS = {
     'thread': 'execution-controls',
 }
 CORE_PAGES = [
-    'navigation', 'projects-environments', 'composer', 'execution-controls',
+    'authentication', 'navigation', 'projects-environments', 'composer',
+    'execution-controls',
     'interactions', 'timeline', 'workspace-panels', 'settings', 'extensions',
     'hosts-updates', 'compatibility-api', 'responsive-accessibility',
 ]

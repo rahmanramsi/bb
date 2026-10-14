@@ -37,6 +37,7 @@ were excluded. See the [audit](../MAINTENANCE.md) and
 
 | Feature group | Recipes | Verification status |
 | --- | --- | --- |
+| [Authentication, team access, and attribution](authentication.md) | 9 | Not yet audited as a complete group |
 | [Navigation, search, and thread organization](navigation.md) | 11 | 6 passed, 5 partial/blocked |
 | [Projects, sources, environments, and Git](projects-environments.md) | 15 | 4 passed, 1 failed, 10 partial/blocked |
 | [Compose, mentions, attachments, and voice](composer.md) | 12 | 6 passed, 6 partial/blocked |
