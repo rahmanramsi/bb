@@ -355,6 +355,7 @@ export function registerConnectCli(args: {
             }),
         }),
         "unexpose-all": cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Stop sharing all HTTP ports on a machine",
           options: {
             host: {
@@ -405,6 +406,7 @@ export function registerConnectCli(args: {
             }),
         }),
         servers: cliCommand({
+          experimental_requiredRole: "admin",
           summary: "List every bb server on this account",
           options: { json: JSON_OPTION },
           run: (input) =>
