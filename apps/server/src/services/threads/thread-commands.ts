@@ -70,6 +70,7 @@ interface ThreadUnarchiveCommandEnvironment {
 }
 
 export interface ThreadStartCommandArgs {
+  authorUserId: string | null;
   environment: ThreadRuntimeCommandEnvironment;
   execution: ResolvedThreadExecutionOptions;
   fork: ThreadForkDescriptor | null;
@@ -101,6 +102,7 @@ interface PreparedTurnSubmitCommandBuildArgs {
 }
 
 interface PrepareTurnSubmitCommandPayloadArgs {
+  authorUserId: string | null;
   environment: ThreadRuntimeCommandEnvironment;
   execution: ResolvedThreadExecutionOptions;
   permissionEscalation: PermissionEscalation;
@@ -273,6 +275,7 @@ export async function buildThreadStartCommand(
 ): Promise<Extract<HostDaemonCommand, { type: "thread.start" }>> {
   await deps.providerRegistry.whenRegistrationsSettled();
   const runtimeContext = await resolveThreadRuntimeCommandConfig(deps, {
+    authorUserId: args.authorUserId,
     thread: args.thread,
     environment: args.environment,
     model: args.execution.model,
@@ -370,6 +373,7 @@ export async function prepareTurnSubmitCommandPayload(
     args.thread.id,
   );
   const runtimeContext = await resolveThreadRuntimeCommandConfig(deps, {
+    authorUserId: args.authorUserId,
     thread: args.thread,
     environment: args.environment,
     model: args.execution.model,

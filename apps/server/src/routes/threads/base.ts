@@ -44,7 +44,10 @@ import {
 import type { Hono } from "hono";
 import type { AppDeps } from "../../types.js";
 import { ApiError } from "../../errors.js";
-import { requirePrincipal } from "../../request-context.js";
+import {
+  requirePrincipal,
+  requireThreadViewerId,
+} from "../../request-context.js";
 import {
   parseInteger,
   parsePaginationQuery,
@@ -334,7 +337,7 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
         query.hasParent === undefined ? undefined : query.hasParent === "true",
       ...(limit !== undefined ? { limit } : {}),
       ...(offset !== undefined ? { offset } : {}),
-      viewerUserId: requirePrincipal(context).userId,
+      viewerUserId: requireThreadViewerId(context),
     });
     return context.json(
       toThreadListEntryResponses(deps, { threads }) satisfies ThreadListEntry[],
@@ -356,7 +359,7 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
         ...searchThreadsWithPendingInteractionState(deps.db, {
           query: searchQuery,
           limitPerGroup,
-          viewerUserId: requirePrincipal(context).userId,
+          viewerUserId: requireThreadViewerId(context),
         }),
       }) satisfies ThreadSearchResponse,
     );
@@ -390,27 +393,31 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
     if (payload.sectionId) {
       requireThreadSection(deps, payload.sectionId);
     }
-    const viewerUserId = requirePrincipal(context).userId;
     const thread = await createThreadFromRequest(deps, {
       ...payload,
-      createdByUserId: viewerUserId,
+      createdByUserId: requirePrincipal(context).userId,
       origin: payload.origin,
     });
     return context.json(
-      toThreadResponseFromThread(deps, { thread, viewerUserId }),
+      toThreadResponseFromThread(deps, {
+        thread,
+        viewerUserId: requireThreadViewerId(context),
+      }),
       201,
     );
   });
 
   post(routes.fork, async (context, payload) => {
-    const viewerUserId = requirePrincipal(context).userId;
     const thread = await createThreadForkFromRequest(
       deps,
       payload,
-      viewerUserId,
+      requirePrincipal(context).userId,
     );
     return context.json(
-      toThreadResponseFromThread(deps, { thread, viewerUserId }),
+      toThreadResponseFromThread(deps, {
+        thread,
+        viewerUserId: requireThreadViewerId(context),
+      }),
       201,
     );
   });
@@ -421,7 +428,7 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
       buildThreadResponse(deps, {
         includes: parseThreadIncludes(query),
         thread,
-        viewerUserId: requirePrincipal(context).userId,
+        viewerUserId: requireThreadViewerId(context),
       }),
     );
   });
@@ -537,7 +544,7 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
     return context.json(
       toThreadResponseFromThread(deps, {
         thread: updated,
-        viewerUserId: requirePrincipal(context).userId,
+        viewerUserId: requireThreadViewerId(context),
       }),
     );
   });

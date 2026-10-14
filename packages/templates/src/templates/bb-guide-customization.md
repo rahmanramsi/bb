@@ -103,9 +103,19 @@ not show these controls. Thread lists and headers show creators in multi mode.
 Roles are guardrails for a trusted team. A member who runs an agent effectively
 has shell access to its host. In multi mode, each turn supplies a signed
 seven-day `BB_TOKEN` to the agent shell through the launch environment. It
-uses the thread creator's current role, stops authenticating if that user is
-removed, and is masked in runtime environment displays. Threads without a
-creator use the local owner. In local mode, shells need no credential.
+authenticates as the user who sent the turn, or as the thread creator for
+turns no user sent, with that user's current role. It stops authenticating if
+that user is removed and is masked in runtime environment displays. Turns with
+neither a sending user nor a remaining creator, including threads created
+before multi mode, get no `BB_TOKEN`. In local mode, shells need no
+credential.
+
+Plugin RPC methods and commands that change server-wide settings, such as
+`bb concurrency-limit global 0` or `bb pool routing claude`, are admin-only and
+fail for members with `admin_required`. Session cookies are `Secure` when
+`BB_APP_URL` uses HTTPS. Repeated failed sign-ins for one email get `429`.
+Realtime and terminal connections close when their credential is revoked, the
+user is removed, or the user's role changes.
 
 Settings → General → Command line installs the bb CLI for use outside bb: it
 puts the `bb` command on PATH on the computer that runs the bb server, so the

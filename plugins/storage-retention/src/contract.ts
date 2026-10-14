@@ -37,6 +37,7 @@ export type Preview = z.infer<typeof previewSchema>;
 const machineInput = z.object({ hostId: z.string().min(1) }).strict();
 export const storageRpc = defineRpcContract({
   startCleanup: {
+    experimental_requiredRole: "admin",
     input: z
       .object({
         hostId: z.string().min(1),
@@ -50,6 +51,7 @@ export const storageRpc = defineRpcContract({
   scanHost: { input: machineInput, output: hostStorageResponseSchema },
   scanAll: { input: z.null(), output: hostStorageListResponseSchema },
   removeOrphans: {
+    experimental_requiredRole: "admin",
     input: machineInput,
     output: hostStorageRemoveOrphansResponseSchema,
   },
@@ -58,10 +60,12 @@ export const storageRpc = defineRpcContract({
     output: hostStorageRetryWorktreeCleanupResponseSchema,
   },
   startClearLargeFiles: {
+    experimental_requiredRole: "admin",
     input: z.object({ hostId: z.string().min(1).nullable() }).strict(),
     output: z.null(),
   },
   clearLargeFiles: {
+    experimental_requiredRole: "admin",
     input: z.object({ hostId: z.string().min(1).nullable() }).strict(),
     output: z.object({
       clearedFiles: z.number().int().nonnegative(),
@@ -72,8 +76,13 @@ export const storageRpc = defineRpcContract({
     input: z.object({ threadId: z.string().min(1) }).strict(),
     output: z.object({ ok: z.literal(true) }),
   },
-  startClearArchivedFiles: { input: machineInput, output: z.null() },
+  startClearArchivedFiles: {
+    experimental_requiredRole: "admin",
+    input: machineInput,
+    output: z.null(),
+  },
   clearArchivedFiles: {
+    experimental_requiredRole: "admin",
     input: machineInput,
     output: z.object({
       clearedThreads: z.number().int().nonnegative(),
@@ -81,6 +90,7 @@ export const storageRpc = defineRpcContract({
     }),
   },
   removeDevInstances: {
+    experimental_requiredRole: "admin",
     input: z.union([
       z.object({ hostId: z.string().min(1), names: z.null() }).strict(),
       z
@@ -101,5 +111,9 @@ export const storageRpc = defineRpcContract({
   },
   state: { input: z.null(), output: stateSchema },
   preview: { input: policySchema, output: previewSchema },
-  configure: { input: policySchema, output: stateSchema },
+  configure: {
+    experimental_requiredRole: "admin",
+    input: policySchema,
+    output: stateSchema,
+  },
 });

@@ -29,6 +29,7 @@ import type { CodexDeviceLogin } from "./codex-device-login.js";
 
 export const accountPoolRpcContract = defineRpcContract({
   "account.add": {
+    experimental_requiredRole: "admin",
     input: accountAddInputSchema,
     output: accountSchema,
   },
@@ -37,22 +38,27 @@ export const accountPoolRpcContract = defineRpcContract({
     output: z.array(accountSummarySchema),
   },
   "account.remove": {
+    experimental_requiredRole: "admin",
     input: accountIdInputSchema,
     output: z.object({ removed: z.boolean() }).strict(),
   },
   "account.enable": {
+    experimental_requiredRole: "admin",
     input: accountIdInputSchema,
     output: z.object({ account: accountSchema.nullable() }).strict(),
   },
   "account.disable": {
+    experimental_requiredRole: "admin",
     input: accountIdInputSchema,
     output: z.object({ account: accountSchema.nullable() }).strict(),
   },
   "account.setPriority": {
+    experimental_requiredRole: "admin",
     input: accountPriorityInputSchema,
     output: z.object({ account: accountSchema.nullable() }).strict(),
   },
   "account.reorder": {
+    experimental_requiredRole: "admin",
     input: accountReorderInputSchema,
     output: z.null(),
   },
@@ -61,6 +67,7 @@ export const accountPoolRpcContract = defineRpcContract({
     output: z.object({ account: accountSummarySchema.nullable() }).strict(),
   },
   "routing.set": {
+    experimental_requiredRole: "admin",
     input: routingSetInputSchema,
     output: z
       .object({ provider: z.enum(["claude", "codex"]), enabled: z.boolean() })
@@ -71,26 +78,32 @@ export const accountPoolRpcContract = defineRpcContract({
     output: accountPoolConfigSchema,
   },
   "config.set": {
+    experimental_requiredRole: "admin",
     input: accountPoolConfigSetInputSchema,
     output: accountPoolConfigSchema,
   },
   "login.start": {
+    experimental_requiredRole: "admin",
     input: z.null(),
     output: loginStartSchema,
   },
   "login.complete": {
+    experimental_requiredRole: "admin",
     input: loginCompleteInputSchema,
     output: accountSchema,
   },
   "codexLogin.start": {
+    experimental_requiredRole: "admin",
     input: z.null(),
     output: codexLoginStartSchema,
   },
   "codexLogin.poll": {
+    experimental_requiredRole: "admin",
     input: codexLoginPollInputSchema,
     output: codexLoginPollSchema,
   },
   "codexLogin.cancel": {
+    experimental_requiredRole: "admin",
     input: codexLoginPollInputSchema,
     output: codexLoginCancelSchema,
   },
@@ -103,6 +116,7 @@ export const accountPoolRpcContract = defineRpcContract({
     output: routedThreadStatusListSchema,
   },
   "token.rotate": {
+    experimental_requiredRole: "admin",
     input: tokenRotateInputSchema,
     output: hubTokenSummarySchema,
   },

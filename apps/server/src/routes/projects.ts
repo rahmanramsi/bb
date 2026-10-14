@@ -6,7 +6,11 @@ import {
   setMachineEnvironmentVariable,
   deleteMachineEnvironmentVariable,
 } from "../services/machines/environment-storage.js";
-import { getGateAuthKind, requirePrincipal } from "../request-context.js";
+import {
+  getGateAuthKind,
+  requirePrincipal,
+  requireThreadViewerId,
+} from "../request-context.js";
 import {
   countProjectSources,
   findOrCreateProjectByLocalPathSource,
@@ -431,7 +435,7 @@ export function registerProjectRoutes(app: Hono, deps: AppDeps): void {
         buildProjectsWithThreadsResponse(
           deps,
           options,
-          requirePrincipal(context).userId,
+          requireThreadViewerId(context),
         ),
       );
     }
@@ -445,7 +449,7 @@ export function registerProjectRoutes(app: Hono, deps: AppDeps): void {
 
   get(routes.sidebarBootstrap, (context) =>
     context.json(
-      buildSidebarBootstrapResponse(deps, requirePrincipal(context).userId),
+      buildSidebarBootstrapResponse(deps, requireThreadViewerId(context)),
     ),
   );
 

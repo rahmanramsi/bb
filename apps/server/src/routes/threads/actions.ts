@@ -31,7 +31,10 @@ import {
 } from "@bb/domain";
 import type { AppDeps } from "../../types.js";
 import { ApiError } from "../../errors.js";
-import { requirePrincipal } from "../../request-context.js";
+import {
+  requirePrincipal,
+  requireThreadViewerId,
+} from "../../request-context.js";
 import {
   emitPluginMessageCancelled,
   emitPluginThreadUnarchived,
@@ -509,6 +512,7 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
       { threadId: thread.id },
     );
     const preparedRuntimeCommand = await prepareTurnSubmitCommandPayload(deps, {
+      authorUserId: requirePrincipal(context).userId,
       environment,
       execution,
       input: [],
@@ -570,31 +574,35 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
 
   post(routes.pin, (context) => {
     const publicThread = requirePublicThread(deps.db, context.req.param("id"));
-    const viewerUserId = requirePrincipal(context).userId;
     const thread = pinThread(deps.db, deps.hub, {
       threadId: publicThread.id,
-      userId: viewerUserId,
+      userId: requirePrincipal(context).userId,
     });
     if (!thread) {
       throw new ApiError(404, "thread_not_found", "Thread not found");
     }
     return context.json(
-      toThreadResponseFromThread(deps, { thread, viewerUserId }),
+      toThreadResponseFromThread(deps, {
+        thread,
+        viewerUserId: requireThreadViewerId(context),
+      }),
     );
   });
 
   post(routes.unpin, (context) => {
     const publicThread = requirePublicThread(deps.db, context.req.param("id"));
-    const viewerUserId = requirePrincipal(context).userId;
     const thread = unpinThread(deps.db, deps.hub, {
       threadId: publicThread.id,
-      userId: viewerUserId,
+      userId: requirePrincipal(context).userId,
     });
     if (!thread) {
       throw new ApiError(404, "thread_not_found", "Thread not found");
     }
     return context.json(
-      toThreadResponseFromThread(deps, { thread, viewerUserId }),
+      toThreadResponseFromThread(deps, {
+        thread,
+        viewerUserId: requireThreadViewerId(context),
+      }),
     );
   });
 
@@ -689,30 +697,37 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
     return context.json(
       toThreadResponseFromThread(deps, {
         thread: restoringThread,
-        viewerUserId: requirePrincipal(context).userId,
+        viewerUserId: requireThreadViewerId(context),
       }),
     );
   });
 
   post(routes.read, (context) => {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
-    const viewerUserId = requirePrincipal(context).userId;
-    markThreadReadForUser(deps, { threadId: thread.id, userId: viewerUserId });
+    markThreadReadForUser(deps, {
+      threadId: thread.id,
+      userId: requirePrincipal(context).userId,
+    });
     return context.json(
-      toThreadResponseFromThread(deps, { thread, viewerUserId }),
+      toThreadResponseFromThread(deps, {
+        thread,
+        viewerUserId: requireThreadViewerId(context),
+      }),
     );
   });
 
   post(routes.unread, (context) => {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
-    const viewerUserId = requirePrincipal(context).userId;
     setThreadLastReadAt(deps.db, deps.hub, {
       lastReadAt: null,
       threadId: thread.id,
-      userId: viewerUserId,
+      userId: requirePrincipal(context).userId,
     });
     return context.json(
-      toThreadResponseFromThread(deps, { thread, viewerUserId }),
+      toThreadResponseFromThread(deps, {
+        thread,
+        viewerUserId: requireThreadViewerId(context),
+      }),
     );
   });
 }

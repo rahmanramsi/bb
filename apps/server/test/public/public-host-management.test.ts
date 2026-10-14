@@ -854,6 +854,7 @@ describe("public host management", () => {
       const revokeHandler = vi.fn(async () => ({ ok: true }));
       const revokeRecord = {
         publication: null,
+        requiredRole: null,
         inputSchema: z.object({ machineId: z.string() }),
         outputSchema: z.object({ ok: z.literal(true) }),
         handler: revokeHandler,

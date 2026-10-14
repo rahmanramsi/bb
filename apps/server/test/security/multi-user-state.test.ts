@@ -1,5 +1,9 @@
 import { createPromptHistoryEntry, listQueuedThreadMessages } from "@bb/db";
-import type { PendingInteractionCreate } from "@bb/domain";
+import {
+  TEAM_THREAD_VIEWER_ID,
+  type PendingInteractionCreate,
+} from "@bb/domain";
+import { toThreadResponseFromThread } from "../../src/services/threads/thread-runtime-display.js";
 import { describe, expect, it, vi } from "vitest";
 import { onClientSocketOpen } from "../../src/ws/client-protocol.js";
 import { NotificationHub } from "../../src/ws/hub.js";
@@ -102,6 +106,72 @@ interface ThreadView {
 }
 
 describe("multi-user per-user state", () => {
+  it("shows plugins and the service SDK a pin made by any user", async () => {
+    await withTestHarness({ authMode: "multi" }, async (harness) => {
+      const { alice, bob } = await bootstrapTeam(harness);
+      const { thread } = seedThreadFixture(harness);
+      const other = seedThread(harness.deps, {
+        projectId: thread.projectId,
+        environmentId: thread.environmentId,
+      });
+      const serviceView = (threadId: string) =>
+        json<ThreadView>(
+          Promise.resolve(
+            harness.app.request(`/api/v1/threads/${threadId}`, {
+              headers: {
+                authorization: `Bearer ${harness.deps.userAuth.serviceToken}`,
+              },
+            }),
+          ),
+        );
+      const pluginView = (threadId: string) =>
+        toThreadResponseFromThread(harness.deps, {
+          thread: threadId === thread.id ? thread : other,
+          viewerUserId: TEAM_THREAD_VIEWER_ID,
+        });
+
+      expect(pluginView(thread.id).pinnedAt).toBeNull();
+      await json(
+        request(harness, bob, `/api/v1/threads/${thread.id}/pin`, {
+          method: "POST",
+        }),
+      );
+      await json(
+        request(harness, alice, `/api/v1/threads/${other.id}/read`, {
+          method: "POST",
+        }),
+      );
+
+      expect(
+        (
+          await json<ThreadView>(
+            request(harness, alice, `/api/v1/threads/${thread.id}`),
+          )
+        ).pinnedAt,
+      ).toBeNull();
+      expect(pluginView(thread.id).pinnedAt).toEqual(expect.any(Number));
+      expect((await serviceView(thread.id)).pinnedAt).toEqual(
+        expect.any(Number),
+      );
+      expect(pluginView(other.id).pinnedAt).toBeNull();
+      expect(pluginView(other.id).lastReadAt).toEqual(
+        (
+          await json<ThreadView>(
+            request(harness, alice, `/api/v1/threads/${other.id}`),
+          )
+        ).lastReadAt,
+      );
+
+      await json(
+        request(harness, bob, `/api/v1/threads/${thread.id}/unpin`, {
+          method: "POST",
+        }),
+      );
+      expect(pluginView(thread.id).pinnedAt).toBeNull();
+      expect((await serviceView(thread.id)).pinnedAt).toBeNull();
+    });
+  });
+
   it("attributes newly created threads and their initial queued prompt to the caller", async () => {
     await withTestHarness({ authMode: "multi" }, async (harness) => {
       const { alice, bob } = await bootstrapTeam(harness);

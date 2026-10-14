@@ -531,6 +531,7 @@ async function sendClaimedQueuedMessageForIdleProviderThread(
     hostId: environment.hostId,
   });
   const preparedCommand = await prepareTurnSubmitCommandPayload(deps, {
+    authorUserId: queuedMessage.authorUserId,
     environment,
     execution,
     input,

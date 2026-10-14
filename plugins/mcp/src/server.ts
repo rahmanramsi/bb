@@ -187,6 +187,7 @@ export default async function mcpPlugin(bb: BbPluginApi): Promise<void> {
           },
         }),
         revoke: cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Disconnect a remote app",
           positionals: [
             {

@@ -1854,6 +1854,19 @@ environment, then restart.
 - A signed identity from the bb connect gate, verified with the active tunnel
   credential. See [Share access through bb connect](#share-access-through-bb-connect).
 
+Session cookies are `HttpOnly` and `SameSite=Lax`. When `BB_APP_URL` is an
+`https://` URL they are also `Secure` and named `__Secure-bb.session_token`,
+so browsers send them only over HTTPS. `POST /api/v1/auth/sign-in` allows ten
+failed passwords per email in 15 minutes and 60 attempts per minute across
+all accounts; further attempts get `429` with code `rate_limited` until the
+window ends. A successful sign-in resets that email's count.
+
+Open `/ws` and `/ws/terminals/:id` connections close with code `1008` when
+their credential stops authorizing: the user is removed or changes role, the
+session signs out or expires, the personal access token is revoked, or a
+thread shell token expires. The server also rechecks open connections every
+minute. Clients reconnect with a current credential.
+
 `GET /api/v1/auth/session` needs no credential and reports the auth mode,
 whether the server still needs its first account (`needsBootstrap`), and the
 signed-in user, if any.
@@ -1883,7 +1896,12 @@ Every signed-in user sees all projects, threads, machines, and secrets on the
 server. Roles only guard administration: admins manage users and invites,
 machine enrollment and removal, plugin installs, enablement, and settings,
 provider and AI service selection, global machine environment secrets, and
-server settings, updates, and moves. Members get `403` on those actions. Roles
+server settings, updates, and moves. Members get `403` on those actions.
+Plugins apply the same split to their own RPC methods and `bb` commands. For
+example, members can read Concurrency limit and Account Pooler status but only
+admins can change limits, provider routing, or pooled accounts; such RPC calls
+answer `403` with code `forbidden` and such commands fail with
+`admin_required`. Roles
 are guardrails for a trusted team, not isolation: a member who runs an agent
 on a machine effectively has shell access to that machine.
 
@@ -1901,6 +1919,8 @@ messages record `authorUserId`, and resolved interactions record
 Host daemons keep authenticating with their machine keys on the `/internal`
 routes; those keys are not user credentials. Plugins that run inside the
 server reach the API through `bb.sdk` with a per-process server credential.
+Plugins act for the whole team, so the thread pin and read state they see is
+team-wide: a thread counts as pinned when any user pinned it.
 All plugin HTTP routes require a signed-in caller in `multi` mode, including
 routes declared with `auth: "none"`. Routes declared with `auth: "token"` also
 require their plugin token. In `local` mode each plugin keeps its declared HTTP
@@ -1940,9 +1960,12 @@ accept `--json`.
 Roles are guardrails for a trusted team. A member who runs an agent effectively
 has shell access to its host. In multi mode, each turn supplies a signed
 seven-day `BB_TOKEN` to the agent shell through the launch environment. It
-uses the thread creator's current role, stops authenticating if that user is
-removed, and is masked in runtime environment displays. Threads without a
-creator use the local owner. In local mode, shells need no credential.
+authenticates as the user who sent the turn, or as the thread creator for
+turns no user sent, with that user's current role. It stops authenticating if
+that user is removed and is masked in runtime environment displays. Turns with
+neither a sending user nor a remaining creator, including threads created
+before multi mode, get no `BB_TOKEN`. In local mode, shells need no
+credential.
 
 `GET /api/v1/me` returns the authenticated user. Admins update roles with
 `PUT /api/v1/users/:id/role` (`{"role":"admin"|"member"}`) and remove accounts

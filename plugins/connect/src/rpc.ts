@@ -87,6 +87,7 @@ const machineCodeSchema: z.ZodType<MachineCode> = z
 export const connectRpcContract = defineRpcContract({
   status: { input: z.null(), output: connectStatusSchema },
   setRemoteAccess: {
+    experimental_requiredRole: "admin",
     input: z.object({ enabled: z.boolean() }).strict(),
     output: connectStatusSchema,
   },
@@ -112,8 +113,13 @@ export const connectRpcContract = defineRpcContract({
     output: listAccountServersResultSchema,
   },
   createDesktopSession: { input: z.null(), output: desktopSessionSchema },
-  createMachineCode: { input: z.null(), output: machineCodeSchema },
+  createMachineCode: {
+    experimental_requiredRole: "admin",
+    input: z.null(),
+    output: machineCodeSchema,
+  },
   revokeMachine: {
+    experimental_requiredRole: "admin",
     input: revokeMachineInputSchema,
     output: z.object({ ok: z.literal(true) }).strict(),
   },

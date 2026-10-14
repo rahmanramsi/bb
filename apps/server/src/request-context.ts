@@ -6,6 +6,7 @@ import {
   type RequestAppSurface,
 } from "@bb/config/app-surface";
 import type { Context } from "hono";
+import { TEAM_THREAD_VIEWER_ID } from "@bb/domain";
 import { ApiError } from "./errors.js";
 import type { RequestPrincipal } from "./services/user-auth.js";
 
@@ -53,6 +54,13 @@ export function requirePrincipal(context: PrincipalReader): RequestPrincipal {
     throw new ApiError(401, "unauthorized", "Unauthorized");
   }
   return principal;
+}
+
+export function requireThreadViewerId(context: PrincipalReader): string {
+  const principal = requirePrincipal(context);
+  return principal.kind === "machine"
+    ? TEAM_THREAD_VIEWER_ID
+    : principal.userId;
 }
 
 export function assertAdmin(context: PrincipalReader): RequestPrincipal {

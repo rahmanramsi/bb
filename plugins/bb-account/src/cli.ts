@@ -174,6 +174,7 @@ export function registerAccountCli(args: {
           },
         }),
         login: cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Sign in with a getbb.app link, or pair with a code",
           description:
             "Without --code, prints a getbb.app link and a code to approve in any browser, then returns; bb keeps checking and signs in once you approve. --wait waits for that sign-in to finish. Signing in replaces the account this bb is signed in to.",
@@ -251,6 +252,7 @@ export function registerAccountCli(args: {
             }),
         }),
         logout: cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Sign out and forget this bb's getbb.app pairing",
           description:
             "Revokes the server credential on getbb.app and forgets it here, and cancels a sign-in that is waiting for approval. Remote access and hosted services stop until you sign in again. If getbb.app can't be reached, bb still signs out here and says so; remove the server from the getbb.app dashboard.",

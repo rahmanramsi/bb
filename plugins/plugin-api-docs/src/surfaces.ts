@@ -785,6 +785,7 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
           "Run the same command from a terminal, a script, or an agent mid-task",
           "Get argument parsing, `--help`, and JSON errors from one declaration",
           "Know which thread and project it was run from",
+          "Keep commands that change server-wide settings to admins",
         ],
         apiSymbols: [
           "PluginCli",
@@ -792,6 +793,7 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
           "defineCli",
           "cliCommand",
           "PluginCliError",
+          "experimental_assertCliAdmin",
           "PluginCliSpec",
           "PluginCliCommand",
           "PluginCliOption",
@@ -900,7 +902,7 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
         summary:
           "Use RPC, HTTP, WebSocket, and realtime messages to connect the plugin. With this, a plugin can:",
         bullets: [
-          "Call its server from its UI with schema-checked RPC",
+          "Call its server from its UI with schema-checked RPC, admin-only where needed",
           "Receive webhooks and serve HTTP or WebSocket routes",
           "Push live updates to open bb windows",
           "Publish RPC methods other plugins can discover",

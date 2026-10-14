@@ -653,6 +653,7 @@ async function sendThreadMessageWithoutContextClear(
 
   if (mode === "start") {
     const commandArgs = {
+      authorUserId: args.authorUserId,
       thread,
       fork: null,
       input,
@@ -763,6 +764,7 @@ async function sendThreadMessageWithoutContextClear(
     hostId: readyEnvironment.hostId,
   });
   const preparedCommand = await prepareTurnSubmitCommandPayload(deps, {
+    authorUserId: args.authorUserId,
     thread,
     input,
     ...(inputGroups !== undefined ? { inputGroups } : {}),

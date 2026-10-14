@@ -48,7 +48,10 @@ import {
 import { TerminalSessionLifecycle } from "./services/terminals/terminal-session-lifecycle.js";
 import { createLifecycleDedupers } from "./lifecycle-dedupers.js";
 import type { ServerLogger, ServerRuntimeConfig } from "./types.js";
-import { createUserAuthService } from "./services/user-auth.js";
+import {
+  createUserAuthService,
+  usesSecureSessionCookies,
+} from "./services/user-auth.js";
 import { NotificationHub } from "./ws/hub.js";
 import { startDaemonLivenessChecks } from "./ws/daemon-protocol.js";
 import { WatchInterestCoordinator } from "./ws/watch-interests.js";
@@ -230,6 +233,7 @@ export async function runServer(serverConfig: ServerConfig): Promise<void> {
     dataDir: serverConfig.BB_DATA_DIR,
     db,
     logger,
+    secureCookies: usesSecureSessionCookies(appUrl),
   });
   const skillTreeRegistry = new SkillTreeRegistry();
   const pluginHostArtifacts = new PluginHostArtifactRegistry();

@@ -267,6 +267,7 @@ async function startThreadIfEnvironmentReady(
   }
 
   await requestThreadStart(deps, {
+    authorUserId: null,
     thread: args.thread,
     environment: {
       id: args.environment.id,

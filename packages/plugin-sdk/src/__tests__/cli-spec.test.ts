@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PluginCliRegistration, PluginCliResult } from "../index.js";
-import { PluginCliError, cliCommand, defineCli } from "../index.js";
+import {
+  PluginCliError,
+  cliCommand,
+  defineCli,
+  experimental_assertCliAdmin,
+} from "../index.js";
 
 function run(
   registration: PluginCliRegistration,
@@ -1122,5 +1127,86 @@ describe("defineCli review regressions", () => {
     });
     const asText = await run(cli, ["show", "--json=false", "--bogus"]);
     expect(asText.stdout ?? "").toBe("");
+  });
+});
+
+describe("defineCli admin commands", () => {
+  function adminCli(write: () => void): PluginCliRegistration {
+    return defineCli({
+      name: "limits",
+      summary: "Manage limits",
+      commands: {
+        reset: cliCommand({
+          experimental_requiredRole: "admin",
+          summary: "Reset every limit",
+          options: { json: { type: "boolean", description: "Emit JSON" } },
+          run() {
+            write();
+            return { exitCode: 0, stdout: "reset" };
+          },
+        }),
+        show: cliCommand({
+          summary: "Show or set the limit",
+          positionals: [{ name: "value", description: "New limit" }],
+          options: { json: { type: "boolean", description: "Emit JSON" } },
+          run(input, ctx) {
+            if (input.positionals.value !== undefined) {
+              experimental_assertCliAdmin(ctx, "Setting the limit");
+              write();
+            }
+            return { exitCode: 0, stdout: "limit" };
+          },
+        }),
+      },
+    });
+  }
+
+  it("refuses admin-only commands unless the caller is an admin", async () => {
+    const write = vi.fn();
+    const cli = adminCli(write);
+    for (const ctx of [{}, { experimental_callerRole: "member" as const }]) {
+      const refused = await cli.run(["reset", "--json"], ctx);
+      expect(refused.exitCode).toBe(1);
+      expect(JSON.parse(refused.stdout ?? "")).toEqual({
+        ok: false,
+        error: {
+          code: "admin_required",
+          message: "bb limits reset requires a server admin",
+          hint: "Ask an admin to run it, or sign in with an admin account.",
+        },
+      });
+    }
+    expect(write).not.toHaveBeenCalled();
+    expect(
+      (
+        await cli.run(["reset", "--help"], {
+          experimental_callerRole: "member",
+        })
+      ).exitCode,
+    ).toBe(0);
+    await expect(
+      cli.run(["reset"], { experimental_callerRole: "admin" }),
+    ).resolves.toEqual({ exitCode: 0, stdout: "reset" });
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets show-or-set commands refuse only the write path", async () => {
+    const write = vi.fn();
+    const cli = adminCli(write);
+    const member = { experimental_callerRole: "member" as const };
+    await expect(cli.run(["show"], member)).resolves.toEqual({
+      exitCode: 0,
+      stdout: "limit",
+    });
+    const refused = await cli.run(["show", "3"], member);
+    expect(refused.exitCode).toBe(1);
+    expect(refused.stderr).toContain(
+      "Setting the limit requires a server admin",
+    );
+    expect(write).not.toHaveBeenCalled();
+    await expect(
+      cli.run(["show", "3"], { experimental_callerRole: "admin" }),
+    ).resolves.toMatchObject({ exitCode: 0 });
+    expect(write).toHaveBeenCalledTimes(1);
   });
 });

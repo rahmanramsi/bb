@@ -23,7 +23,7 @@ import {
   type ThreadRecord,
   type ThreadCreateOrigin,
   type ThreadQueuedMessage,
-  LOCAL_OWNER_USER_ID,
+  TEAM_THREAD_VIEWER_ID,
 } from "@bb/domain";
 import type { SendMessageRequest } from "@bb/server-contract";
 import type {
@@ -533,7 +533,7 @@ async function runDispatchAttempt(
       thread,
       threadResponse: toThreadResponseFromThread(deps, {
         thread,
-        viewerUserId: LOCAL_OWNER_USER_ID,
+        viewerUserId: TEAM_THREAD_VIEWER_ID,
       }),
       project: requirePublicProject(deps.db, thread.projectId),
       environmentId: thread.environmentId,

@@ -192,6 +192,7 @@ export interface PluginWebSocketRouteRecord {
 
 export interface PluginRpcHandler {
   publication: ReturnType<typeof publishRpcMethod>;
+  requiredRole: "admin" | null;
   inputSchema: StandardSchemaV1;
   outputSchema: StandardSchemaV1;
   handler: (

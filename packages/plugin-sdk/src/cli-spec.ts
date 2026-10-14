@@ -201,6 +201,11 @@ export interface PluginCliCommand {
   passthrough?: boolean;
   /** Hint added when an unexpected bare token is passed. */
   unexpectedPositionalHint?: string;
+  /**
+   * `"admin"` refuses the command, with error code `admin_required`, unless
+   * `ctx.experimental_callerRole` is `"admin"`. Help still renders.
+   */
+  experimental_requiredRole?: "admin";
   run(
     input: ErasedRunInput,
     ctx: PluginCliContext,
@@ -245,6 +250,23 @@ export class PluginCliError extends Error {
 }
 
 /**
+ * Throws a `PluginCliError` with code `admin_required` unless the invoking
+ * user is a server admin. `defineCli` calls it for commands marked
+ * `experimental_requiredRole: "admin"`; call it directly in commands that
+ * only need an admin for some arguments, such as show-or-set commands.
+ */
+export function experimental_assertCliAdmin(
+  ctx: PluginCliContext,
+  action: string,
+): void {
+  if (ctx.experimental_callerRole === "admin") return;
+  throw new PluginCliError(`${action} requires a server admin`, {
+    code: "admin_required",
+    hint: "Ask an admin to run it, or sign in with an admin account.",
+  });
+}
+
+/**
  * Declares one command. Inference flows from `options` and `positionals`
  * into `run`, so `input.options.scope` is the declared enum union and a
  * required option is never `undefined`.
@@ -263,6 +285,7 @@ export function cliCommand<
   constraints?: readonly PluginCliConstraint[];
   passthrough?: boolean;
   unexpectedPositionalHint?: string;
+  experimental_requiredRole?: "admin";
   run(
     input: PluginCliRunInput<TOptions, TPositionals>,
     ctx: PluginCliContext,
@@ -1237,6 +1260,12 @@ export function defineCli(spec: PluginCliSpec): PluginCliRegistration {
         const command = resolved?.command ?? spec.root;
         if (command === undefined) {
           throw unknownCommandError(spec, words);
+        }
+        if (command.experimental_requiredRole === "admin") {
+          experimental_assertCliAdmin(
+            ctx,
+            `bb ${path.length > 0 ? `${spec.name} ${path}` : spec.name}`,
+          );
         }
         const tail = asked.slice(resolved?.words ?? 0);
         const parsed = tokenize(spec, path, command, tail);

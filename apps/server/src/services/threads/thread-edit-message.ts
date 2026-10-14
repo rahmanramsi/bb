@@ -501,6 +501,7 @@ export async function editThreadMessage(
     }
     rewindLeaseId = randomUUID();
     const startCommand = await buildThreadStartCommand(deps, {
+      authorUserId: args.authorUserId,
       thread: editableThread,
       fork: null,
       input: [],

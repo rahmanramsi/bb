@@ -5,6 +5,7 @@ import { setRequestPrincipal } from "./request-context.js";
 import {
   LOCAL_OWNER_PRINCIPAL,
   UserAuthError,
+  type AuthenticatedCredential,
   type RequestPrincipal,
 } from "./services/user-auth.js";
 import type { ServerAppDeps } from "./types.js";
@@ -27,21 +28,33 @@ export function isAuthOptionalApiPath(path: string): boolean {
   return AUTH_OPTIONAL_API_PATHS.has(normalizeApiPath(path));
 }
 
-export async function resolveRequestPrincipal(
+const LOCAL_OWNER_CREDENTIAL: AuthenticatedCredential = {
+  principal: LOCAL_OWNER_PRINCIPAL,
+  isActive: async () => true,
+};
+
+async function authenticateCredential(
   deps: AuthenticateDeps,
   headers: Headers,
-): Promise<RequestPrincipal | null> {
+): Promise<AuthenticatedCredential | null> {
   if (deps.config.authMode === "local") {
     headers.delete(GATE_IDENTITY_HEADER);
-    return LOCAL_OWNER_PRINCIPAL;
+    return LOCAL_OWNER_CREDENTIAL;
   }
   try {
-    return await deps.userAuth.resolvePrincipal(headers);
+    return await deps.userAuth.authenticate(headers);
   } catch (error) {
     if (error instanceof UserAuthError)
       throw new ApiError(error.status, error.code, error.message);
     throw error;
   }
+}
+
+export async function resolveRequestPrincipal(
+  deps: AuthenticateDeps,
+  headers: Headers,
+): Promise<RequestPrincipal | null> {
+  return (await authenticateCredential(deps, headers))?.principal ?? null;
 }
 
 export function authenticateApiRequests(
@@ -63,14 +76,14 @@ export function authenticateApiRequests(
 export async function authenticateRequest(
   deps: AuthenticateDeps,
   context: Parameters<MiddlewareHandler>[0],
-): Promise<RequestPrincipal> {
-  const principal = await resolveRequestPrincipal(
+): Promise<AuthenticatedCredential> {
+  const credential = await authenticateCredential(
     deps,
     context.req.raw.headers,
   );
-  if (principal === null) {
+  if (credential === null) {
     throw new ApiError(401, "unauthorized", "Unauthorized", false);
   }
-  setRequestPrincipal(context, principal);
-  return principal;
+  setRequestPrincipal(context, credential.principal);
+  return credential;
 }

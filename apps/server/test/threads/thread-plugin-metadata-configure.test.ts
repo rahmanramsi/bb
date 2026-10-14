@@ -168,6 +168,7 @@ describe("thread plugin metadata in agent configuration", () => {
       );
 
       const startCommand = await buildThreadStartCommand(server.deps, {
+        authorUserId: null,
         environment,
         execution,
         fork: null,
@@ -194,6 +195,7 @@ describe("thread plugin metadata in agent configuration", () => {
         threadId: thread.id,
       });
       const submitCommand = await prepareTurnSubmitCommandPayload(server.deps, {
+        authorUserId: null,
         environment,
         execution,
         permissionEscalation: "ask",

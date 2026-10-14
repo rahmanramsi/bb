@@ -137,6 +137,34 @@ plugins' memory make the token a meaningful boundary for third-party plugins.
 bb account relies on it to keep `/api/connect/` requests, credential reads,
 refused-credential reports, and credential adoption to the connect plugin.
 
+## Admin-only RPC methods and CLI commands
+
+An RPC method contract accepts `experimental_requiredRole: "admin"`. The
+server's `POST /api/v1/plugins/<id>/rpc/<method>` route compares it with the
+authenticated principal and answers HTTP 403 with
+`{ ok: false, error: { code: "forbidden", message } }` before input
+validation or the handler run. `PluginRpcErrorCode` gains `forbidden`. Plugin
+callers that go through `bb.sdk.plugins.callRpc` authenticate with the server
+service token, which acts as an admin. In local mode every request is the local
+owner admin, so nothing changes.
+
+`PluginCliContext.experimental_callerRole` carries the invoking principal's role
+(`"admin" | "member"`); the server's plugin CLI route always sets it.
+`cliCommand` accepts `experimental_requiredRole: "admin"`, and `defineCli`
+refuses such commands with error code `admin_required` unless the role is
+`"admin"`. Help still renders. `experimental_assertCliAdmin(ctx, action)`
+throws the same `PluginCliError`; `defineCli` uses it, and show-or-set commands
+call it only when they write. A missing role counts as a member. The fake plugin
+host defaults `runCli` to an admin context and `callRpc` to an admin caller,
+with `experimental_callerRole: "member"` to test refusals.
+
+First-party callers: Concurrency limit, Account Pooler, bb connect, bb account,
+Storage retention, Keep Awake, Modal Sandbox, Custom instructions, and MCP mark
+their server-wide configuration, credential, enrollment, and bulk cleanup
+operations. Before stabilizing, audit whether plugin HTTP routes, WebSocket
+routes, and agent tools need the same role, whether `experimental_caller`
+should also carry the role, and whether RPC discovery should publish it.
+
 ## `bb.http.experimental_websocket`
 
 **What it does.** Registers an exact-path WebSocket upgrade in the plugin's

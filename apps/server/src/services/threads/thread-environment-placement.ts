@@ -14,7 +14,7 @@ import {
   type ProjectSource,
   type ProvisioningTranscriptEntry,
   type ThreadRecord,
-  LOCAL_OWNER_USER_ID,
+  TEAM_THREAD_VIEWER_ID,
 } from "@bb/domain";
 import { type ThreadProvisionContext } from "./thread-startup-store.js";
 import { type ThreadProvisioningDeps } from "./thread-provisioning-environment.js";
@@ -743,7 +743,7 @@ function buildProviderOperationContext(
   return {
     thread: toThreadResponseFromThread(deps, {
       thread: args.thread,
-      viewerUserId: LOCAL_OWNER_USER_ID,
+      viewerUserId: TEAM_THREAD_VIEWER_ID,
     }),
     project: args.project,
     host: args.host,

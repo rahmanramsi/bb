@@ -27,7 +27,7 @@ import {
   PLUGIN_SDK_VERSION,
   type ThreadRecord,
   type ThreadQueuedMessage,
-  LOCAL_OWNER_USER_ID,
+  TEAM_THREAD_VIEWER_ID,
 } from "@bb/domain";
 import {
   buildPluginApp,
@@ -930,7 +930,7 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
   function buildThreadDto(thread: ThreadRecord) {
     return toThreadResponseFromThread(
       { db: deps.db, hub: deps.hub },
-      { thread, viewerUserId: LOCAL_OWNER_USER_ID },
+      { thread, viewerUserId: TEAM_THREAD_VIEWER_ID },
     );
   }
 

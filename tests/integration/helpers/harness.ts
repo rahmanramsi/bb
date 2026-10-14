@@ -220,6 +220,7 @@ async function startIntegrationServer(
     dataDir: serverDataDir,
     db,
     logger: testLogger,
+    secureCookies: false,
   });
   const lifecycleDedupers = createLifecycleDedupers();
   const bbAppManagedConfig = await createBbAppManagedConfigReloader({

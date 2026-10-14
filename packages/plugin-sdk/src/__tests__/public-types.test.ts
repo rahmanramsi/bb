@@ -218,6 +218,7 @@ const EXPECTED_CLI_SPEC_ROOT_VALUE_EXPORTS = [
   "PluginCliError",
   "cliCommand",
   "defineCli",
+  "experimental_assertCliAdmin",
 ] as const;
 
 function namesFromMatches(source: string, pattern: RegExp): string[] {

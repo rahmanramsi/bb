@@ -1183,3 +1183,316 @@ it("manages connect members through authenticated SDK routes and validates the g
     );
   }
 });
+
+function openSocket(
+  path: string,
+  headers: Record<string, string>,
+): Promise<WebSocket> {
+  if (server === null) throw new Error("server not started");
+  const url = new URL(path, server.baseUrl);
+  url.protocol = "ws:";
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(url.href, { headers });
+    sockets.add(socket);
+    socket.once("open", () => resolve(socket));
+    socket.once("unexpected-response", (_request, response) => {
+      response.resume();
+      reject(new Error(`WebSocket upgrade failed: ${response.statusCode}`));
+    });
+    socket.once("error", reject);
+  });
+}
+
+function closeCode(socket: WebSocket): Promise<number> {
+  if (socket.readyState === WebSocket.CLOSED) return Promise.resolve(-1);
+  return new Promise((resolve) => {
+    socket.once("close", (code) => resolve(code));
+  });
+}
+
+async function memberTokenId(memberToken: string): Promise<string> {
+  const response = await send(
+    { method: "GET", path: "/api/v1/auth/tokens" },
+    { authorization: `Bearer ${memberToken}` },
+  );
+  const body: unknown = await response.json();
+  const tokens =
+    typeof body === "object" && body !== null
+      ? Reflect.get(body, "tokens")
+      : undefined;
+  const id = Array.isArray(tokens) ? Reflect.get(tokens[0], "id") : undefined;
+  if (typeof id !== "string") throw new Error("missing token id");
+  return id;
+}
+
+describe("authenticated socket revocation", () => {
+  it("closes realtime sockets when their token is revoked, their session signs out, or their user is removed", async () => {
+    server = await startTestServer({ authMode: "multi" });
+    const team = await bootstrapTeam();
+    const adminSocket = await openSocket("/ws", {
+      authorization: `Bearer ${team.adminToken}`,
+    });
+    const tokenSocket = await openSocket("/ws", {
+      authorization: `Bearer ${team.memberToken}`,
+    });
+    const cookieSocket = await openSocket("/ws", {
+      cookie: team.memberCookie,
+    });
+
+    const tokenClosed = closeCode(tokenSocket);
+    expect(
+      (
+        await send(
+          {
+            method: "DELETE",
+            path: `/api/v1/auth/tokens/${await memberTokenId(team.memberToken)}`,
+          },
+          { cookie: team.memberCookie },
+        )
+      ).status,
+    ).toBe(200);
+    expect(await tokenClosed).toBe(1008);
+    expect(cookieSocket.readyState).toBe(WebSocket.OPEN);
+
+    const cookieClosed = closeCode(cookieSocket);
+    expect(
+      (
+        await send(
+          { method: "POST", path: "/api/v1/auth/sign-out" },
+          { cookie: team.memberCookie },
+        )
+      ).status,
+    ).toBe(200);
+    expect(await cookieClosed).toBe(1008);
+
+    const signedIn = await send({
+      method: "POST",
+      path: "/api/v1/auth/sign-in",
+      body: { email: "member@example.test", password: "another long password" },
+    });
+    expect(signedIn.status).toBe(200);
+    const memberCookie = cookieHeader(signedIn);
+    const memberSocket = await openSocket("/ws", { cookie: memberCookie });
+    const me = await send(
+      { method: "GET", path: "/api/v1/me" },
+      { cookie: memberCookie },
+    );
+    const meBody: unknown = await me.json();
+    const memberId =
+      typeof meBody === "object" && meBody !== null
+        ? Reflect.get(Reflect.get(meBody, "user"), "id")
+        : undefined;
+    if (typeof memberId !== "string") throw new Error("missing member id");
+    const memberClosed = closeCode(memberSocket);
+    expect(
+      (
+        await send(
+          { method: "DELETE", path: `/api/v1/users/${memberId}` },
+          { cookie: team.adminCookie },
+        )
+      ).status,
+    ).toBe(200);
+    expect(await memberClosed).toBe(1008);
+    expect(adminSocket.readyState).toBe(WebSocket.OPEN);
+  });
+
+  it("closes sockets whose user changes role so they reconnect with the new role", async () => {
+    server = await startTestServer({ authMode: "multi" });
+    const team = await bootstrapTeam();
+    const memberSocket = await openSocket("/ws", {
+      authorization: `Bearer ${team.memberToken}`,
+    });
+    const me = await send(
+      { method: "GET", path: "/api/v1/me" },
+      { authorization: `Bearer ${team.memberToken}` },
+    );
+    const meBody: unknown = await me.json();
+    const memberId =
+      typeof meBody === "object" && meBody !== null
+        ? Reflect.get(Reflect.get(meBody, "user"), "id")
+        : undefined;
+    if (typeof memberId !== "string") throw new Error("missing member id");
+    const closed = closeCode(memberSocket);
+    expect(
+      (
+        await send(
+          {
+            method: "PUT",
+            path: `/api/v1/users/${memberId}/role`,
+            body: { role: "admin" },
+          },
+          { cookie: team.adminCookie },
+        )
+      ).status,
+    ).toBe(200);
+    expect(await closed).toBe(1008);
+    expect(
+      await websocketStatus("/ws", {
+        authorization: `Bearer ${team.memberToken}`,
+      }),
+    ).toBe(101);
+  });
+});
+
+describe("session cookie security", () => {
+  it("marks session cookies Secure when the app URL is HTTPS", async () => {
+    server = await startTestServer({
+      authMode: "multi",
+      appUrl: "https://bb.example.test",
+    });
+    const registered = await signUp({
+      email: "admin@example.test",
+      name: "Admin",
+      password: "correct horse battery",
+    });
+    expect(registered.status).toBe(201);
+    const [cookie] = registered.headers.getSetCookie();
+    expect(cookie).toMatch(/^__Secure-bb\.session_token=/u);
+    expect(cookie).toMatch(/;\s*Secure/iu);
+    expect(cookie).toMatch(/;\s*HttpOnly/iu);
+    expect(
+      (
+        await send(
+          { method: "GET", path: "/api/v1/projects" },
+          { cookie: cookieHeader(registered) },
+        )
+      ).status,
+    ).toBe(200);
+  });
+
+  it("keeps plain cookies for HTTP app URLs so loopback browsers can sign in", async () => {
+    server = await startTestServer({
+      authMode: "multi",
+      appUrl: "http://localhost:5173",
+    });
+    const registered = await signUp({
+      email: "admin@example.test",
+      name: "Admin",
+      password: "correct horse battery",
+    });
+    const [cookie] = registered.headers.getSetCookie();
+    expect(cookie).toMatch(/^bb\.session_token=/u);
+    expect(cookie).not.toMatch(/;\s*Secure/iu);
+  });
+});
+
+describe("sign-in throttling", () => {
+  it("limits repeated password guesses for one account without locking out others", async () => {
+    server = await startTestServer({ authMode: "multi" });
+    await bootstrapTeam();
+    const attempt = (email: string, password: string) =>
+      send({
+        method: "POST",
+        path: "/api/v1/auth/sign-in",
+        body: { email, password },
+      });
+    const statuses: number[] = [];
+    for (let index = 0; index < 12; index += 1) {
+      statuses.push(
+        (await attempt("member@example.test", `wrong password ${index}`))
+          .status,
+      );
+    }
+    expect(statuses.slice(0, 10)).toEqual(Array(10).fill(401));
+    expect(statuses.slice(10)).toEqual([429, 429]);
+    const locked = await attempt(
+      "Member@Example.test",
+      "another long password",
+    );
+    expect(locked.status).toBe(429);
+    expect(await locked.json()).toMatchObject({ code: "rate_limited" });
+    expect(
+      (await attempt("admin@example.test", "correct horse battery")).status,
+    ).toBe(200);
+  });
+});
+
+const ROLES_PLUGIN_SOURCE = `
+  const passthrough = {
+    "~standard": { version: 1, vendor: "test", validate: (value: unknown) => ({ value }) },
+  };
+  export default function plugin(bb: any) {
+    bb.rpc.register(
+      {
+        read: { input: passthrough, output: passthrough },
+        write: { experimental_requiredRole: "admin", input: passthrough, output: passthrough },
+      },
+      { read: () => ({ read: true }), write: () => ({ written: true }) },
+    );
+    bb.cli.register({
+      name: "roles",
+      summary: "Echo the caller role",
+      run: (_argv: string[], ctx: any) => ({ exitCode: 0, stdout: String(ctx.experimental_callerRole) }),
+    });
+  }
+`;
+
+describe("plugin admin operations", () => {
+  it("refuses admin-only RPC methods to members and passes the caller role to plugin CLIs", async () => {
+    server = await startTestServer({ authMode: "multi" });
+    const rootDir = join(server.config.dataDir, "fixtures", "bb-plugin-roles");
+    await mkdir(rootDir, { recursive: true });
+    await writeFile(
+      join(rootDir, "package.json"),
+      JSON.stringify({
+        name: "bb-plugin-roles",
+        version: "0.1.0",
+        bb: {
+          name: "Roles fixture",
+          description: "Plugin role fixture.",
+          branding: { icon: "Zap" },
+          server: "./server.ts",
+        },
+      }),
+    );
+    await writeFile(join(rootDir, "server.ts"), ROLES_PLUGIN_SOURCE);
+    expect((await server.pluginService.installPath(rootDir)).status).toBe(
+      "running",
+    );
+    const team = await bootstrapTeam();
+    const member = { authorization: `Bearer ${team.memberToken}` };
+    const admin = { authorization: `Bearer ${team.adminToken}` };
+    const rpc = (method: string, headers: Record<string, string>) =>
+      send(
+        {
+          method: "POST",
+          path: `/api/v1/plugins/roles/rpc/${method}`,
+          body: {},
+        },
+        headers,
+      );
+
+    const refused = await rpc("write", member);
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({
+      ok: false,
+      error: { code: "forbidden" },
+    });
+    expect(await (await rpc("read", member)).json()).toEqual({
+      ok: true,
+      result: { read: true },
+    });
+    expect(await (await rpc("write", admin)).json()).toEqual({
+      ok: true,
+      result: { written: true },
+    });
+
+    for (const [headers, role] of [
+      [member, "member"],
+      [admin, "admin"],
+    ] as const) {
+      const response = await send(
+        {
+          method: "POST",
+          path: "/api/v1/plugins/roles/cli",
+          body: { argv: [] },
+        },
+        headers,
+      );
+      expect(await response.json()).toMatchObject({
+        exitCode: 0,
+        stdout: role,
+      });
+    }
+  });
+});

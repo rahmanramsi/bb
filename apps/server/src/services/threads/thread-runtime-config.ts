@@ -39,6 +39,7 @@ import { readWorkspaceAgentContext } from "./workspace-agent-context.js";
 import { resolveDeprecatedWorkspaceProvisionType } from "../environments/environment-response.js";
 import { markTurnTraceSpan } from "../system/turn-trace.js";
 import { issueThreadShellToken } from "../user-auth.js";
+import { MACHINE_AUTH_SYSTEM_USER_ID } from "../machine-auth.js";
 
 const UPDATE_ENVIRONMENT_DIRECTORY_INSTRUCTIONS =
   "If the user asks you to move this thread to another checkout, worktree, or directory, make sure the target directory exists, then call `update_environment_directory` with its absolute path. After it succeeds, stop work in the current turn; future turns will run in the updated environment.";
@@ -53,6 +54,7 @@ export interface ThreadRuntimeCommandEnvironment {
 }
 
 interface ResolveThreadRuntimeCommandConfigArgs {
+  authorUserId: string | null;
   environment: ThreadRuntimeCommandEnvironment;
   model: string;
   thread: ThreadRecord;
@@ -115,6 +117,20 @@ export function resolvePermissionEscalation(
   }
 
   return "ask";
+}
+
+function threadShellUserId(
+  args: ResolveThreadRuntimeCommandConfigArgs,
+): string | null {
+  const userId = args.authorUserId ?? args.thread.createdByUserId;
+  if (
+    userId === null ||
+    userId === LOCAL_OWNER_USER_ID ||
+    userId === MACHINE_AUTH_SYSTEM_USER_ID
+  ) {
+    return null;
+  }
+  return userId;
 }
 
 export async function resolveThreadRuntimeCommandConfig(
@@ -203,20 +219,20 @@ export async function resolveThreadRuntimeCommandConfig(
     }),
   );
   if (deps.config.authMode === "multi") {
-    const token = await issueThreadShellToken(
-      deps.config.dataDir,
-      args.thread.createdByUserId ?? LOCAL_OWNER_USER_ID,
-    );
     for (let index = contributedEnv.length - 1; index >= 0; index -= 1) {
       if (contributedEnv[index].name === "BB_TOKEN")
         contributedEnv.splice(index, 1);
     }
-    contributedEnv.push({
-      name: "BB_TOKEN",
-      value: token,
-      source: { core: "thread-auth" },
-      reason: "Authenticate the thread shell with its creator's server account",
-    });
+    const shellUserId = threadShellUserId(args);
+    if (shellUserId !== null) {
+      contributedEnv.push({
+        name: "BB_TOKEN",
+        value: await issueThreadShellToken(deps.config.dataDir, shellUserId),
+        source: { core: "thread-auth" },
+        reason:
+          "Authenticate the thread shell with the server account of the user who sent the turn",
+      });
+    }
   }
   markTurnTraceSpan("runtimeConfig.env");
   const injectedSkillSources = resolveSkillCatalog(deps, {

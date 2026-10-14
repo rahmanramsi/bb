@@ -99,6 +99,14 @@ prints its full option help; a hand-written `run` leaves that unset and the
 `bb` CLI answers `--help` from the `commands[].usage` line without calling
 the plugin.
 
+In multi-user mode, `ctx.experimental_callerRole` is the caller's server role.
+Mark a command that changes server-wide configuration, credentials, or machine
+enrollment with `experimental_requiredRole: "admin"`; `defineCli` then refuses
+members with `admin_required`. A show-or-set command calls
+`experimental_assertCliAdmin(ctx, "Setting the limit")` only on the write path.
+RPC method contracts take the same `experimental_requiredRole: "admin"`, and
+the server answers members with HTTP 403 and code `forbidden`.
+
 Agents discover plugin commands through the server-generated
 `plugin-commands` skill, which lists each command's `summary` and the
 `commands` usage lines — fill both in. Combined stdout and stderr must fit

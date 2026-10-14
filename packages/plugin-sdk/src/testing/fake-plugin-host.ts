@@ -376,17 +376,23 @@ export interface FakePluginBehaviorDrivers {
    * with the same message/code/issues the frontend client surfaces. The
    * handler sees `options.experimental_caller` as its caller, `{ kind:
    * "client" }` by default; pass `{ kind: "plugin", pluginId }` to act as
-   * another plugin calling through `bb.sdk.plugins.callRpc`.
+   * another plugin calling through `bb.sdk.plugins.callRpc`. The caller is an
+   * admin unless `options.experimental_callerRole` is `"member"`, in which
+   * case admin-only methods reject with code `forbidden`.
    */
   callRpc(
     method: string,
     input?: unknown,
-    options?: { experimental_caller?: ExperimentalPluginRpcCaller },
+    options?: {
+      experimental_caller?: ExperimentalPluginRpcCaller;
+      experimental_callerRole?: "admin" | "member";
+    },
   ): Promise<unknown>;
   /**
    * Invoke the plugin's CLI command with host semantics: the result's
    * exitCode must be a number, stdout/stderr default to "", and a throwing
    * run() becomes `{ exitCode: 1, stderr: "bb <name> failed: …" }`.
+   * `ctx.experimental_callerRole` defaults to `"admin"`.
    */
   runCli(
     argv: string[],
@@ -598,6 +604,7 @@ function jsonRoundTrip(value: unknown, what: string): unknown {
 
 interface FakeRpcRecord {
   publication: ReturnType<typeof publishRpcMethod>;
+  requiredRole: "admin" | null;
   inputSchema: StandardSchemaV1;
   outputSchema: StandardSchemaV1;
   handler: (
@@ -1786,6 +1793,15 @@ function createFakePluginHostInternal(
           message: `plugin "${pluginId}" has no rpc method "${method}"`,
         });
       }
+      if (
+        record.requiredRole === "admin" &&
+        (options.experimental_callerRole ?? "admin") !== "admin"
+      ) {
+        return throwRpcError({
+          code: "forbidden",
+          message: `rpc method "${method}" requires an admin`,
+        });
+      }
       const parsedInput =
         input === undefined
           ? null
@@ -1824,7 +1840,10 @@ function createFakePluginHostInternal(
         throw new Error(`plugin "${pluginId}" registers no CLI command`);
       }
       try {
-        const result = await registration.run(argv, ctx);
+        const result = await registration.run(argv, {
+          experimental_callerRole: "admin",
+          ...ctx,
+        });
         if (typeof result?.exitCode !== "number") {
           throw new Error(
             "cli run() must return { exitCode: number, stdout?, stderr? }",

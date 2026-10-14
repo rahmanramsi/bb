@@ -89,6 +89,7 @@ import {
   onClientSocketMessage,
   onClientSocketOpen,
 } from "./ws/client-protocol.js";
+import { createAuthenticatedSocketRegistry } from "./ws/authenticated-sockets.js";
 import {
   onDaemonSocketClose,
   onDaemonSocketMessage,
@@ -964,17 +965,29 @@ export function createApp(
     }
   };
 
+  const authenticatedSockets = createAuthenticatedSocketRegistry();
+  const stopAuthorizationWatch = deps.userAuth.onAuthorizationChange(() => {
+    void authenticatedSockets.revalidate();
+  });
+
   app.get(
     "/ws",
     upgradeWebSocket(async (context) => {
-      const principal = await authenticateRequest(deps, context);
+      const credential = await authenticateRequest(deps, context);
       assertBrowserWebSocketAllowed(context);
       return {
-        onOpen: (_event, socket) =>
-          onClientSocketOpen(deps.hub, socket, principal.userId),
-        onMessage: (event, socket) =>
-          onClientSocketMessage(deps, socket, event.data),
-        onClose: (_event, socket) => onClientSocketClose(deps, socket),
+        onOpen: (_event, socket) => {
+          authenticatedSockets.track(socket, credential.isActive);
+          onClientSocketOpen(deps.hub, socket, credential.principal.userId);
+        },
+        onMessage: (event, socket) => {
+          if (authenticatedSockets.isRevoked(socket)) return;
+          onClientSocketMessage(deps, socket, event.data);
+        },
+        onClose: (_event, socket) => {
+          authenticatedSockets.untrack(socket);
+          onClientSocketClose(deps, socket);
+        },
       };
     }),
   );
@@ -982,7 +995,7 @@ export function createApp(
   app.get(
     "/ws/terminals/:terminalId",
     upgradeWebSocket(async (context) => {
-      await authenticateRequest(deps, context);
+      const credential = await authenticateRequest(deps, context);
       assertBrowserWebSocketAllowed(context);
       const terminalId = context.req.param("terminalId");
       const query = terminalWebSocketQuerySchema.safeParse({
@@ -997,24 +1010,30 @@ export function createApp(
         );
       }
       return {
-        onOpen: (_event, socket) =>
+        onOpen: (_event, socket) => {
+          authenticatedSockets.track(socket, credential.isActive);
           onTerminalSocketOpen(deps, {
             outputAcks: query.data.outputAcks,
             socket,
             sinceSeq: query.data.sinceSeq,
             terminalId,
-          }),
-        onMessage: (event, socket) =>
+          });
+        },
+        onMessage: (event, socket) => {
+          if (authenticatedSockets.isRevoked(socket)) return;
           onTerminalSocketMessage(deps, {
             raw: event.data,
             socket,
             terminalId,
-          }),
-        onClose: (_event, socket) =>
+          });
+        },
+        onClose: (_event, socket) => {
+          authenticatedSockets.untrack(socket);
           onTerminalSocketClose(deps, {
             socket,
             terminalId,
-          }),
+          });
+        },
       };
     }),
   );
@@ -1058,12 +1077,15 @@ export function createApp(
 
   return {
     app,
-    closeWebSockets: () =>
-      closeWebSocketServer({
+    closeWebSockets: () => {
+      stopAuthorizationWatch();
+      authenticatedSockets.dispose();
+      return closeWebSocketServer({
         forceCloseAfterMs: WEB_SOCKET_SHUTDOWN_FORCE_CLOSE_MS,
         reason: WEB_SOCKET_SHUTDOWN_REASON,
         server: wss,
-      }),
+      });
+    },
     injectWebSocket,
     pluginService,
     pluginCatalogService,

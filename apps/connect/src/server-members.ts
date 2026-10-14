@@ -73,13 +73,17 @@ export async function handleServerMembers(
     return jsonResponse({ error: "unauthorized" }, 401);
   const url = new URL(request.url);
   let serverId = url.searchParams.get("serverId");
-  if (serverId === null && account.grant.kind === "server") {
+  if (account.grant.kind === "server") {
     const row = await db
       .select({ id: server.id })
       .from(server)
       .where(eq(server.credentialHash, account.grant.credentialHash))
       .get();
-    serverId = row?.id ?? null;
+    if (row === undefined)
+      return jsonResponse({ error: "unauthorized" }, 401);
+    if (serverId !== null && serverId !== row.id)
+      return jsonResponse({ error: "server_mismatch" }, 403);
+    serverId = row.id;
   }
   if (serverId === null) {
     const visitor = parseVisitorHost(url.host, env.BASE_DOMAIN);

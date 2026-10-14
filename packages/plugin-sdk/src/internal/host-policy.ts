@@ -1672,6 +1672,7 @@ const rpcDescriptionSchema = z
   .max(4096)
   .optional()
   .transform((value) => value ?? null);
+const rpcRequiredRoleSchema = z.literal("admin").optional();
 const rpcPublicationOptionsSchema = z
   .object({
     experimental_discoverable: z.boolean().default(false),
@@ -1703,9 +1704,17 @@ function readRpcMethodContract(
   const description = rpcDescriptionSchema.parse(
     Reflect.get(value, "experimental_description"),
   );
-  return description === null
-    ? { input, output }
-    : { input, output, experimental_description: description };
+  const requiredRole = rpcRequiredRoleSchema.parse(
+    Reflect.get(value, "experimental_requiredRole"),
+  );
+  return {
+    input,
+    output,
+    ...(description === null ? {} : { experimental_description: description }),
+    ...(requiredRole === undefined
+      ? {}
+      : { experimental_requiredRole: requiredRole }),
+  };
 }
 
 export function readRpcPublicationOptions(value: unknown) {
@@ -2761,9 +2770,10 @@ export function runPluginStorageMigrations(
     database.exec("ALTER TABLE _bb_migrations ADD COLUMN statement_hash TEXT");
   }
   const rows = database
-    .prepare<[], { id: number; statement_hash: string | null }>(
-      "SELECT id, statement_hash FROM _bb_migrations ORDER BY id",
-    )
+    .prepare<
+      [],
+      { id: number; statement_hash: string | null }
+    >("SELECT id, statement_hash FROM _bb_migrations ORDER BY id")
     .all();
   const applied = new Map<number, string | null>();
   for (const row of rows) applied.set(row.id, row.statement_hash);
@@ -2871,6 +2881,7 @@ export function normalizeWebSocketRouteRegistration(
 
 type RpcRegistrationRecord = {
   publication: ReturnType<typeof publishRpcMethod>;
+  requiredRole: "admin" | null;
   inputSchema: StandardSchemaV1;
   outputSchema: StandardSchemaV1;
   handler: (
@@ -2928,6 +2939,7 @@ export function normalizeRpcRegistration(
       name,
       {
         publication: publishRpcMethod(name, methodContract, publicationOptions),
+        requiredRole: methodContract.experimental_requiredRole ?? null,
         inputSchema: methodContract.input,
         outputSchema: methodContract.output,
         handler,

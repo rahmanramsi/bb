@@ -2,6 +2,7 @@ import {
   defineRpcContract,
   PluginCliError,
   cliCommand,
+  experimental_assertCliAdmin,
   defineCli,
   type BbPluginApi,
 } from "@get-bb/plugin-sdk";
@@ -54,6 +55,7 @@ export const keepAwakeRpcContract = defineRpcContract({
     output: hostConfigurationSchema,
   },
   setConfiguration: {
+    experimental_requiredRole: "admin",
     input: keepAwakeConfigurationSchema,
     output: hostConfigurationSchema,
   },
@@ -171,11 +173,13 @@ export default async function keepAwakePlugin(bb: BbPluginApi): Promise<void> {
           }),
         }),
         enable: cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Enable Keep Awake",
           options: { json: JSON_OPTION },
           run: (input) => setEnabled(true, input.options.json),
         }),
         disable: cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Disable Keep Awake",
           options: { json: JSON_OPTION },
           run: (input) => setEnabled(false, input.options.json),
@@ -190,8 +194,10 @@ export default async function keepAwakePlugin(bb: BbPluginApi): Promise<void> {
             },
           ],
           options: { json: JSON_OPTION },
-          async run(input) {
+          async run(input, ctx) {
             const requested = input.positionals["host-id"];
+            if (requested.length > 0)
+              experimental_assertCliAdmin(ctx, "Changing the Keep Awake hosts");
             if (requested[0] === "all") {
               if (requested.length !== 1) {
                 throw new PluginCliError(

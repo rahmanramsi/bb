@@ -31,6 +31,7 @@ import type {
 } from "@bb/domain";
 import {
   evaluateThreadLifecycleEvent,
+  TEAM_THREAD_VIEWER_ID,
   threadSearchSourceKindSchema,
 } from "@bb/domain";
 import type { DbConnection, DbTransaction } from "../connection.js";
@@ -493,6 +494,9 @@ const threadViewerStateColumns = {
 };
 
 function threadUserStateJoin(viewerUserId: string): SQL {
+  if (viewerUserId === TEAM_THREAD_VIEWER_ID) {
+    return sql`${threadUserState.threadId} = ${threads.id} AND ${threadUserState.userId} = (SELECT team_state.user_id FROM thread_user_state AS team_state WHERE team_state.thread_id = ${threads.id} ORDER BY team_state.pinned_at IS NULL, team_state.pinned_at DESC, team_state.last_read_at IS NULL, team_state.last_read_at DESC, team_state.user_id LIMIT 1)`;
+  }
   return sql`${threadUserState.threadId} = ${threads.id} AND ${threadUserState.userId} = ${viewerUserId}`;
 }
 

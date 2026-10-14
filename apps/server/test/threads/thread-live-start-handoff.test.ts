@@ -82,6 +82,7 @@ async function startLiveThreadStartRpc(
   });
 
   await requestThreadStart(args.harness.deps, {
+    authorUserId: null,
     thread,
     environment,
     fork: null,

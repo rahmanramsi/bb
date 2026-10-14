@@ -326,6 +326,43 @@ describe("configuration", () => {
     ).resolves.toMatchObject({ exitCode: 1 });
   });
 
+  it("keeps limit changes to admins while members can read them", async () => {
+    const { bb, harness } = await setup({
+      hosts: [hostRecord("host-a", "connected", "Laptop")],
+      capacities: [{ hostId: "host-a", availableParallelism: 8 }],
+    });
+    const member = { experimental_callerRole: "member" } as const;
+
+    await expect(
+      harness.behavior.callRpc(
+        "setConfiguration",
+        { globalLimit: 0, hostOverrides: [] },
+        member,
+      ),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    await expect(
+      harness.behavior.callRpc("getConfiguration", null, member),
+    ).resolves.toMatchObject({ globalLimit: null });
+    for (const argv of [
+      ["global", "0", "--json"],
+      ["host", "host-a", "0", "--json"],
+    ]) {
+      const refused = await harness.behavior.runCli(argv, member);
+      expect(refused.exitCode).toBe(1);
+      expect(JSON.parse(refused.stdout)).toMatchObject({
+        ok: false,
+        error: { code: "admin_required" },
+      });
+    }
+    await expect(
+      harness.behavior.runCli(["global"], member),
+    ).resolves.toMatchObject({ exitCode: 0, stdout: "Unlimited" });
+    await expect(
+      harness.behavior.runCli(["host", "host-a"], member),
+    ).resolves.toMatchObject({ exitCode: 0 });
+    await expect(bb.storage.kv.get("configuration")).resolves.toBeUndefined();
+  });
+
   it("documents the limit range in help and reports errors as JSON", async () => {
     const { harness } = await setup({
       hosts: [hostRecord("host-a", "connected", "Laptop")],

@@ -9,11 +9,16 @@ import type { WSContext, WSMessageReceive, WSEvents } from "hono/ws";
 import type {
   ExperimentalPluginWebSocket,
   ExperimentalPluginWebSocketHandlers,
+  PluginCliContext,
   PluginCliExecutionResult,
 } from "@get-bb/plugin-sdk";
 import type { ServerRuntimeConfig } from "../types.js";
 import { ApiError } from "../errors.js";
-import { assertAdmin, getRequestPrincipal } from "../request-context.js";
+import {
+  assertAdmin,
+  getRequestPrincipal,
+  requirePrincipal,
+} from "../request-context.js";
 import {
   browserRequestProblem,
   type BrowserRequestProblem,
@@ -521,12 +526,9 @@ export function registerPluginRoutes(
         400,
       );
     }
-    const ctx: {
-      cwd?: string;
-      threadId?: string;
-      projectId?: string;
-      signal?: AbortSignal;
-    } = {};
+    const ctx: PluginCliContext = {
+      experimental_callerRole: requirePrincipal(context).role,
+    };
     if (typeof body?.cwd === "string") ctx.cwd = body.cwd;
     if (typeof body?.threadId === "string") ctx.threadId = body.threadId;
     if (typeof body?.projectId === "string") ctx.projectId = body.projectId;
@@ -998,6 +1000,21 @@ export function registerPluginRoutes(
           },
         },
         404,
+      );
+    }
+    if (
+      lookup.value.requiredRole === "admin" &&
+      requirePrincipal(context).role !== "admin"
+    ) {
+      return context.json(
+        {
+          ok: false,
+          error: {
+            code: "forbidden",
+            message: `plugin "${id}" rpc method "${method}" requires a server admin`,
+          },
+        },
+        403,
       );
     }
     const outcome = await plugins.invokeRpcHandler(

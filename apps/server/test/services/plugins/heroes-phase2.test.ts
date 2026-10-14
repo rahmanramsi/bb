@@ -84,6 +84,7 @@ describe("hero plugin: agent-enrichment (Phase 2 surfaces)", () => {
       { threadId: thread.id },
     );
     const command = await buildThreadStartCommand(harness.deps, {
+      authorUserId: null,
       environment,
       execution,
       fork: null,

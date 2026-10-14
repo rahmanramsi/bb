@@ -304,6 +304,7 @@ async function queueActiveParentSystemMessage(
     hostId: args.environment.hostId,
   });
   const preparedCommand = await prepareTurnSubmitCommandPayload(deps, {
+    authorUserId: null,
     thread: args.thread,
     input: args.input,
     execution: args.execution,
@@ -366,6 +367,7 @@ async function queueReadyParentSystemMessage(
   const requestId = createClientTurnRequestId();
 
   const command = await prepareReadyThreadTurnCommand(deps, {
+    authorUserId: null,
     thread: args.thread,
     fork: null,
     input: args.input,

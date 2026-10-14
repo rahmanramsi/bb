@@ -15,3 +15,6 @@ bb concurrency-limit host <host-id> [auto|<limit>] [--json]
 Automatic host limits allow one thread per available processor. Resolve the host
 with `bb machine list` before changing a host limit. Omit the value to inspect it;
 change limits only for the requested scope and verify the resulting status.
+
+In multi-user mode only admins can change limits; members can inspect them, and
+changes fail with `admin_required`.

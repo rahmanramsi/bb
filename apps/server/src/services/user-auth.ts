@@ -31,6 +31,10 @@ import { SERVER_SERVICE_TOKEN_FILE_NAME } from "@bb/config/server";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { MACHINE_AUTH_SYSTEM_USER_ID } from "./machine-auth.js";
+import {
+  createAuthAttemptLimiter,
+  type AuthAttemptLimiter,
+} from "./auth-attempt-limiter.js";
 import type { ServerLogger } from "../types.js";
 
 const AUTH_SECRET_FILE_NAME = "auth-secret";
@@ -49,6 +53,11 @@ export interface RequestPrincipal {
   kind: PrincipalKind;
   role: UserRole;
   userId: string;
+}
+
+export interface AuthenticatedCredential {
+  principal: RequestPrincipal;
+  isActive(): Promise<boolean>;
 }
 
 export const LOCAL_OWNER_PRINCIPAL: RequestPrincipal = {
@@ -100,7 +109,7 @@ export async function issueThreadShellToken(
 
 export class UserAuthError extends Error {
   constructor(
-    readonly status: 401 | 403 | 404 | 409,
+    readonly status: 401 | 403 | 404 | 409 | 429,
     readonly code: string,
     message: string,
   ) {
@@ -160,6 +169,8 @@ export interface UserAuthService {
   removeUser(userId: string): void;
   listPersonalAccessTokens(userId: string): PersonalAccessTokenSummary[];
   needsBootstrap(): boolean;
+  authenticate(headers: Headers): Promise<AuthenticatedCredential | null>;
+  onAuthorizationChange(listener: () => void): () => void;
   resolvePrincipal(headers: Headers): Promise<RequestPrincipal | null>;
   revokePersonalAccessToken(args: { id: string; userId: string }): boolean;
   signIn(args: SignInArgs): Promise<UserAuthResult>;
@@ -170,7 +181,27 @@ export interface UserAuthService {
 interface CreateUserAuthServiceArgs {
   dataDir: string;
   db: DbConnection;
+  attemptLimiter?: AuthAttemptLimiter;
   logger: ServerLogger;
+  secureCookies: boolean;
+}
+
+function throttled(retryAfterMs: number): UserAuthError {
+  const seconds = Math.max(1, Math.ceil(retryAfterMs / 1000));
+  return new UserAuthError(
+    429,
+    "rate_limited",
+    `Too many sign-in attempts. Try again in ${seconds} seconds.`,
+  );
+}
+
+export function usesSecureSessionCookies(appUrl: string | undefined): boolean {
+  if (appUrl === undefined) return false;
+  try {
+    return new URL(appUrl).protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function sha256Hex(value: string): string {
@@ -229,6 +260,7 @@ export async function createUserAuthService(
     }),
     advanced: {
       cookiePrefix: SESSION_COOKIE_PREFIX,
+      useSecureCookies: args.secureCookies,
     },
     emailAndPassword: {
       enabled: true,
@@ -271,6 +303,27 @@ export async function createUserAuthService(
     serviceToken,
   );
   const patCache = new Map<string, { userId: string; validUntilMs: number }>();
+  const attemptLimiter = args.attemptLimiter ?? createAuthAttemptLimiter();
+  const authorizationListeners = new Set<() => void>();
+
+  function onAuthorizationChange(listener: () => void): () => void {
+    authorizationListeners.add(listener);
+    return () => {
+      authorizationListeners.delete(listener);
+    };
+  }
+
+  function notifyAuthorizationChange(): void {
+    for (const listener of authorizationListeners) {
+      try {
+        listener();
+      } catch (error) {
+        args.logger.warn(
+          `Authorization change listener failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
   let signUpQueue: Promise<unknown> = Promise.resolve();
 
   function serializeSignUp<T>(work: () => Promise<T>): Promise<T> {
@@ -346,7 +399,7 @@ export async function createUserAuthService(
   }
 
   function updateUserRole(userId: string, role: UserRole): AuthUser {
-    return args.db.transaction(() => {
+    const updated = args.db.transaction(() => {
       const user = assertMutableUser(userId, role !== "admin");
       args.db
         .update(authUsers)
@@ -355,6 +408,8 @@ export async function createUserAuthService(
         .run();
       return { ...user, role };
     });
+    notifyAuthorizationChange();
+    return updated;
   }
 
   function removeUser(userId: string): void {
@@ -363,6 +418,7 @@ export async function createUserAuthService(
       args.db.delete(authUsers).where(eq(authUsers.id, userId)).run();
     });
     patCache.clear();
+    notifyAuthorizationChange();
   }
 
   function listInvites(): UserInviteSummary[] {
@@ -461,9 +517,46 @@ export async function createUserAuthService(
     return result.key.referenceId;
   }
 
+  function principalStillAuthorized(principal: RequestPrincipal): boolean {
+    const user = getUser(principal.userId);
+    return user !== null && user.role === principal.role;
+  }
+
+  function credentialFor(
+    principal: RequestPrincipal | null,
+    isCredentialActive: () => boolean | Promise<boolean>,
+  ): AuthenticatedCredential | null {
+    if (principal === null) return null;
+    return {
+      principal,
+      isActive: async () =>
+        principalStillAuthorized(principal) && (await isCredentialActive()),
+    };
+  }
+
+  function sessionActive(sessionToken: string): boolean {
+    const row = args.db
+      .select({ id: authSessions.id })
+      .from(authSessions)
+      .where(
+        and(
+          eq(authSessions.token, sessionToken),
+          gt(authSessions.expiresAt, new Date()),
+        ),
+      )
+      .get();
+    return row !== undefined;
+  }
+
   async function resolvePrincipal(
     headers: Headers,
   ): Promise<RequestPrincipal | null> {
+    return (await authenticate(headers))?.principal ?? null;
+  }
+
+  async function authenticate(
+    headers: Headers,
+  ): Promise<AuthenticatedCredential | null> {
     const gateToken = headers.get(GATE_IDENTITY_HEADER);
     headers.delete(GATE_IDENTITY_HEADER);
     if (gateToken !== null) {
@@ -482,7 +575,7 @@ export async function createUserAuthService(
         parsed.data.serverId,
       );
       if (identity === null) return null;
-      return args.db.transaction(() => {
+      const gatePrincipal = args.db.transaction(() => {
         const email = normalizeEmail(identity.email);
         const existing = args.db
           .select({ id: authUsers.id })
@@ -543,11 +636,12 @@ export async function createUserAuthService(
           .run();
         return principalForUser(userId, "user");
       });
+      return credentialFor(gatePrincipal, () => true);
     }
     const token = bearerToken(headers);
     if (token !== null) {
       if (timingSafeEqualStrings(token, serviceToken)) {
-        return SERVICE_PRINCIPAL;
+        return { principal: SERVICE_PRINCIPAL, isActive: async () => true };
       }
       if (token.startsWith(SHELL_TOKEN_PREFIX)) {
         const parts = token.slice(SHELL_TOKEN_PREFIX.length).split(".");
@@ -567,13 +661,22 @@ export async function createUserAuthService(
         }
         const parsed = shellTokenPayloadSchema.safeParse(value);
         if (!parsed.success || parsed.data.expiresAt <= Date.now()) return null;
-        return principalForUser(parsed.data.userId, "user");
+        const expiresAt = parsed.data.expiresAt;
+        return credentialFor(
+          principalForUser(parsed.data.userId, "user"),
+          () => expiresAt > Date.now(),
+        );
       }
       if (!token.startsWith(USER_PAT_PREFIX)) {
         return null;
       }
       const userId = await verifyPersonalAccessToken(token);
-      return userId === null ? null : principalForUser(userId, "user");
+      return userId === null
+        ? null
+        : credentialFor(
+            principalForUser(userId, "user"),
+            async () => (await verifyPersonalAccessToken(token)) === userId,
+          );
     }
     if (headers.get("cookie") === null) {
       return null;
@@ -582,7 +685,10 @@ export async function createUserAuthService(
     if (session === null) {
       return null;
     }
-    return principalForUser(session.user.id, "user");
+    const sessionToken = session.session.token;
+    return credentialFor(principalForUser(session.user.id, "user"), () =>
+      sessionActive(sessionToken),
+    );
   }
 
   function findInvite(token: string) {
@@ -669,18 +775,20 @@ export async function createUserAuthService(
   }
 
   async function signIn(signInArgs: SignInArgs): Promise<UserAuthResult> {
+    const email = normalizeEmail(signInArgs.email);
+    const retryAfterMs = attemptLimiter.acquire(email);
+    if (retryAfterMs !== null) throw throttled(retryAfterMs);
     let result;
     try {
       result = await auth.api.signInEmail({
-        body: {
-          email: normalizeEmail(signInArgs.email),
-          password: signInArgs.password,
-        },
+        body: { email, password: signInArgs.password },
         returnHeaders: true,
       });
+      attemptLimiter.reset(email);
     } catch (error) {
       const status = errorStatusCode(error);
       if (status === 401 || status === 400 || status === 403) {
+        attemptLimiter.recordFailure(email);
         throw new UserAuthError(
           401,
           "invalid_credentials",
@@ -713,6 +821,8 @@ export async function createUserAuthService(
       const status = errorStatusCode(error);
       if (status !== null && status < 500) return [];
       throw error;
+    } finally {
+      notifyAuthorizationChange();
     }
   }
 
@@ -795,6 +905,7 @@ export async function createUserAuthService(
       )
       .run();
     patCache.clear();
+    if (result.changes > 0) notifyAuthorizationChange();
     return result.changes > 0;
   }
 
@@ -852,6 +963,8 @@ export async function createUserAuthService(
     removeUser,
     listPersonalAccessTokens,
     needsBootstrap,
+    authenticate,
+    onAuthorizationChange,
     resolvePrincipal,
     revokePersonalAccessToken,
     signIn,

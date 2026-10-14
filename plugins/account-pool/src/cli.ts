@@ -1,6 +1,7 @@
 import {
   PluginCliError,
   cliCommand,
+  experimental_assertCliAdmin,
   defineCli,
   type BbPluginApi,
   type PluginCliResult,
@@ -262,6 +263,7 @@ export function registerPoolCli(
       description: DESCRIPTION,
       commands: {
         "account add": cliCommand({
+          experimental_requiredRole: "admin",
           summary:
             "Sign in to Claude or Codex, import credentials, or add an Anthropic API key",
           description:
@@ -377,6 +379,7 @@ export function registerPoolCli(
             }),
         }),
         "account login-poll": cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Wait for a Codex device-code login to complete",
           description:
             "Blocks until the Codex authorization finishes, fails, or the invocation is cancelled.",
@@ -431,6 +434,7 @@ export function registerPoolCli(
             }),
         }),
         "account login-complete": cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Complete a Claude browser login with its manual code",
           description:
             "Pipe the code the final login page shows:\n  printf '%s\\n' \"$CLAUDE_AUTH_CODE\" | bb pool account login-complete --session <id> --code-stdin",
@@ -479,6 +483,7 @@ export function registerPoolCli(
             }),
         }),
         "account remove": cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Remove an account and its secret token file",
           aliases: ["account rm", "account delete"],
           positionals: [ACCOUNT_ID_POSITIONAL],
@@ -502,6 +507,7 @@ export function registerPoolCli(
             }),
         }),
         "account enable": cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Enable an account",
           positionals: [ACCOUNT_ID_POSITIONAL],
           options: { json: JSON_OPTION },
@@ -525,6 +531,7 @@ export function registerPoolCli(
             }),
         }),
         "account disable": cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Disable an account",
           positionals: [ACCOUNT_ID_POSITIONAL],
           options: { json: JSON_OPTION },
@@ -548,6 +555,7 @@ export function registerPoolCli(
             }),
         }),
         "account priority": cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Set an account's position in the failover priority order",
           positionals: [
             ACCOUNT_ID_POSITIONAL,
@@ -589,6 +597,7 @@ export function registerPoolCli(
             }),
         }),
         "account reorder": cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Set the complete failover order for one provider",
           description:
             "List every account for the provider, including disabled ones, in the order they should be tried.",
@@ -675,6 +684,7 @@ export function registerPoolCli(
             }),
         }),
         routing: cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Enable or disable pooled routing for one provider",
           positionals: [
             {
@@ -725,6 +735,7 @@ export function registerPoolCli(
             }),
         }),
         "config set": cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Update one Account Pooler routing configuration value",
           positionals: [
             {
@@ -768,7 +779,7 @@ export function registerPoolCli(
             },
           ],
           options: { json: JSON_OPTION },
-          run: (input) =>
+          run: (input, ctx) =>
             attempt(async () => {
               const mode = input.positionals.mode;
               if (mode === undefined) {
@@ -780,6 +791,10 @@ export function registerPoolCli(
                     : `${formatParent(status.parent)}\n`,
                 };
               }
+              experimental_assertCliAdmin(
+                ctx,
+                "Setting the Account Pooler parent mode",
+              );
               const parentMode = parentModeSchema.parse(mode);
               const next = await config.set({ parentMode });
               return {
@@ -791,6 +806,7 @@ export function registerPoolCli(
             }),
         }),
         "token rotate": cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Rotate one machine's Account Pooler bearer token",
           description:
             "The previous token keeps working for ten minutes. Tokens are never printed.",

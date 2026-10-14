@@ -191,6 +191,39 @@ it("rejects nonowners even when they are gate admins and rejects cross-origin ow
   ).toBe(404);
 });
 
+it("binds a server credential to its own server even when the owner has another server", async () => {
+  await db
+    .prepare(
+      "INSERT INTO server (id,user_id,name,subdomain,credential_hash,created_at) VALUES ('srv-other','owner','other','other',?,1)",
+    )
+    .bind("other-hash")
+    .run();
+  expect(
+    (
+      await request("POST", {
+        query: "?serverId=srv-other",
+        body: { email: "outsider@example.com", role: "member" },
+      })
+    ).status,
+  ).toBe(403);
+  expect(
+    (await request("GET", { query: "?serverId=srv-other" })).status,
+  ).toBe(403);
+  expect(
+    await db
+      .prepare("SELECT count(*) AS n FROM server_members")
+      .first("n"),
+  ).toBe(0);
+  expect(
+    (
+      await request("POST", {
+        query: "?serverId=srv",
+        body: { email: "member@example.com", role: "member" },
+      })
+    ).status,
+  ).toBe(200);
+});
+
 it("forwards a signed member identity over a real tunnel authenticated by its handshake", async () => {
   expect(
     (
