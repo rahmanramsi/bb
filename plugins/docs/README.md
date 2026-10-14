@@ -99,6 +99,11 @@ bb docs push ./docs-work --dry-run --diff
 bb docs push ./docs-work --delete
 ```
 
+Adding and removing vaults (`bb docs vault-add`, `bb docs vault-remove`, and the
+Add vault dialog) requires a server admin, because a vault grants every user
+access to a directory on the server or a connected host. Members can list and
+use the configured vaults.
+
 ### Sync workspace contract
 
 - **Layout and identity:** the destination keeps exact vault-relative paths

@@ -3,7 +3,7 @@ Collaborate with agents on editing Markdown docs inline. Edit directly inside th
 ## What you get
 
 - A Docs panel with a folder tree, search, and a rich Markdown editor. Tables, images, and YAML frontmatter are supported.
-- Vaults. Each vault is a folder on a host. A new install starts with a Personal vault at `~/Notes`. Add vaults on other machines that are enrolled as bb hosts.
+- Vaults. Each vault is a folder on a host. A new install starts with a Personal vault at `~/Notes`. Admins can add vaults on other machines that are enrolled as bb hosts.
 - Full HTML pages and embedded HTML blocks render in a sandboxed frame. Keep interactive reports next to your notes.
 - A Markdown opener for `.md` files from file links. Make it the default under Settings.
 - `@` mentions. Type `@` in the composer to attach a document. The agent gets its current content at send time.
