@@ -1861,7 +1861,7 @@ failed passwords per email in 15 minutes and 60 attempts per minute across
 all accounts; further attempts get `429` with code `rate_limited` until the
 window ends. A successful sign-in resets that email's count.
 
-Open `/ws` and `/ws/terminals/:id` connections close with code `1008` when
+Open `/ws`, `/ws/terminals/:id`, and plugin WebSocket connections close with code `1008` when
 their credential stops authorizing: the user is removed or changes role, the
 session signs out or expires, the personal access token is revoked, or a
 thread shell token expires. The server also rechecks open connections every
@@ -1926,6 +1926,12 @@ routes declared with `auth: "none"`. Routes declared with `auth: "token"` also
 require their plugin token. In `local` mode each plugin keeps its declared HTTP
 authentication behavior. The plugin token endpoint requires a signed-in
 caller, and rotating the token requires an admin.
+
+Pooled provider requests carry the turn author's signed user credential in
+`x-bb-user-token`, alongside the Account Pooler's machine hub token. The server
+accepts this user header only on plugin HTTP and WebSocket routes and removes it
+before invoking the plugin. Claude Code and Codex receive it through
+`BB_PLUGIN_USER_TOKEN`; local mode keeps its existing provider authentication.
 
 The loopback enrollment-key endpoint also requires an admin in `multi` mode.
 The colocated launcher and in-process plugins use a server credential that
@@ -2392,7 +2398,9 @@ and at `/api/v1/plugins/bb--mcp/http/mcp` on the loopback address.
 `bb mcp status` prints both. Remote apps sign in through the bb account, and
 an approved app can run any `bb` command; `bb mcp clients` lists them and
 `bb mcp revoke <grant-id>` disconnects one. The local address needs no
-sign-in and has the same trust as the `bb` CLI on that machine. See the
+sign-in and has the same trust as the `bb` CLI on that machine. In `multi`
+auth mode MCP is unavailable: ordinary local and gate OAuth requests do not
+carry a bb user identity and fail server authentication. See the
 [MCP skill](../plugins/mcp/skills/mcp/SKILL.md) for the tools and the few
 commands that cannot run over MCP.
 
@@ -2435,5 +2443,5 @@ In `local` mode, everyone admitted by the gate acts as the local owner.
 Members running agents effectively have host shell access, including secrets.
 
 Tunnels opened before signed identity support keep local owner access. Reconnect
-the tunnel to use gate identities in `multi` mode. Daemon machine keys and MCP
-OAuth credentials retain their existing behavior.
+the tunnel to use gate identities in `multi` mode. Daemon machine keys retain
+their existing behavior. MCP OAuth access remains available in local mode.

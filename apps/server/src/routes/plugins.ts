@@ -14,6 +14,7 @@ import type {
 } from "@get-bb/plugin-sdk";
 import type { ServerRuntimeConfig } from "../types.js";
 import { ApiError } from "../errors.js";
+import type { AuthenticatedSocketRegistry } from "../ws/authenticated-sockets.js";
 import {
   assertAdmin,
   getRequestPrincipal,
@@ -301,6 +302,8 @@ function pluginWebSocketError(event: Event): Error {
 }
 
 function pluginWebSocketEvents(args: {
+  authenticatedSockets: AuthenticatedSocketRegistry | undefined;
+  isActive: (() => Promise<boolean>) | undefined;
   handlers: ExperimentalPluginWebSocketHandlers;
   id: string;
   plugins: PluginService;
@@ -343,6 +346,9 @@ function pluginWebSocketEvents(args: {
         return;
       }
       args.route.sockets.add(exposed);
+      if (args.isActive !== undefined) {
+        args.authenticatedSockets?.track(socket, args.isActive);
+      }
       if (args.handlers.onOpen !== undefined) {
         invoke(socket, "open", () => args.handlers.onOpen?.(exposed));
       }
@@ -350,6 +356,7 @@ function pluginWebSocketEvents(args: {
     onMessage(event, socket) {
       const exposed = expose(socket);
       if (
+        args.authenticatedSockets?.isRevoked(socket) ||
         !args.route.active ||
         !args.route.sockets.has(exposed) ||
         args.handlers.onMessage === undefined
@@ -364,6 +371,7 @@ function pluginWebSocketEvents(args: {
       );
     },
     onClose(event, socket) {
+      args.authenticatedSockets?.untrack(socket);
       const exposed = expose(socket);
       if (!args.route.sockets.delete(exposed)) return;
       if (args.handlers.onClose !== undefined) {
@@ -392,6 +400,7 @@ export function registerPluginRoutes(
   installJobs: PluginInstallJobs,
   updateJobs: PluginUpdateJobs,
   upgradeWebSocket?: UpgradeWebSocket,
+  authenticatedSockets?: AuthenticatedSocketRegistry,
 ): void {
   const appAssetCompressionCache = createAppAssetCompressionCache(
     MAX_CACHED_APP_ASSETS,
@@ -452,6 +461,8 @@ export function registerPluginRoutes(
       );
     }
     return pluginWebSocketEvents({
+      authenticatedSockets,
+      isActive: context.get("bbAuthenticatedCredential")?.isActive,
       handlers: result.handlers,
       id,
       plugins,

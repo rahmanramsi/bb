@@ -865,6 +865,10 @@ export function createApp(
   ]) {
     app.use(path, serverMoveWriteFreezeMiddleware(daemonWriteFreezeState));
   }
+  const authenticatedSockets = createAuthenticatedSocketRegistry();
+  const stopAuthorizationWatch = deps.userAuth.onAuthorizationChange(() => {
+    void authenticatedSockets.revalidate();
+  });
   const publicApi = new Hono();
   publicApi.use("*", authenticateApiRequests(deps));
   publicApi.use("*", async (context, next) => {
@@ -922,6 +926,7 @@ export function createApp(
     pluginInstallJobs,
     pluginUpdateJobs,
     upgradeWebSocket,
+    authenticatedSockets,
   );
   registerSkillsRegistryRoutes(publicApi, deps);
   registerServerMoveRoutes(publicApi, deps, serverMove);
@@ -964,11 +969,6 @@ export function createApp(
       );
     }
   };
-
-  const authenticatedSockets = createAuthenticatedSocketRegistry();
-  const stopAuthorizationWatch = deps.userAuth.onAuthorizationChange(() => {
-    void authenticatedSockets.revalidate();
-  });
 
   app.get(
     "/ws",

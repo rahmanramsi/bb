@@ -1234,6 +1234,104 @@ describe("thread runtime config", () => {
     });
   });
 
+  it("adds the turn author's credential only to Account Pool provider routes in multi mode", async () => {
+    await withTestHarness(async (harness) => {
+      const hostId = "host-pool-auth";
+      seedHostSession(harness.deps, { id: hostId });
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId,
+        path: "/tmp/pool-auth-project",
+      });
+      const environment = seedEnvironment(harness.deps, {
+        hostId,
+        projectId: project.id,
+        path: "/tmp/pool-auth-project",
+      });
+      const thread = seedThread(harness.deps, {
+        projectId: project.id,
+        environmentId: environment.id,
+        providerId: "claude-code",
+      });
+      const userId = "usr_pool_author";
+      const now = new Date();
+      harness.deps.db
+        .insert(authUsers)
+        .values({
+          id: userId,
+          name: userId,
+          email: `${userId}@example.test`,
+          emailVerified: true,
+          role: "member",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      let providerPluginId = "account-pool";
+      setPluginAgentContributions({
+        listSkillRootContributions: () => [],
+        listAgentTools: () => [],
+        listInstructionContributions: () => [],
+        findAgentTool: () => undefined,
+        invokeAgentTool: async () => ({
+          success: false,
+          contentItems: [{ type: "inputText", text: "unused" }],
+        }),
+        resolveMention: async () => ({ ok: false, error: "unused" }),
+        resolveProviderEnv: async () => ({
+          entries: [
+            {
+              name: "ANTHROPIC_BASE_URL",
+              value: "http://127.0.0.1/pool",
+              source: { plugin: providerPluginId },
+              reason: "Route Claude through Account Pool",
+            },
+            {
+              name: "ANTHROPIC_AUTH_TOKEN",
+              value: "machine-hub-token",
+              source: { plugin: "account-pool" },
+              reason: "Authenticate the machine to Account Pool",
+            },
+          ],
+        }),
+      });
+      harness.deps.config.authMode = "multi";
+
+      const resolve = async () =>
+        resolveThreadRuntimeCommandConfig(harness.deps, {
+          authorUserId: userId,
+          environment: {
+            hostId,
+            id: environment.id,
+            path: environment.path,
+            status: environment.status,
+          },
+          model: "test-model",
+          thread,
+        });
+      try {
+        const pooled = await resolve();
+        const shellToken = pooled.contributedEnv.find(
+          (entry) => entry.name === "BB_TOKEN",
+        );
+        const pluginToken = pooled.contributedEnv.find(
+          (entry) => entry.name === "BB_PLUGIN_USER_TOKEN",
+        );
+        expect(pluginToken?.value).toBe(shellToken?.value);
+        expect(pluginToken?.source).toEqual({ core: "thread-auth" });
+
+        providerPluginId = "another-plugin";
+        const untrusted = await resolve();
+        expect(
+          untrusted.contributedEnv.some(
+            (entry) => entry.name === "BB_PLUGIN_USER_TOKEN",
+          ),
+        ).toBe(false);
+      } finally {
+        setPluginAgentContributions(undefined);
+      }
+    });
+  });
+
   it("resolves the workspace, storage path, and environment directory dynamic tool", async () => {
     await withTestHarness(async (harness) => {
       const hostId = "host-runtime";

@@ -272,6 +272,20 @@ export function buildSessionOptions(
     model,
     env: {
       ...env,
+      ...(env.BB_PLUGIN_USER_TOKEN &&
+      env.ANTHROPIC_BASE_URL &&
+      env.ANTHROPIC_AUTH_TOKEN
+        ? {
+            ANTHROPIC_CUSTOM_HEADERS: [
+              ...(env.ANTHROPIC_CUSTOM_HEADERS ?? "")
+                .split("\n")
+                .filter((header) => !/^x-bb-user-token\s*:/iu.test(header)),
+              `x-bb-user-token: ${env.BB_PLUGIN_USER_TOKEN}`,
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          }
+        : {}),
       CLAUDE_CODE_DISABLE_1M_CONTEXT: params.disable1MContext ? "1" : "0",
     },
     permissionMode: params.permissionMode,

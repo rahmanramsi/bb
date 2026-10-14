@@ -11,6 +11,14 @@ import {
 import type { ServerAppDeps } from "./types.js";
 
 type AuthenticateDeps = Pick<ServerAppDeps, "config" | "userAuth">;
+const PLUGIN_WIRE_HTTP_PATH = /^\/api\/v1\/plugins\/[^/]+\/http(?:\/|$)/u;
+const PLUGIN_USER_TOKEN_HEADER = "x-bb-user-token";
+
+declare module "hono" {
+  interface ContextVariableMap {
+    bbAuthenticatedCredential: AuthenticatedCredential | undefined;
+  }
+}
 
 const AUTH_OPTIONAL_API_PATHS = new Set([
   "/api/v1/auth/session",
@@ -61,10 +69,23 @@ export function authenticateApiRequests(
   deps: AuthenticateDeps,
 ): MiddlewareHandler {
   return async (context, next) => {
-    const principal = await resolveRequestPrincipal(
+    const headers = context.req.raw.headers;
+    const userToken = headers.get(PLUGIN_USER_TOKEN_HEADER);
+    headers.delete(PLUGIN_USER_TOKEN_HEADER);
+    const authenticationHeaders =
+      userToken !== null && PLUGIN_WIRE_HTTP_PATH.test(context.req.path)
+        ? new Headers(headers)
+        : headers;
+    if (authenticationHeaders !== headers) {
+      authenticationHeaders.set("authorization", `Bearer ${userToken}`);
+    }
+    const credential = await authenticateCredential(
       deps,
-      context.req.raw.headers,
+      authenticationHeaders,
     );
+    headers.delete(GATE_IDENTITY_HEADER);
+    const principal = credential?.principal ?? null;
+    context.set("bbAuthenticatedCredential", credential ?? undefined);
     setRequestPrincipal(context, principal);
     if (principal === null && !isAuthOptionalApiPath(context.req.path)) {
       throw new ApiError(401, "unauthorized", "Unauthorized");

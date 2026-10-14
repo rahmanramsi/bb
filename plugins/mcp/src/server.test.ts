@@ -16,12 +16,23 @@ interface AccountBehaviour {
   };
 }
 
-async function load(account: AccountBehaviour) {
+async function load(
+  account: AccountBehaviour,
+  authMode: "local" | "multi" = "local",
+) {
   const calls: RpcCall[] = [];
   const host = createFakePluginHost({
     pluginId: "bb--mcp",
     loopbackBaseUrl: "http://127.0.0.1:4000",
     sdk: {
+      experimental_auth: {
+        session: async () => ({
+          authMode,
+          needsBootstrap: false,
+          principalKind: null,
+          user: null,
+        }),
+      },
       plugins: {
         callRpc: async (args: RpcCall) => {
           calls.push(args);
@@ -86,6 +97,26 @@ describe("MCP route", () => {
       );
       expect(response.status).toBe(200);
       expect(await response.text()).toContain('"name":"bb"');
+    }
+  });
+
+  it("refuses every caller while the server runs in multi-user mode", async () => {
+    const { host } = await load(SIGNED_OUT, "multi");
+    const callers: Record<string, string>[] = [
+      {},
+      { "x-bb-gate-auth": "oauth", "x-bb-gate-oauth-scope": "bb" },
+    ];
+    for (const headers of callers) {
+      const response = await host.harness.fetchHttp(
+        "POST",
+        "/mcp",
+        mcpRequest(headers),
+      );
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({
+        error: "forbidden",
+        message: expect.stringContaining("multi-user mode"),
+      });
     }
   });
 

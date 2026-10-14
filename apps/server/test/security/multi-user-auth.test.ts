@@ -117,7 +117,7 @@ const ADMIN_ONLY_PROBES: Probe[] = [
 
 const WIRE_PLUGIN_SOURCE = `
   export default function plugin(bb: any) {
-    bb.http.route("GET", "/identity-header", (c: any) => c.json({ identity: c.req.header("x-bb-gate-identity") ?? null }));
+    bb.http.route("GET", "/identity-header", (c: any) => c.json({ identity: c.req.header("x-bb-gate-identity") ?? null, userToken: c.req.header("x-bb-user-token") ?? null }));
     bb.http.route("GET", "/local", (c: any) => c.json({ local: true }));
     bb.http.route("GET", "/guarded", (c: any) => c.json({ guarded: true }), {
       auth: "token",
@@ -125,6 +125,11 @@ const WIRE_PLUGIN_SOURCE = `
     bb.http.route("GET", "/open", (c: any) => c.json({ open: true }), {
       auth: "none",
     });
+    for (const auth of ["local", "token", "none"]) {
+      bb.http.experimental_websocket("/socket-" + auth, () => ({
+        onMessage(socket: any, data: any) { socket.send(data); },
+      }), { auth });
+    }
   }
 `;
 
@@ -281,19 +286,9 @@ describe("multi-user authentication", () => {
       path: "/api/v1/plugins/wire/http/local",
     });
     expect(localWire.status).toBe(401);
-    const openWire = await send({
-      method: "GET",
-      path: "/api/v1/plugins/wire/http/open",
-    });
-    expect(openWire.status).toBe(401);
-    const token = await server.pluginService.httpToken("wire");
     expect(
-      (
-        await send(
-          { method: "GET", path: "/api/v1/plugins/wire/http/guarded" },
-          { "x-bb-plugin-token": token ?? "" },
-        )
-      ).status,
+      (await send({ method: "GET", path: "/api/v1/plugins/wire/http/guarded" }))
+        .status,
     ).toBe(401);
 
     expect(await websocketStatus("/ws")).toBe(401);
@@ -307,6 +302,99 @@ describe("multi-user authentication", () => {
       principalKind: null,
       user: null,
     });
+  });
+
+  it("requires user credentials on plugin HTTP and WebSocket routes in every auth mode", async () => {
+    server = await startTestServer({ authMode: "multi" });
+    await installWirePlugin(server);
+    const team = await bootstrapTeam();
+    const token = await server.pluginService.httpToken("wire");
+    const pluginHeaders = { "x-bb-plugin-token": token ?? "" };
+    const userHeaders = {
+      ...pluginHeaders,
+      authorization: `Bearer ${team.memberToken}`,
+    };
+    for (const path of ["local", "guarded", "open"]) {
+      const probe = {
+        method: "GET",
+        path: `/api/v1/plugins/wire/http/${path}`,
+      } as const;
+      expect((await send(probe, pluginHeaders)).status).toBe(401);
+      expect((await send(probe, userHeaders)).status).toBe(200);
+    }
+    for (const auth of ["local", "token", "none"]) {
+      const path = `/api/v1/plugins/wire/http/socket-${auth}`;
+      expect(await websocketStatus(path, pluginHeaders)).toBe(401);
+      expect(await websocketStatus(path, userHeaders)).toBe(101);
+    }
+    expect(
+      (
+        await send(
+          { method: "GET", path: "/api/v1/plugins/wire/http/open" },
+          {
+            authorization: "Bearer provider-hub-token",
+            "x-bb-user-token": "invalid",
+          },
+        )
+      ).status,
+    ).toBe(401);
+    const routed = await send(
+      { method: "GET", path: "/api/v1/plugins/wire/http/identity-header" },
+      {
+        authorization: "Bearer provider-hub-token",
+        "x-bb-user-token": team.memberToken,
+      },
+    );
+    expect(routed.status).toBe(200);
+    expect(await routed.json()).toMatchObject({ userToken: null });
+    expect(
+      (
+        await send(
+          { method: "GET", path: "/api/v1/users" },
+          {
+            "x-bb-user-token": team.adminToken,
+          },
+        )
+      ).status,
+    ).toBe(401);
+  });
+
+  it("closes plugin WebSockets when their personal access token is revoked", async () => {
+    server = await startTestServer({ authMode: "multi" });
+    await installWirePlugin(server);
+    const team = await bootstrapTeam();
+    const sdk = createNodeBbSdk({
+      baseUrl: server.baseUrl,
+      context: { authToken: team.memberToken },
+    });
+    const credential = await sdk.experimental_auth.createToken({
+      name: "socket",
+    });
+    const url = new URL(
+      "/api/v1/plugins/wire/http/socket-none",
+      server.baseUrl,
+    );
+    url.protocol = "ws:";
+    const socket = new WebSocket(url, {
+      headers: { authorization: `Bearer ${credential.token}` },
+    });
+    sockets.add(socket);
+    await new Promise<void>((resolve, reject) => {
+      socket.once("open", resolve);
+      socket.once("error", reject);
+    });
+    const closed = new Promise<number>((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error("Revoked plugin socket stayed open")),
+        2000,
+      );
+      socket.once("close", (code) => {
+        clearTimeout(timeout);
+        resolve(code);
+      });
+    });
+    await sdk.experimental_auth.revokeToken({ id: credential.summary.id });
+    expect(await closed).toBe(1008);
   });
 
   it("rejects unknown bearer tokens and forged session cookies", async () => {
@@ -920,7 +1008,7 @@ describe("signed connect gate credentials", () => {
         headers,
       );
       expect(echo.status).toBe(200);
-      expect(await echo.json()).toEqual({ identity: null });
+      expect(await echo.json()).toEqual({ identity: null, userToken: null });
       expect(
         (await send({ method: "GET", path: "/api/v1/users" }, headers)).status,
       ).toBe(role === "admin" ? 200 : 403);

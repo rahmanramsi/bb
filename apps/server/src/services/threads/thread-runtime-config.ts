@@ -220,18 +220,43 @@ export async function resolveThreadRuntimeCommandConfig(
   );
   if (deps.config.authMode === "multi") {
     for (let index = contributedEnv.length - 1; index >= 0; index -= 1) {
-      if (contributedEnv[index].name === "BB_TOKEN")
+      if (
+        contributedEnv[index].name === "BB_TOKEN" ||
+        contributedEnv[index].name === "BB_PLUGIN_USER_TOKEN"
+      )
         contributedEnv.splice(index, 1);
     }
     const shellUserId = threadShellUserId(args);
     if (shellUserId !== null) {
+      const token = await issueThreadShellToken(
+        deps.config.dataDir,
+        shellUserId,
+      );
       contributedEnv.push({
         name: "BB_TOKEN",
-        value: await issueThreadShellToken(deps.config.dataDir, shellUserId),
+        value: token,
         source: { core: "thread-auth" },
         reason:
           "Authenticate the thread shell with the server account of the user who sent the turn",
       });
+      if (
+        contributedEnv.some(
+          (entry) =>
+            (entry.name === "ANTHROPIC_BASE_URL" ||
+              entry.name === "CODEX_OPENAI_BASE_URL") &&
+            entry.value !== "" &&
+            "plugin" in entry.source &&
+            entry.source.plugin === "account-pool",
+        )
+      ) {
+        contributedEnv.push({
+          name: "BB_PLUGIN_USER_TOKEN",
+          value: token,
+          source: { core: "thread-auth" },
+          reason:
+            "Authenticate pooled provider requests as the user who sent the turn",
+        });
+      }
     }
   }
   markTurnTraceSpan("runtimeConfig.env");
