@@ -277,10 +277,13 @@ describe("AutomationOverviewView", () => {
     fireEvent.pointerDown(actions());
     fireEvent.click(await screen.findByRole("menuitem", { name: "Run now" }));
 
-    expect(onRunNow).toHaveBeenCalledWith({
-      projectId: "proj_1",
-      automationId: "auto_1",
-    });
+    expect(onRunNow).toHaveBeenCalledWith(
+      {
+        projectId: "proj_1",
+        automationId: "auto_1",
+      },
+      "agent",
+    );
     expect(onOpenDetail).not.toHaveBeenCalled();
     expect(actions()).toHaveProperty("disabled", true);
 

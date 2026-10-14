@@ -34,9 +34,19 @@ export const automationRpcContract = defineRpcContract({
     input: createAutomationInputSchema,
     output: automationDetailResponseSchema,
   },
+  automations_create_script: {
+    input: createAutomationInputSchema,
+    output: automationDetailResponseSchema,
+    experimental_requiredRole: "admin",
+  },
   automations_update: {
     input: updateAutomationInputSchema,
     output: automationDetailResponseSchema,
+  },
+  automations_update_script: {
+    input: updateAutomationInputSchema,
+    output: automationDetailResponseSchema,
+    experimental_requiredRole: "admin",
   },
   automations_delete: {
     input: projectAutomationInputSchema,
@@ -54,13 +64,28 @@ export const automationRpcContract = defineRpcContract({
     input: runAutomationInputSchema,
     output: automationRunRpcResponseSchema,
   },
+  automations_run_script: {
+    input: runAutomationInputSchema,
+    output: automationRunRpcResponseSchema,
+    experimental_requiredRole: "admin",
+  },
   automations_runs: {
     input: automationRunsInputSchema,
     output: automationRunListResponseSchema,
   },
 });
 
+function scriptAdminRequired(method: string): Error {
+  return new Error(
+    `Script automations require an admin; admins use ${method}_script.`,
+  );
+}
+
 export function createRpcHandlers(service: AutomationService) {
+  const isScriptAutomation = (input: {
+    projectId: string;
+    automationId: string;
+  }): boolean => service.runMode(input) === "script";
   return {
     automations_overview() {
       return service.overview();
@@ -72,9 +97,29 @@ export function createRpcHandlers(service: AutomationService) {
       return service.get(input);
     },
     automations_create(input: z.output<typeof createAutomationInputSchema>) {
+      if (input.execution.mode === "script") {
+        throw scriptAdminRequired("automations_create");
+      }
+      return service.create(input);
+    },
+    automations_create_script(
+      input: z.output<typeof createAutomationInputSchema>,
+    ) {
       return service.create(input);
     },
     automations_update(input: z.output<typeof updateAutomationInputSchema>) {
+      if (
+        input.execution?.mode === "script" ||
+        input.script !== undefined ||
+        isScriptAutomation(input)
+      ) {
+        throw scriptAdminRequired("automations_update");
+      }
+      return service.update(input);
+    },
+    automations_update_script(
+      input: z.output<typeof updateAutomationInputSchema>,
+    ) {
       return service.update(input);
     },
     automations_delete(input: z.output<typeof projectAutomationInputSchema>) {
@@ -87,6 +132,12 @@ export function createRpcHandlers(service: AutomationService) {
       return service.resume(input);
     },
     automations_run(input: z.output<typeof runAutomationInputSchema>) {
+      if (isScriptAutomation(input)) {
+        throw scriptAdminRequired("automations_run");
+      }
+      return service.run(input);
+    },
+    automations_run_script(input: z.output<typeof runAutomationInputSchema>) {
       return service.run(input);
     },
     automations_runs(input: z.output<typeof automationRunsInputSchema>) {
