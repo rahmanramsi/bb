@@ -1039,7 +1039,11 @@ export function registerPluginRoutes(
     if (!outcome.ok) {
       return context.json(
         { ok: false, error: outcome.error },
-        outcome.error.code === "invalid_input" ? 400 : 500,
+        outcome.error.code === "invalid_input"
+          ? 400
+          : outcome.error.code === "forbidden"
+            ? 403
+            : 500,
       );
     }
     return context.json({ ok: true, result: outcome.result });

@@ -11,6 +11,7 @@ import { issueThreadShellToken } from "../../src/services/user-auth.js";
 import { SERVER_SERVICE_TOKEN_FILE_NAME } from "@bb/config/server";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { PERSONAL_PROJECT_ID } from "@bb/domain";
 import { upsertHost, authVerifications } from "@bb/db";
 import {
   startTestServer,
@@ -1603,5 +1604,87 @@ describe("plugin admin operations", () => {
         stdout: role,
       });
     }
+  });
+
+  it("refuses member script automation actions with 403 forbidden", async () => {
+    server = await startTestServer({ authMode: "multi" });
+    server.pluginService.bindSdk({
+      baseUrl: server.baseUrl,
+      serviceToken: server.deps.userAuth.serviceToken,
+    });
+    const entry = await server.pluginService.install("builtin:automations", {
+      kind: "root",
+    });
+    expect(entry.status, entry.statusDetail ?? undefined).toBe("running");
+    const team = await bootstrapTeam();
+    const member = { authorization: `Bearer ${team.memberToken}` };
+    const admin = { authorization: `Bearer ${team.adminToken}` };
+    const rpc = (
+      method: string,
+      body: Record<string, unknown>,
+      headers: Record<string, string>,
+    ) =>
+      send(
+        {
+          method: "POST",
+          path: `/api/v1/plugins/automations/rpc/${method}`,
+          body,
+        },
+        headers,
+      );
+    const createBody = {
+      projectId: PERSONAL_PROJECT_ID,
+      name: "Hourly script",
+      enabled: true,
+      trigger: {
+        triggerType: "schedule",
+        cron: "0 * * * *",
+        timezone: "UTC",
+      },
+      execution: { mode: "script", script: "true", interpreter: "sh" },
+      origin: "human",
+    };
+    const created = await rpc("automations_create_script", createBody, admin);
+    const createdBody: unknown = await created.json();
+    expect(created.status, JSON.stringify(createdBody)).toBe(200);
+    const automationId =
+      typeof createdBody === "object" && createdBody !== null
+        ? Reflect.get(Reflect.get(createdBody, "result"), "id")
+        : undefined;
+    if (typeof automationId !== "string") throw new Error("missing id");
+    const target = { projectId: PERSONAL_PROJECT_ID, automationId };
+
+    for (const [method, body] of [
+      ["automations_create", createBody],
+      ["automations_update", { ...target, name: "Renamed" }],
+      ["automations_run", target],
+      ["automations_pause", target],
+      ["automations_resume", target],
+    ] as const) {
+      const refused = await rpc(method, body, member);
+      expect(refused.status, method).toBe(403);
+      expect(await refused.json()).toMatchObject({
+        ok: false,
+        error: {
+          code: "forbidden",
+          message: expect.stringContaining(
+            "Script automations require an admin",
+          ),
+        },
+      });
+    }
+
+    const paused = await rpc("automations_pause_script", target, admin);
+    expect(paused.status).toBe(200);
+    const missing = await rpc(
+      "automations_update",
+      { projectId: PERSONAL_PROJECT_ID, automationId: "missing", name: "x" },
+      member,
+    );
+    expect(missing.status).toBe(500);
+    expect(await missing.json()).toMatchObject({
+      ok: false,
+      error: { code: "handler_error" },
+    });
   });
 });

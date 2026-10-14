@@ -143,7 +143,13 @@ An RPC method contract accepts `experimental_requiredRole: "admin"`. The
 server's `POST /api/v1/plugins/<id>/rpc/<method>` route compares it with the
 authenticated principal and answers HTTP 403 with
 `{ ok: false, error: { code: "forbidden", message } }` before input
-validation or the handler run. `PluginRpcErrorCode` gains `forbidden`. Plugin
+validation or the handler run. `PluginRpcErrorCode` gains `forbidden`. A
+handler that needs an admin only for some inputs throws
+`experimental_PluginRpcForbiddenError(message)`; the route answers HTTP 403
+with `{ ok: false, error: { code: "forbidden", message } }`, the same shape.
+The server and the fake plugin host recognize it by its `name` and `code`
+rather than `instanceof`, because a plugin may bundle its own SDK copy; every
+other thrown error stays `handler_error` with HTTP 500. Plugin
 callers that go through `bb.sdk.plugins.callRpc` authenticate with the server
 service token, which acts as an admin. In local mode every request is the local
 owner admin, so nothing changes.
@@ -163,7 +169,9 @@ Storage retention, Keep Awake, Modal Sandbox, Custom instructions, MCP, Docs,
 and ACP providers (new adapter) mark their server-wide configuration, credential,
 enrollment, vault, and bulk cleanup operations. Automations gates script-mode
 create, update, run, pause, and resume, which control code that executes on
-the server host, with separate admin-only RPC methods and `experimental_assertCliAdmin`. Before stabilizing,
+the server host, with separate admin-only RPC methods,
+`experimental_PluginRpcForbiddenError` in the shared methods, and
+`experimental_assertCliAdmin`. Before stabilizing,
 audit whether plugin HTTP routes, WebSocket
 routes, and agent tools need the same role, whether `experimental_caller`
 should also carry the role, and whether RPC discovery should publish it.
