@@ -121,6 +121,7 @@ describe("createThreadRecord", () => {
               ...mode,
               environment: { type: "reuse", environmentId: "env_unused" },
               sectionId: section.section.id,
+              authorUserId: LOCAL_OWNER_USER_ID,
               createdByUserId: LOCAL_OWNER_USER_ID,
               pinned: true,
               input: [],
@@ -185,6 +186,7 @@ describe("createThreadRecord", () => {
         createThreadRecord(deps, {
           environmentId: environment.id,
           request: {
+            authorUserId: LOCAL_OWNER_USER_ID,
             createdByUserId: LOCAL_OWNER_USER_ID,
             environment: {
               environmentId: environment.id,

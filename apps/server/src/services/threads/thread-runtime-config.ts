@@ -4,7 +4,6 @@ import {
 } from "../hosts/host-environment.js";
 import { getEnvironment, getHost, getProject } from "@bb/db";
 import {
-  LOCAL_OWNER_USER_ID,
   type DynamicTool,
   type InstructionMode,
   type PermissionEscalation,
@@ -38,8 +37,7 @@ import {
 import { readWorkspaceAgentContext } from "./workspace-agent-context.js";
 import { resolveDeprecatedWorkspaceProvisionType } from "../environments/environment-response.js";
 import { markTurnTraceSpan } from "../system/turn-trace.js";
-import { issueThreadShellToken } from "../user-auth.js";
-import { MACHINE_AUTH_SYSTEM_USER_ID } from "../machine-auth.js";
+import { isSystemUserId, issueThreadShellToken } from "../user-auth.js";
 
 const UPDATE_ENVIRONMENT_DIRECTORY_INSTRUCTIONS =
   "If the user asks you to move this thread to another checkout, worktree, or directory, make sure the target directory exists, then call `update_environment_directory` with its absolute path. After it succeeds, stop work in the current turn; future turns will run in the updated environment.";
@@ -122,15 +120,10 @@ export function resolvePermissionEscalation(
 function threadShellUserId(
   args: ResolveThreadRuntimeCommandConfigArgs,
 ): string | null {
-  const userId = args.authorUserId ?? args.thread.createdByUserId;
-  if (
-    userId === null ||
-    userId === LOCAL_OWNER_USER_ID ||
-    userId === MACHINE_AUTH_SYSTEM_USER_ID
-  ) {
-    return null;
+  for (const userId of [args.authorUserId, args.thread.createdByUserId]) {
+    if (userId !== null && !isSystemUserId(userId)) return userId;
   }
-  return userId;
+  return null;
 }
 
 export async function resolveThreadRuntimeCommandConfig(
