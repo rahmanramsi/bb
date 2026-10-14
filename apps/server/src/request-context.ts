@@ -6,8 +6,12 @@ import {
   type RequestAppSurface,
 } from "@bb/config/app-surface";
 import type { Context } from "hono";
+import { TEAM_THREAD_VIEWER_ID } from "@bb/domain";
+import { ApiError } from "./errors.js";
+import type { RequestPrincipal } from "./services/user-auth.js";
 
 export const TRUSTED_REMOTE_ADDRESS_CONTEXT_KEY = "bbTrustedRemoteAddress";
+export const PRINCIPAL_CONTEXT_KEY = "bbPrincipal";
 const GATE_AUTH_HEADER_NAME = "x-bb-gate-auth";
 const GATE_MACHINE_ID_HEADER_NAME = "x-bb-gate-machine-id";
 type GateAuthKind = "machine" | "session";
@@ -20,10 +24,55 @@ interface TrustedRemoteAddressReader {
   get(key: typeof TRUSTED_REMOTE_ADDRESS_CONTEXT_KEY): string | undefined;
 }
 
+export interface PrincipalReader {
+  get(key: typeof PRINCIPAL_CONTEXT_KEY): RequestPrincipal | undefined;
+}
+
 declare module "hono" {
   interface ContextVariableMap {
     [TRUSTED_REMOTE_ADDRESS_CONTEXT_KEY]: string | undefined;
+    [PRINCIPAL_CONTEXT_KEY]: RequestPrincipal | undefined;
   }
+}
+
+export function setRequestPrincipal(
+  context: Context,
+  principal: RequestPrincipal | null,
+): void {
+  context.set(PRINCIPAL_CONTEXT_KEY, principal ?? undefined);
+}
+
+export function getRequestPrincipal(
+  context: PrincipalReader,
+): RequestPrincipal | null {
+  return context.get(PRINCIPAL_CONTEXT_KEY) ?? null;
+}
+
+export function requirePrincipal(context: PrincipalReader): RequestPrincipal {
+  const principal = getRequestPrincipal(context);
+  if (principal === null) {
+    throw new ApiError(401, "unauthorized", "Unauthorized");
+  }
+  return principal;
+}
+
+export function requireThreadViewerId(context: PrincipalReader): string {
+  const principal = requirePrincipal(context);
+  return principal.kind === "machine"
+    ? TEAM_THREAD_VIEWER_ID
+    : principal.userId;
+}
+
+export function assertAdmin(context: PrincipalReader): RequestPrincipal {
+  const principal = requirePrincipal(context);
+  if (principal.role !== "admin") {
+    throw new ApiError(
+      403,
+      "admin_required",
+      "This action requires an admin account",
+    );
+  }
+  return principal;
 }
 
 export function captureTrustedRemoteAddress(context: Context): void {

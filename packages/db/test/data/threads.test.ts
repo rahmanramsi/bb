@@ -1,6 +1,7 @@
+import { setThreadLastReadAt, getThreadViewerState } from "../../src/index.js";
 import { describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
-import { isRawThreadId } from "@bb/domain";
+import { isRawThreadId, LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { createConnection } from "../../src/connection.js";
 import { noopNotifier } from "../../src/notifier.js";
 import type { DbNotifier } from "../../src/notifier.js";
@@ -69,13 +70,39 @@ describe("threads", () => {
   it("creates pinned threads in order and retains their section after unpinning", () => {
     const { db, project } = setup();
     const section = mustCreateThreadSection(db, "Managers");
-    const first = createThread(db, noopNotifier, { projectId: project.id, providerId: "codex", pinned: true });
-    const second = createThread(db, noopNotifier, { projectId: project.id, providerId: "codex", sectionId: section.id, pinned: true });
-    expect(second.pinnedAt).not.toBeNull();
-    expect(second.pinSortKey).not.toBeNull();
-    expect(second.pinSortKey! < first.pinSortKey!).toBe(true);
-    const unpinned = unpinThread(db, noopNotifier, { threadId: second.id });
-    expect(unpinned).toMatchObject({ sectionId: section.id, pinnedAt: null, pinSortKey: null });
+    const first = createThread(db, noopNotifier, {
+      projectId: project.id,
+      providerId: "codex",
+      createdByUserId: LOCAL_OWNER_USER_ID,
+      pinned: true,
+    });
+    const second = createThread(db, noopNotifier, {
+      projectId: project.id,
+      providerId: "codex",
+      sectionId: section.id,
+      createdByUserId: LOCAL_OWNER_USER_ID,
+      pinned: true,
+    });
+    const firstState = getThreadViewerState(db, {
+      threadId: first.id,
+      userId: LOCAL_OWNER_USER_ID,
+    });
+    const secondState = getThreadViewerState(db, {
+      threadId: second.id,
+      userId: LOCAL_OWNER_USER_ID,
+    });
+    expect(secondState.pinnedAt).not.toBeNull();
+    expect(secondState.pinSortKey).not.toBeNull();
+    expect(secondState.pinSortKey! < firstState.pinSortKey!).toBe(true);
+    const unpinned = unpinThread(db, noopNotifier, {
+      userId: LOCAL_OWNER_USER_ID,
+      threadId: second.id,
+    });
+    expect(unpinned).toMatchObject({
+      sectionId: section.id,
+      pinnedAt: null,
+      pinSortKey: null,
+    });
     db.$client.close();
   });
 
@@ -88,17 +115,21 @@ describe("threads", () => {
         projectId: project.id,
         providerId: "codex",
       });
-      expect(hasActiveThreadAttention(db)).toBe(false);
+      expect(hasActiveThreadAttention(db, LOCAL_OWNER_USER_ID)).toBe(false);
 
       vi.setSystemTime(2_000);
       db.update(threads)
         .set({ latestAttentionAt: Date.now() })
         .where(eq(threads.id, thread.id))
         .run();
-      expect(hasActiveThreadAttention(db)).toBe(true);
+      expect(hasActiveThreadAttention(db, LOCAL_OWNER_USER_ID)).toBe(true);
 
-      updateThread(db, noopNotifier, thread.id, { lastReadAt: 2_000 });
-      expect(hasActiveThreadAttention(db)).toBe(false);
+      setThreadLastReadAt(db, noopNotifier, {
+        threadId: thread.id,
+        userId: LOCAL_OWNER_USER_ID,
+        lastReadAt: 2_000,
+      });
+      expect(hasActiveThreadAttention(db, LOCAL_OWNER_USER_ID)).toBe(false);
 
       createPendingInteraction(db, {
         payload: "{}",
@@ -108,10 +139,10 @@ describe("threads", () => {
         threadId: thread.id,
         turnId: "turn-1",
       });
-      expect(hasActiveThreadAttention(db)).toBe(true);
+      expect(hasActiveThreadAttention(db, LOCAL_OWNER_USER_ID)).toBe(true);
 
       archiveThread(db, noopNotifier, thread.id);
-      expect(hasActiveThreadAttention(db)).toBe(false);
+      expect(hasActiveThreadAttention(db, LOCAL_OWNER_USER_ID)).toBe(false);
 
       const sideChat = createThread(db, noopNotifier, {
         originKind: "fork",
@@ -126,7 +157,7 @@ describe("threads", () => {
         .set({ latestAttentionAt: Date.now() })
         .where(eq(threads.id, sideChat.id))
         .run();
-      expect(hasActiveThreadAttention(db)).toBe(false);
+      expect(hasActiveThreadAttention(db, LOCAL_OWNER_USER_ID)).toBe(false);
     } finally {
       vi.useRealTimers();
     }
@@ -142,7 +173,12 @@ describe("threads", () => {
     expect(thread.status).toBe("starting");
     expect(thread.projectId).toBe(project.id);
     expect(thread.deletedAt).toBeNull();
-    expect(thread.lastReadAt).toBe(thread.latestAttentionAt);
+    expect(
+      getThreadViewerState(db, {
+        threadId: thread.id,
+        userId: LOCAL_OWNER_USER_ID,
+      }).lastReadAt,
+    ).toBe(thread.latestAttentionAt);
     expect(thread.visibility).toBe("visible");
 
     const fetched = getThread(db, thread.id);
@@ -203,7 +239,10 @@ describe("threads", () => {
       visibility: "hidden",
     });
 
-    pinThread(db, noopNotifier, { threadId: hidden.id });
+    pinThread(db, noopNotifier, {
+      userId: LOCAL_OWNER_USER_ID,
+      threadId: hidden.id,
+    });
     db.update(threads)
       .set({ latestAttentionAt: Date.now() })
       .where(eq(threads.id, hidden.id))
@@ -220,17 +259,20 @@ describe("threads", () => {
     expect(getThread(db, hidden.id)?.visibility).toBe("hidden");
     expect(
       listThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         projectId: project.id,
         includeHidden: false,
       }).map((thread) => thread.id),
     ).not.toContain(hidden.id);
     expect(
-      listThreadsWithPendingInteractionState(db, { projectId: project.id }).map(
-        (thread) => thread.id,
-      ),
+      listThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
+        projectId: project.id,
+      }).map((thread) => thread.id),
     ).not.toContain(hidden.id);
     expect(
       listThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         projectId: project.id,
         includeHidden: true,
       })
@@ -239,13 +281,16 @@ describe("threads", () => {
     ).toEqual([hidden.id, visible.id, parent.id].sort());
     expect(
       listThreadsWithPendingInteractionStateForProjects(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         projectIds: [project.id],
       }).map((thread) => thread.id),
     ).not.toContain(hidden.id);
     expect(
-      listActiveVisiblePinnedThreadRoots(db).map((thread) => thread.id),
+      listActiveVisiblePinnedThreadRoots(db, LOCAL_OWNER_USER_ID).map(
+        (thread) => thread.id,
+      ),
     ).not.toContain(hidden.id);
-    expect(hasActiveThreadAttention(db)).toBe(false);
+    expect(hasActiveThreadAttention(db, LOCAL_OWNER_USER_ID)).toBe(false);
     expect(
       countNonDeletedAssignedChildThreads(db, {
         parentThreadId: parent.id,
@@ -328,6 +373,8 @@ describe("threads", () => {
         notifyHost: vi.fn(),
         notifyProject: vi.fn(),
         notifySystem: vi.fn(),
+        notifyUserThread: vi.fn(),
+        notifyUserSystem: vi.fn(),
       };
       const thread = createThread(db, noopNotifier, {
         projectId: project.id,
@@ -335,29 +382,41 @@ describe("threads", () => {
       });
 
       const pinned = pinThread(db, spy, {
+        userId: LOCAL_OWNER_USER_ID,
         pinnedAt: 2_000,
         threadId: thread.id,
       });
 
       expect(pinned?.pinnedAt).toBe(2_000);
       expect(pinned?.pinSortKey).not.toBeNull();
-      expect(spy.notifyThread).toHaveBeenCalledWith(
+      expect(spy.notifyUserThread).toHaveBeenCalledWith(
+        LOCAL_OWNER_USER_ID,
         thread.id,
         ["pin-state-changed"],
         { projectId: project.id },
       );
+      expect(spy.notifyThread).not.toHaveBeenCalled();
 
-      const pinnedAgain = pinThread(db, spy, { threadId: thread.id });
+      const pinnedAgain = pinThread(db, spy, {
+        userId: LOCAL_OWNER_USER_ID,
+        threadId: thread.id,
+      });
       expect(pinnedAgain?.pinSortKey).toBe(pinned?.pinSortKey);
-      expect(spy.notifyThread).toHaveBeenCalledTimes(1);
+      expect(spy.notifyUserThread).toHaveBeenCalledTimes(1);
 
-      const unpinned = unpinThread(db, spy, { threadId: thread.id });
+      const unpinned = unpinThread(db, spy, {
+        userId: LOCAL_OWNER_USER_ID,
+        threadId: thread.id,
+      });
       expect(unpinned?.pinnedAt).toBeNull();
       expect(unpinned?.pinSortKey).toBeNull();
-      expect(spy.notifyThread).toHaveBeenCalledTimes(2);
+      expect(spy.notifyUserThread).toHaveBeenCalledTimes(2);
 
-      unpinThread(db, spy, { threadId: thread.id });
-      expect(spy.notifyThread).toHaveBeenCalledTimes(2);
+      unpinThread(db, spy, {
+        userId: LOCAL_OWNER_USER_ID,
+        threadId: thread.id,
+      });
+      expect(spy.notifyUserThread).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }
@@ -388,11 +447,18 @@ describe("threads", () => {
         providerId: "codex",
       });
 
-      pinThread(db, noopNotifier, { threadId: first.id });
-      pinThread(db, noopNotifier, { threadId: third.id });
+      pinThread(db, noopNotifier, {
+        userId: LOCAL_OWNER_USER_ID,
+        threadId: first.id,
+      });
+      pinThread(db, noopNotifier, {
+        userId: LOCAL_OWNER_USER_ID,
+        threadId: third.id,
+      });
 
       expect(
         listThreadsWithPendingInteractionState(db, {
+          viewerUserId: LOCAL_OWNER_USER_ID,
           projectId: project.id,
         }).map((thread) => thread.id),
       ).toEqual([third.id, first.id, fourth.id, second.id]);
@@ -423,16 +489,31 @@ describe("threads", () => {
       projectId: otherProject.id,
       providerId: "codex",
     });
-    pinThread(db, noopNotifier, { threadId: first.id });
-    pinThread(db, noopNotifier, { threadId: second.id });
-    pinThread(db, noopNotifier, { threadId: third.id });
-    pinThread(db, noopNotifier, { threadId: otherProjectThread.id });
+    pinThread(db, noopNotifier, {
+      userId: LOCAL_OWNER_USER_ID,
+      threadId: first.id,
+    });
+    pinThread(db, noopNotifier, {
+      userId: LOCAL_OWNER_USER_ID,
+      threadId: second.id,
+    });
+    pinThread(db, noopNotifier, {
+      userId: LOCAL_OWNER_USER_ID,
+      threadId: third.id,
+    });
+    pinThread(db, noopNotifier, {
+      userId: LOCAL_OWNER_USER_ID,
+      threadId: otherProjectThread.id,
+    });
 
     expect(
-      listActiveVisiblePinnedThreadRoots(db).map((thread) => thread.id),
+      listActiveVisiblePinnedThreadRoots(db, LOCAL_OWNER_USER_ID).map(
+        (thread) => thread.id,
+      ),
     ).toEqual([otherProjectThread.id, third.id, second.id, first.id]);
 
     const result = reorderPinnedThread({
+      userId: LOCAL_OWNER_USER_ID,
       db,
       notifier: noopNotifier,
       threadId: first.id,
@@ -442,7 +523,9 @@ describe("threads", () => {
 
     expect(result.kind).toBe("reordered");
     expect(
-      listActiveVisiblePinnedThreadRoots(db).map((thread) => thread.id),
+      listActiveVisiblePinnedThreadRoots(db, LOCAL_OWNER_USER_ID).map(
+        (thread) => thread.id,
+      ),
     ).toEqual([first.id, otherProjectThread.id, third.id, second.id]);
   });
 
@@ -465,12 +548,22 @@ describe("threads", () => {
       projectId: project.id,
       providerId: "codex",
     });
-    pinThread(db, noopNotifier, { threadId: pinned.id });
-    pinThread(db, noopNotifier, { threadId: pinnedParent.id });
-    pinThread(db, noopNotifier, { threadId: pinnedChild.id });
+    pinThread(db, noopNotifier, {
+      userId: LOCAL_OWNER_USER_ID,
+      threadId: pinned.id,
+    });
+    pinThread(db, noopNotifier, {
+      userId: LOCAL_OWNER_USER_ID,
+      threadId: pinnedParent.id,
+    });
+    pinThread(db, noopNotifier, {
+      userId: LOCAL_OWNER_USER_ID,
+      threadId: pinnedChild.id,
+    });
 
     expect(
       reorderPinnedThread({
+        userId: LOCAL_OWNER_USER_ID,
         db,
         notifier: noopNotifier,
         threadId: unpinned.id,
@@ -480,6 +573,7 @@ describe("threads", () => {
     ).toBe("not_pinned");
     expect(
       reorderPinnedThread({
+        userId: LOCAL_OWNER_USER_ID,
         db,
         notifier: noopNotifier,
         threadId: pinned.id,
@@ -489,6 +583,7 @@ describe("threads", () => {
     ).toBe("stale_neighbor");
     expect(
       reorderPinnedThread({
+        userId: LOCAL_OWNER_USER_ID,
         db,
         notifier: noopNotifier,
         threadId: pinned.id,
@@ -498,6 +593,7 @@ describe("threads", () => {
     ).toBe("stale_neighbor");
     expect(
       reorderPinnedThread({
+        userId: LOCAL_OWNER_USER_ID,
         db,
         notifier: noopNotifier,
         threadId: pinnedChild.id,
@@ -536,6 +632,7 @@ describe("threads", () => {
     archiveThread(db, noopNotifier, archivedInPlay.id);
 
     const workArchived = listThreadsWithPendingInteractionState(db, {
+      viewerUserId: LOCAL_OWNER_USER_ID,
       projectId: project.id,
       archived: true,
       sectionId: workSection.id,
@@ -546,6 +643,7 @@ describe("threads", () => {
 
     expect(
       listThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         projectId: project.id,
         archived: true,
         sectionId: playSection.id,
@@ -569,6 +667,7 @@ describe("threads", () => {
     archiveThread(db, noopNotifier, sectioned.id);
 
     const unsectionedArchived = listThreadsWithPendingInteractionState(db, {
+      viewerUserId: LOCAL_OWNER_USER_ID,
       projectId: project.id,
       archived: true,
       unsectioned: true,
@@ -594,10 +693,14 @@ describe("threads", () => {
     });
 
     expect(
-      listThreadsWithPendingInteractionState(db, { projectId: project.id }),
+      listThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
+        projectId: project.id,
+      }),
     ).toHaveLength(1);
     expect(
       listThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         projectId: otherProject.id,
       }),
     ).toHaveLength(1);
@@ -622,18 +725,21 @@ describe("threads", () => {
 
     expect(
       listThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         projectId: project.id,
         parentThreadId: parent.id,
       }),
     ).toHaveLength(1);
     expect(
       listThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         projectId: project.id,
         archived: true,
       }),
     ).toHaveLength(1);
     expect(
       listThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         projectId: project.id,
         archived: false,
       }),
@@ -657,6 +763,7 @@ describe("threads", () => {
     });
 
     const childThreads = listThreadsWithPendingInteractionState(db, {
+      viewerUserId: LOCAL_OWNER_USER_ID,
       projectId: project.id,
       hasParent: true,
     });
@@ -664,6 +771,7 @@ describe("threads", () => {
     expect(childThreads[0]?.id).toBe(child.id);
 
     const rootThreads = listThreadsWithPendingInteractionState(db, {
+      viewerUserId: LOCAL_OWNER_USER_ID,
       projectId: project.id,
       hasParent: false,
     });
@@ -687,6 +795,7 @@ describe("threads", () => {
     }
 
     const archivedFirstPage = listThreadsWithPendingInteractionState(db, {
+      viewerUserId: LOCAL_OWNER_USER_ID,
       projectId: project.id,
       archived: true,
       limit: 3,
@@ -698,6 +807,7 @@ describe("threads", () => {
     ]);
 
     const archivedSecondPage = listThreadsWithPendingInteractionState(db, {
+      viewerUserId: LOCAL_OWNER_USER_ID,
       projectId: project.id,
       archived: true,
       limit: 3,
@@ -810,17 +920,18 @@ describe("threads", () => {
     });
 
     const environmentIdentityByThreadId = new Map(
-      listThreadsWithPendingInteractionState(db, { projectId: project.id }).map(
-        (thread) => [
-          thread.id,
-          {
-            environmentBranchName: thread.environmentBranchName,
-            environmentProviderId: thread.environmentProviderId,
-            environmentHostId: thread.environmentHostId,
-            environmentName: thread.environmentName,
-          },
-        ],
-      ),
+      listThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
+        projectId: project.id,
+      }).map((thread) => [
+        thread.id,
+        {
+          environmentBranchName: thread.environmentBranchName,
+          environmentProviderId: thread.environmentProviderId,
+          environmentHostId: thread.environmentHostId,
+          environmentName: thread.environmentName,
+        },
+      ]),
     );
 
     expect(environmentIdentityByThreadId.get(directThread.id)).toEqual({
@@ -845,6 +956,8 @@ describe("threads", () => {
       notifyHost: vi.fn(),
       notifyProject: vi.fn(),
       notifySystem: vi.fn(),
+      notifyUserThread: vi.fn(),
+      notifyUserSystem: vi.fn(),
     };
     const thread = createThread(db, noopNotifier, {
       projectId: project.id,
@@ -987,6 +1100,7 @@ describe("threads", () => {
 
     expect(
       listThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         projectId: project.id,
         sectionId: section.id,
         includeHidden: true,
@@ -1042,6 +1156,8 @@ describe("threads", () => {
       notifyHost: vi.fn(),
       notifyProject: vi.fn(),
       notifySystem: vi.fn(),
+      notifyUserThread: vi.fn(),
+      notifyUserSystem: vi.fn(),
     };
     const parentThread = createThread(db, noopNotifier, {
       projectId: project.id,
@@ -1071,6 +1187,8 @@ describe("threads", () => {
       notifyHost: vi.fn(),
       notifyProject: vi.fn(),
       notifySystem: vi.fn(),
+      notifyUserThread: vi.fn(),
+      notifyUserSystem: vi.fn(),
     };
     const environment = createEnvironment(db, noopNotifier, {
       providerOwnsPath: false,
@@ -1104,7 +1222,9 @@ describe("threads", () => {
         projectId: project.id,
         providerId: "codex",
       });
-      updateThread(db, noopNotifier, thread.id, {
+      setThreadLastReadAt(db, noopNotifier, {
+        threadId: thread.id,
+        userId: LOCAL_OWNER_USER_ID,
         lastReadAt: thread.latestAttentionAt,
       });
 
@@ -1115,7 +1235,12 @@ describe("threads", () => {
 
       expect(updated?.title).toBe("New title");
       expect(updated?.updatedAt).toBe(2_000);
-      expect(updated?.lastReadAt).toBe(1_000);
+      expect(
+        getThreadViewerState(db, {
+          threadId: updated!.id,
+          userId: LOCAL_OWNER_USER_ID,
+        }).lastReadAt,
+      ).toBe(1_000);
       expect(updated?.latestAttentionAt).toBe(1_000);
     } finally {
       vi.useRealTimers();
@@ -1131,7 +1256,9 @@ describe("threads", () => {
         projectId: project.id,
         providerId: "codex",
       });
-      updateThread(db, noopNotifier, thread.id, {
+      setThreadLastReadAt(db, noopNotifier, {
+        threadId: thread.id,
+        userId: LOCAL_OWNER_USER_ID,
         lastReadAt: null,
       });
 
@@ -1141,7 +1268,12 @@ describe("threads", () => {
       });
 
       expect(updated?.updatedAt).toBe(2_000);
-      expect(updated?.lastReadAt).toBeNull();
+      expect(
+        getThreadViewerState(db, {
+          threadId: updated!.id,
+          userId: LOCAL_OWNER_USER_ID,
+        }).lastReadAt,
+      ).toBeNull();
       expect(updated?.latestAttentionAt).toBe(1_000);
     } finally {
       vi.useRealTimers();
@@ -1173,7 +1305,10 @@ describe("threads", () => {
     expect(deleted?.deletedAt).toBeTypeOf("number");
     expect(getThread(db, thread.id)?.deletedAt).toBeTypeOf("number");
     expect(
-      listThreadsWithPendingInteractionState(db, { projectId: project.id }),
+      listThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
+        projectId: project.id,
+      }),
     ).toHaveLength(0);
   });
 
@@ -1384,7 +1519,9 @@ describe("thread lifecycle transitions and read state", () => {
         providerId: "codex",
         status: "active",
       });
-      updateThread(db, noopNotifier, activeThread.id, {
+      setThreadLastReadAt(db, noopNotifier, {
+        threadId: activeThread.id,
+        userId: LOCAL_OWNER_USER_ID,
         lastReadAt: activeThread.latestAttentionAt,
       });
 
@@ -1398,9 +1535,16 @@ describe("thread lifecycle transitions and read state", () => {
       expect(idleThread.status).toBe("idle");
       expect(idleThread.updatedAt).toBe(2_000);
       expect(idleThread.latestAttentionAt).toBe(2_000);
-      expect(idleThread.lastReadAt).toBe(1_000);
+      expect(
+        getThreadViewerState(db, {
+          threadId: idleThread!.id,
+          userId: LOCAL_OWNER_USER_ID,
+        }).lastReadAt,
+      ).toBe(1_000);
 
-      updateThread(db, noopNotifier, activeThread.id, {
+      setThreadLastReadAt(db, noopNotifier, {
+        threadId: activeThread.id,
+        userId: LOCAL_OWNER_USER_ID,
         lastReadAt: idleThread.latestAttentionAt,
       });
       vi.setSystemTime(3_000);
@@ -1413,7 +1557,12 @@ describe("thread lifecycle transitions and read state", () => {
       expect(activeAgainThread.status).toBe("active");
       expect(activeAgainThread.updatedAt).toBe(3_000);
       expect(activeAgainThread.latestAttentionAt).toBe(2_000);
-      expect(activeAgainThread.lastReadAt).toBe(2_000);
+      expect(
+        getThreadViewerState(db, {
+          threadId: activeAgainThread!.id,
+          userId: LOCAL_OWNER_USER_ID,
+        }).lastReadAt,
+      ).toBe(2_000);
     } finally {
       vi.useRealTimers();
     }
@@ -1429,7 +1578,9 @@ describe("thread lifecycle transitions and read state", () => {
         providerId: "codex",
         status: "stopping",
       });
-      updateThread(db, noopNotifier, stoppingThread.id, {
+      setThreadLastReadAt(db, noopNotifier, {
+        threadId: stoppingThread.id,
+        userId: LOCAL_OWNER_USER_ID,
         lastReadAt: stoppingThread.latestAttentionAt,
       });
 
@@ -1443,7 +1594,12 @@ describe("thread lifecycle transitions and read state", () => {
       expect(erroredThread.status).toBe("error");
       expect(erroredThread.updatedAt).toBe(2_000);
       expect(erroredThread.latestAttentionAt).toBe(1_000);
-      expect(erroredThread.lastReadAt).toBe(1_000);
+      expect(
+        getThreadViewerState(db, {
+          threadId: erroredThread!.id,
+          userId: LOCAL_OWNER_USER_ID,
+        }).lastReadAt,
+      ).toBe(1_000);
     } finally {
       vi.useRealTimers();
     }
@@ -1467,12 +1623,14 @@ describe("thread originKind", () => {
       originKind: "fork",
     });
     const forks = listThreadsWithPendingInteractionState(db, {
+      viewerUserId: LOCAL_OWNER_USER_ID,
       projectId: project.id,
       originKind: "fork",
     });
     expect(forks.map((thread) => thread.id)).toEqual([fork.id]);
 
     const all = listThreadsWithPendingInteractionState(db, {
+      viewerUserId: LOCAL_OWNER_USER_ID,
       projectId: project.id,
     });
     expect(all.map((thread) => thread.id).sort()).toEqual(
@@ -1502,6 +1660,7 @@ describe("thread originKind", () => {
     });
 
     const own = listThreadsWithPendingInteractionState(db, {
+      viewerUserId: LOCAL_OWNER_USER_ID,
       projectId: project.id,
       originKind: "fork",
       originPluginId: "side-chat",

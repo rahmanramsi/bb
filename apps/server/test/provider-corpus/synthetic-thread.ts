@@ -15,7 +15,11 @@ import {
   threadScope,
   turnScope,
 } from "@bb/domain";
-import type { Thread, ThreadEventScope, ThreadEventType } from "@bb/domain";
+import type {
+  ThreadRecord,
+  ThreadEventScope,
+  ThreadEventType,
+} from "@bb/domain";
 
 type InsertEventInput = Parameters<typeof insertEvents>[2][number];
 
@@ -447,7 +451,7 @@ function pushSyntheticTurn(
 export interface SyntheticThread {
   db: DbConnection;
   eventCount: number;
-  thread: Thread;
+  thread: ThreadRecord;
   close(): void;
 }
 

@@ -88,12 +88,14 @@ interface RegisterPendingInteractionArgs {
 interface ResolvePendingInteractionArgs {
   interactionId: string;
   resolution: PendingInteractionResolution;
+  resolvedByUserId: string | null;
   threadId: string;
 }
 
 interface QueueInteractionResolutionCommandArgs {
   interaction: PendingInteraction;
   resolution: PendingInteractionResolution;
+  resolvedByUserId: string | null;
 }
 
 interface CompleteResolvingInteractionArgs {
@@ -605,6 +607,7 @@ export class PendingInteractionLifecycle {
 
   async respondToInteraction(args: {
     interactionId: string;
+    resolvedByUserId: string | null;
     threadId: string;
     value: JsonValue;
   }): Promise<PendingInteraction> {
@@ -614,6 +617,7 @@ export class PendingInteractionLifecycle {
         interactionId: args.interactionId,
         threadId: args.threadId,
         resolution: { kind: "request_answer", value: args.value },
+        resolvedByUserId: args.resolvedByUserId,
       });
     }
     return this.respondToPluginInteraction(args);
@@ -621,6 +625,7 @@ export class PendingInteractionLifecycle {
 
   async respondToPluginInteraction(args: {
     interactionId: string;
+    resolvedByUserId: string | null;
     threadId: string;
     value: JsonValue;
   }): Promise<PendingInteraction> {
@@ -657,6 +662,7 @@ export class PendingInteractionLifecycle {
     }
     const updated = setPendingInteractionResolved(this.deps.db, {
       id: current.id,
+      resolvedByUserId: args.resolvedByUserId,
       resolution: JSON.stringify({
         kind: "plugin_submitted",
         ...(description === undefined ? {} : { description }),
@@ -742,6 +748,7 @@ export class PendingInteractionLifecycle {
     const updated = this.queueInteractionResolutionCommand({
       interaction: current,
       resolution: args.resolution,
+      resolvedByUserId: args.resolvedByUserId,
     });
     if (!updated) {
       const latest = this.getThreadInteraction({
@@ -917,6 +924,7 @@ export class PendingInteractionLifecycle {
       setPendingInteractionResolving(tx, {
         id: args.interaction.id,
         resolution: resolutionJson,
+        resolvedByUserId: args.resolvedByUserId,
       }),
     );
 

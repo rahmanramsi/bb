@@ -8,7 +8,10 @@ import {
   dropIdleLifecycleIndexes,
   rewindThreadPruningWork,
   dropMarketplaceSourceGitSubdirectoryColumn,
+  rewindMultiUser,
   dropQueuedMessageEditHeldUntilColumn,
+  restoreLegacyPerUserSettingsTables,
+  createLegacyUiPreferencesTable,
 } from "./helpers/rewind.js";
 import { defaultAppSettings } from "@bb/domain";
 import {
@@ -631,6 +634,7 @@ function resetMigrationsAfterThreadSearch(db: DbConnection): void {
   db.$client
     .prepare<[number]>("DELETE FROM __drizzle_migrations WHERE created_at > ?")
     .run(threadSearchRowidFtsMigrationWhen);
+  restoreLegacyPerUserSettingsTables(db);
 }
 
 function dropMarketplaceCatalogSchema(db: DbConnection): void {
@@ -722,6 +726,7 @@ function rewindEnvironmentProvisioningMigration(db: DbConnection): void {
   dropPluginEnabledFollowsDefaultColumn(db);
   dropQueuedMessageEditHeldUntilColumn(db);
   dropMarketplaceSourceGitSubdirectoryColumn(db);
+  rewindMultiUser(db);
   db.$client.exec("DROP TRIGGER IF EXISTS threads_lifecycle_owner_insert");
   db.$client.exec("DROP TRIGGER IF EXISTS threads_lifecycle_owner_immutable");
   db.$client.exec("DROP INDEX IF EXISTS threads_lifecycle_owner_idx");
@@ -845,6 +850,7 @@ function rewindMachineProvidersMigration(db: DbConnection): void {
   rewindThreadPruningWork(db);
   dropQueuedMessageEditHeldUntilColumn(db);
   dropMarketplaceSourceGitSubdirectoryColumn(db);
+  rewindMultiUser(db);
   db.$client.exec("DROP TABLE IF EXISTS ui_preference_defaults");
   const queuedDispatchOrigin = db.$client
     .prepare<[], TableInfoRow>("PRAGMA table_info(queued_thread_messages)")
@@ -916,6 +922,7 @@ function rewindMachineProvidersMigration(db: DbConnection): void {
   db.$client
     .prepare<[number]>("DELETE FROM __drizzle_migrations WHERE created_at >= ?")
     .run(machineProvidersMigrationWhen);
+  restoreLegacyPerUserSettingsTables(db);
 }
 
 function rewindEnvironmentProvidersMigration(db: DbConnection): void {
@@ -1272,6 +1279,7 @@ function markEventLargeValuesMigrationUnapplied(db: DbConnection): void {
       `,
     )
     .run(eventLargeValuesMigrationWhen);
+  restoreLegacyPerUserSettingsTables(db);
   db.$client.prepare("DROP INDEX IF EXISTS `threads_source_origin_idx`").run();
   db.$client
     .prepare("ALTER TABLE `threads` DROP COLUMN `source_thread_id`")
@@ -1530,6 +1538,7 @@ function deleteDeferredCleanupMigrationRows(db: DbConnection): void {
       terminalSessionRuntimeStateHonestyWhen,
       hostDaemonSessionObservabilityMigrationWhen,
     );
+  restoreLegacyPerUserSettingsTables(db);
 }
 
 describe("migrate", () => {
@@ -1561,7 +1570,7 @@ describe("migrate", () => {
 
       db.$client.prepare("DROP TABLE provider_model_catalogs").run();
       db.$client.prepare("DROP TABLE IF EXISTS ui_preference_defaults").run();
-      db.$client.prepare("DROP TABLE ui_preferences").run();
+      db.$client.prepare("DROP TABLE IF EXISTS ui_preferences").run();
       db.$client.prepare("DROP TABLE retained_event_outputs").run();
       db.$client
         .prepare<[string, string, string]>(
@@ -2416,6 +2425,7 @@ describe("migrate", () => {
           "DELETE FROM __drizzle_migrations WHERE created_at >= ?",
         )
         .run(permissionModesMigrationWhen);
+      restoreLegacyPerUserSettingsTables(db);
       rewindEnvironmentRowFactsMigration(db);
       rewindEnvironmentProvidersMigration(db);
       dropSideChatPluginExperimentColumn(db);
@@ -2518,6 +2528,7 @@ describe("migrate", () => {
           "DELETE FROM __drizzle_migrations WHERE created_at = ?",
         )
         .run(threadSearchRowidFtsMigrationWhen);
+      restoreLegacyPerUserSettingsTables(db);
       resetMigrationsAfterThreadSearch(db);
 
       expect(() => migrate(db)).not.toThrow();
@@ -2594,6 +2605,7 @@ describe("migrate", () => {
           "DELETE FROM __drizzle_migrations WHERE created_at >= ?",
         )
         .run(threadSectionsRepairMigrationWhen);
+      restoreLegacyPerUserSettingsTables(db);
       rewindEnvironmentRowFactsMigration(db);
       rewindEnvironmentProvidersMigration(db);
       dropSideChatPluginExperimentColumn(db);
@@ -2737,6 +2749,7 @@ describe("migrate", () => {
           `,
         )
         .run(threadTypeRemovalMigrationWhen);
+      restoreLegacyPerUserSettingsTables(db);
       dropPost0023Tables(db);
       restoreEnvironmentCleanupModeColumn(db);
       restoreEnvironmentCleanupRequestedAtColumn(db);
@@ -2831,6 +2844,7 @@ describe("migrate", () => {
           `,
         )
         .run(threadSourceOriginMigrationWhen);
+      restoreLegacyPerUserSettingsTables(db);
       dropRewindAddedTables(db);
       db.$client.exec(`
         DROP TRIGGER IF EXISTS thread_search_segments_after_text_update;
@@ -2991,6 +3005,7 @@ describe("migrate", () => {
           stopRequestedAtDropMigrationWhen,
           cleanupRequestedAtDropMigrationWhen,
         );
+      restoreLegacyPerUserSettingsTables(db);
 
       migrate(db);
 
@@ -3309,6 +3324,7 @@ describe("migrate", () => {
       rewindThreadPruningWork(db);
       dropQueuedMessageEditHeldUntilColumn(db);
       dropMarketplaceSourceGitSubdirectoryColumn(db);
+      rewindMultiUser(db);
       db.$client.prepare("DROP INDEX projects_deleted_idx").run();
       db.$client.prepare("ALTER TABLE projects DROP COLUMN deleted_at").run();
       db.$client.prepare("ALTER TABLE events ADD producer_event_id text").run();
@@ -3649,6 +3665,7 @@ describe("migrate", () => {
           `,
         )
         .run(legacyExperimentsMigrationWhen);
+      restoreLegacyPerUserSettingsTables(db);
 
       migrate(db);
 
@@ -3725,6 +3742,7 @@ describe("migrate", () => {
           `,
         )
         .run(threadPinningMigrationWhen);
+      restoreLegacyPerUserSettingsTables(db);
 
       expect(() => migrate(db)).toThrow(
         /Missing applied migration timestamps: 0008_thread_pinning/,
@@ -4269,6 +4287,7 @@ describe("migrate", () => {
     const db = createConnection(":memory:");
     try {
       migrate(db);
+      createLegacyUiPreferencesTable(db);
       db.$client.exec(`
         INSERT INTO plugins (id, source, root_dir, version, enabled, installed_at, updated_at, provenance, source_kind, source_builtin_name, removed_at)
         VALUES
@@ -4331,6 +4350,7 @@ describe("migrate", () => {
     const db = createConnection(":memory:");
     try {
       migrate(db);
+      createLegacyUiPreferencesTable(db);
       db.$client.exec(`
         INSERT INTO plugins (id, source, root_dir, version, enabled, installed_at, updated_at, provenance, source_kind)
         VALUES ('provider-usage', 'git:https://github.com/braedonsaunders/bb-plugin-provider-usage.git', '/managed/provider-usage', '0.4.0', 1, 1, 1, 'catalog', 'git');
@@ -4537,6 +4557,7 @@ describe("migrate", () => {
           "DELETE FROM __drizzle_migrations WHERE created_at >= ?",
         )
         .run(eventParentToolCallMigrationWhen);
+      restoreLegacyPerUserSettingsTables(db);
       db.$client.exec(`
         INSERT INTO events (
           id, thread_id, scope_kind, turn_id, sequence, type, item_id, item_kind, data, created_at
@@ -4625,7 +4646,7 @@ describe("environment providers migration", () => {
   function seedPreProviderEnvironments(db: DbConnection): void {
     db.$client.prepare("DROP TABLE provider_model_catalogs").run();
     db.$client.prepare("DROP TABLE IF EXISTS ui_preference_defaults").run();
-    db.$client.prepare("DROP TABLE ui_preferences").run();
+    db.$client.prepare("DROP TABLE IF EXISTS ui_preferences").run();
     db.$client.prepare("DROP TABLE retained_event_outputs").run();
     rewindEnvironmentRowFactsMigration(db);
     rewindEnvironmentProvidersMigration(db);
@@ -4635,6 +4656,7 @@ describe("environment providers migration", () => {
         "DELETE FROM __drizzle_migrations WHERE created_at >= ?",
       )
       .run(environmentProvidersMigrationWhen);
+    restoreLegacyPerUserSettingsTables(db);
     db.$client.exec(`
       INSERT INTO hosts (id, name, type, created_at, updated_at)
       VALUES ('host_ep', 'provider host', 'persistent', 1000, 1000);
@@ -5058,6 +5080,7 @@ describe("environment and thread startup ownership migration", () => {
             "DELETE FROM __drizzle_migrations WHERE created_at >= ?",
           )
           .run(environmentProvisioningMigrationWhen);
+        restoreLegacyPerUserSettingsTables(db);
         db.$client.exec(`
         INSERT INTO hosts (id, name, type, created_at, updated_at) VALUES ('host_ownership', 'test', 'persistent', 1, 1);
         INSERT INTO projects (id, name, created_at, updated_at) VALUES ('proj_ownership', 'test', 1, 1);

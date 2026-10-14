@@ -4,7 +4,7 @@ import {
   THREAD_CONTEXT_CLEARED_DETAIL,
   threadScope,
   type Environment,
-  type Thread,
+  type ThreadRecord,
 } from "@bb/domain";
 import { ApiError } from "../../errors.js";
 import type { LoggedPendingInteractionWorkSessionDeps } from "../../types.js";
@@ -18,7 +18,7 @@ export async function clearThreadContext(
   deps: LoggedPendingInteractionWorkSessionDeps,
   args: {
     environment: Pick<Environment, "hostId" | "id">;
-    thread: Thread;
+    thread: ThreadRecord;
   },
 ): Promise<void> {
   await withThreadContextClearGuard(args.thread.id, async () => {
@@ -36,7 +36,9 @@ export async function clearThreadContext(
         "Context can only be cleared when the thread is idle or failed",
       );
     }
-    if (deps.pendingInteractions.hasTurnBoundPendingThreadInteraction(thread.id)) {
+    if (
+      deps.pendingInteractions.hasTurnBoundPendingThreadInteraction(thread.id)
+    ) {
       throw new ApiError(
         409,
         "awaiting_user_interaction",

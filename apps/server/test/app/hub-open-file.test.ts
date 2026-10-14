@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { describe, expect, it } from "vitest";
 import { NotificationHub } from "../../src/ws/hub.js";
 import { createMockHubSocket } from "../helpers/mock-hub-socket.js";
@@ -43,8 +44,8 @@ describe("NotificationHub.notifyThreadOpen", () => {
     const hub = new NotificationHub();
     const first = createMockHubSocket();
     const second = createMockHubSocket();
-    hub.registerClient(first);
-    hub.registerClient(second);
+    hub.registerClient(first, LOCAL_OWNER_USER_ID);
+    hub.registerClient(second, LOCAL_OWNER_USER_ID);
 
     expect(
       hub.notifyThreadPaneAction(

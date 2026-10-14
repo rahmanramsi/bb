@@ -222,7 +222,10 @@ describe("plugin bb.sdk bind gate", () => {
       /bb\.sdk is not available until the server is listening/,
     );
 
-    service.bindSdk({ baseUrl: "http://127.0.0.1:9" });
+    service.bindSdk({
+      baseUrl: "http://127.0.0.1:9",
+      serviceToken: "test-service-token",
+    });
     expect(typeof api.sdk.threads.fork).toBe("function");
     expect(typeof api.sdk.threads.spawn).toBe("function");
   });
@@ -233,7 +236,10 @@ describe("plugin bb.sdk bind gate", () => {
       serverSource: `export default function plugin() {}`,
     });
     await service.installPath(rootDir);
-    service.bindSdk({ baseUrl: "http://127.0.0.1:9" });
+    service.bindSdk({
+      baseUrl: "http://127.0.0.1:9",
+      serviceToken: "test-service-token",
+    });
     const api = requireApi(service, "metadata-boundary");
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const invalidValues: Array<{
@@ -282,7 +288,10 @@ describe("plugin bb.sdk bind gate", () => {
       serverSource: `export default function plugin() {}`,
     });
     await service.installPath(rootDir);
-    service.bindSdk({ baseUrl: "https://bb.example.test" });
+    service.bindSdk({
+      baseUrl: "https://bb.example.test",
+      serviceToken: "test-service-token",
+    });
     const api = requireApi(service, "metadata-attribution");
     const requests: unknown[] = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
@@ -618,7 +627,10 @@ describe("plugin bb.sdk against a running server", () => {
         hostId: host.id,
         projectId: project.id,
       });
-      server.pluginService.bindSdk({ baseUrl: server.baseUrl });
+      server.pluginService.bindSdk({
+        baseUrl: server.baseUrl,
+        serviceToken: server.deps.userAuth.serviceToken,
+      });
       const rootDir = await writePlugin(workDir, {
         name: "bb-plugin-meta-owner",
         serverSource: `export default function plugin() {}`,
@@ -787,7 +799,10 @@ describe("plugin bb.sdk against a running server", () => {
         hostId: host.id,
         projectId: project.id,
       });
-      server.pluginService.bindSdk({ baseUrl: server.baseUrl });
+      server.pluginService.bindSdk({
+        baseUrl: server.baseUrl,
+        serviceToken: server.deps.userAuth.serviceToken,
+      });
       const thread = createThread(server.db, server.deps.hub, {
         projectId: project.id,
         environmentId: environment.id,
@@ -1015,7 +1030,10 @@ describe("plugin bb.sdk against a running server", () => {
     const server = await startTestServer();
     const workDir = await mkdtemp(join(tmpdir(), "bb-plugin-rpc-caller-"));
     try {
-      server.pluginService.bindSdk({ baseUrl: server.baseUrl });
+      server.pluginService.bindSdk({
+        baseUrl: server.baseUrl,
+        serviceToken: server.deps.userAuth.serviceToken,
+      });
       for (const name of ["callee", "caller"]) {
         const rootDir = await writePlugin(workDir, {
           name: `bb-plugin-${name}`,
@@ -1117,7 +1135,10 @@ describe("plugin bb.sdk against a running server", () => {
         path: "/tmp/plugin-sdk-live-source",
       });
 
-      server.pluginService.bindSdk({ baseUrl: server.baseUrl });
+      server.pluginService.bindSdk({
+        baseUrl: server.baseUrl,
+        serviceToken: server.deps.userAuth.serviceToken,
+      });
       const rootDir = await writePlugin(workDir, {
         name: "bb-plugin-spawner",
         serverSource: `export default function plugin() {}`,

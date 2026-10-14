@@ -16,7 +16,7 @@ export const DAEMON_HOST_CONFIG_ID = "daemon-host";
 const ENROLL_KEY_TTL_SECONDS = 60 * 15;
 const DAEMON_KEY_CACHE_TTL_MS = 30_000;
 const DAEMON_KEY_CACHE_MAX_ENTRIES = 1024;
-const MACHINE_AUTH_SYSTEM_USER_ID = "bb-machine-auth-system-user";
+export const MACHINE_AUTH_SYSTEM_USER_ID = "bb-machine-auth-system-user";
 const MACHINE_AUTH_SYSTEM_USER_EMAIL = "machine-auth@bb.internal";
 const MACHINE_AUTH_SYSTEM_USER_NAME = "Machine Auth System";
 

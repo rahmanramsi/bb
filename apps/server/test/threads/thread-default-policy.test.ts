@@ -6,7 +6,7 @@ import {
   PERSONAL_PROJECT_ID,
   type GitSourceInspection,
   type ProjectExecutionDefaults,
-  type Thread,
+  type ThreadRecord,
 } from "@bb/domain";
 import { createEnvironment } from "@bb/db";
 import { describe, expect, it } from "vitest";
@@ -33,11 +33,11 @@ import { withTestHarness } from "../helpers/test-app.js";
 const registry = await createTestProviderRegistry();
 
 type PolicyTestThread = Pick<
-  Thread,
+  ThreadRecord,
   "originKind" | "parentThreadId" | "projectId" | "providerId"
 >;
 type PolicyTestParentThread = Pick<
-  Thread,
+  ThreadRecord,
   | "archivedAt"
   | "deletedAt"
   | "environmentId"

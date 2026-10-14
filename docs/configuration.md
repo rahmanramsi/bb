@@ -257,6 +257,8 @@ child; do not set them yourself.
 | `BB_MARKETPLACE_URL`           | `bb-app env`, or environment                       | Startup-only testing    | Manifest URL of the reserved `bb-community` plugin marketplace. It defaults to `https://getbb.app/marketplace/v2/marketplace.json`. If the default v2 request returns 404, the server requests v1. Set another URL to test catalog refreshes. The server requests that URL without fallback. It changes only `bb-community`. Add other marketplaces with `bb marketplace add`. Restart the app after a change. |
 | `BB_SERVER_URL`                | `bb-app config`                                    | Remote CLI/host use     | Server URL for standalone `bb` CLI and `host-daemon` commands on the current machine. The CLI defaults to `http://127.0.0.1:38886` when unset.                                                                                                                                                                                                                                                                 |
 | `BB_SERVER_BIND_HOST`          | `bb-app env`, environment, or `--server-bind-host` | Startup-only            | Server listener host. Defaults to `127.0.0.1`; accepts only `127.0.0.1` or `0.0.0.0`. A full launcher or desktop app restart is required; until then, a previous `0.0.0.0` listener remains exposed. This is not a `bb-app config` key.                                                                                                                                                                        |
+| `BB_TOKEN`                     | Environment                                        | CLI credential          | Bearer credential that overrides the PAT saved by `bb login` for the current server origin. Agent shells receive a server-issued value in multi mode.                                                                                                                                                                                                                                                          |
+| `BB_AUTH_MODE`                 | `bb-app env` or environment                        | Startup-only            | Server authentication mode, `local` (default) or `multi`. See [Authentication](#authentication). A full launcher or desktop app restart is required. This is not a `bb-app config` key.                                                                                                                                                                                                                        |
 | `BB_SERVER_PORT`               | `bb-app env`, environment, or `--server-port`      | Startup-only            | HTTP listener port. Defaults to `38886`. A full launcher or desktop app restart is required after a persistent set or unset.                                                                                                                                                                                                                                                                                   |
 | `BB_HOST_DAEMON_PORT`          | `bb-app env`, environment, or `--host-daemon-port` | Startup-only            | Local host-daemon API port. Defaults to `38887`. A full launcher or desktop app restart is required after a persistent set or unset.                                                                                                                                                                                                                                                                           |
 | `BB_LOG_LEVEL`                 | `bb-app config`                                    | Startup-only debugging  | Log level: `trace`, `debug`, `info`, `warn`, `error`, or `fatal`. A full launcher or desktop app restart is required.                                                                                                                                                                                                                                                                                          |
@@ -1820,11 +1822,167 @@ npx bb-app --data-dir ~/.bb-test --server-port 48886 --host-daemon-port 48887
 
 The server listens on `127.0.0.1` by default. Set
 `--server-bind-host 0.0.0.0` (or `BB_SERVER_BIND_HOST=0.0.0.0`) only when a
-trusted network boundary must reach the listener directly. The public API is
-unauthenticated and permits command execution and file reads, so never expose a
-wildcard-bound server to an untrusted network. The only accepted bind hosts are
+trusted network boundary must reach the listener directly. In the default
+`local` auth mode the public API is unauthenticated and permits command
+execution and file reads, so never expose a wildcard-bound `local` server to an
+untrusted network. The only accepted bind hosts are
 `127.0.0.1` and `0.0.0.0`; this startup-only setting is not available through
 `bb-app config`.
+
+## Authentication
+
+`BB_AUTH_MODE` selects how the server identifies callers. It is startup-only;
+set it with `npx bb-app env set BB_AUTH_MODE multi` or in the server
+environment, then restart.
+
+- `local` (default) keeps single-user behavior: every request to `/api/v1`,
+  `/ws`, and `/ws/terminals` acts as the built-in local owner account
+  (`usr_local_owner`, an admin). No sign-in is needed.
+- `multi` requires a credential on every one of those requests, including
+  requests from loopback, because BB Connect tunnel traffic also arrives from
+  loopback. Requests without a valid credential get `401`.
+
+`multi` accepts these credentials:
+
+- A session cookie from `POST /api/v1/auth/sign-in` (email and password). The
+  app uses this. `POST /api/v1/auth/sign-out` ends the session.
+- A personal access token sent as `Authorization: Bearer bbpat_…`, for the CLI,
+  SDK, and scripts. Create one with `POST /api/v1/auth/tokens` (`{"name": …}`);
+  the token is shown once. `GET /api/v1/auth/tokens` lists your tokens and
+  `DELETE /api/v1/auth/tokens/:id` revokes one.
+
+- A signed identity from the bb connect gate, verified with the active tunnel
+  credential. See [Share access through bb connect](#share-access-through-bb-connect).
+
+Session cookies are `HttpOnly` and `SameSite=Lax`. When `BB_APP_URL` is an
+`https://` URL they are also `Secure` and named `__Secure-bb.session_token`,
+so browsers send them only over HTTPS. `POST /api/v1/auth/sign-in` allows ten
+failed passwords per email in 15 minutes and 60 attempts per minute across
+all accounts; further attempts get `429` with code `rate_limited` until the
+window ends. A successful sign-in resets that email's count.
+
+Open `/ws`, `/ws/terminals/:id`, and plugin WebSocket connections close with code `1008` when
+their credential stops authorizing: the user is removed or changes role, the
+session signs out or expires, the personal access token is revoked, or a
+thread shell token expires. The server also rechecks open connections every
+minute. Clients reconnect with a current credential.
+
+`GET /api/v1/auth/session` needs no credential and reports the auth mode,
+whether the server still needs its first account (`needsBootstrap`), and the
+signed-in user, if any.
+
+In multi mode, the app shows **Create your admin account** on a fresh server
+and **Sign in to bb** afterward. Open the user menu in the navigation rail to
+sign out or open **Settings → Account**. Everyone can create and revoke their
+own personal access tokens there. Admins also manage users and invites. Copy
+a new token or invite link before selecting **Done**; its value appears once.
+Share invite links yourself. Creating an invite does not send email.
+
+Invite links open `/invite?token=…` and register an account with the invited
+role. An invite restricted to an email requires that address. If you are
+already signed in, sign out before accepting an invite for another account.
+Thread lists and headers show each creator in multi mode. Local mode keeps
+the existing interface without sign-in, account controls, or creator labels.
+The app hides administrative settings for members; the server enforces the
+same role restrictions for API, SDK, and CLI callers.
+
+On a fresh `multi` server the first account registered with
+`POST /api/v1/auth/sign-up` becomes an admin. After that, sign-up requires an
+`inviteToken` from `POST /api/v1/auth/invites` (`{"role": "member" | "admin",
+"email"?: …}`), which only admins can create. Invites expire after seven days
+and work once; an invite with an email only registers that address.
+
+Every signed-in user sees all projects, threads, machines, and secrets on the
+server. Roles only guard administration: admins manage users and invites,
+machine enrollment and removal, plugin installs, enablement, and settings,
+provider and AI service selection, global machine environment secrets, and
+server settings, updates, and moves. Members get `403` on those actions.
+Plugins apply the same split to their own RPC methods and `bb` commands. For
+example, members can read Concurrency limit and Account Pooler status but only
+admins can change limits, provider routing, or pooled accounts; such RPC calls
+answer `403` with code `forbidden` and such commands fail with
+`admin_required`. Roles
+are guardrails for a trusted team, not isolation: a member who runs an agent
+on a machine effectively has shell access to that machine.
+
+Some state belongs to each user rather than to the server. Each user has their
+own thread read and unread state, pinned threads and pin order, UI preferences
+(`/api/v1/preferences/ui`), appearance (theme and favicon color), and prompt
+history. Changing them affects only that user, and realtime updates for them
+reach only that user's connected apps. A user who has never opened a thread
+sees it as read up to its creation. Projects, threads, and everything else stay
+shared. Admins list users with `GET /api/v1/users` (`bb user list`).
+Authenticated clients use `GET /api/v1/users/directory` to resolve attribution: threads record `createdByUserId`, queued
+messages record `authorUserId`, and resolved interactions record
+`resolvedByUserId`. In `local` mode all of this belongs to the local owner.
+
+Host daemons keep authenticating with their machine keys on the `/internal`
+routes; those keys are not user credentials. Plugins that run inside the
+server reach the API through `bb.sdk` with a per-process server credential.
+Plugins act for the whole team, so the thread pin and read state they see is
+team-wide: a thread counts as pinned when any user pinned it.
+All plugin HTTP routes require a signed-in caller in `multi` mode, including
+routes declared with `auth: "none"`. Routes declared with `auth: "token"` also
+require their plugin token. In `local` mode each plugin keeps its declared HTTP
+authentication behavior. The plugin token endpoint requires a signed-in
+caller, and rotating the token requires an admin.
+
+Pooled provider requests carry the turn author's signed user credential in
+`x-bb-user-token`, alongside the Account Pooler's machine hub token. The server
+accepts this user header only on plugin HTTP and WebSocket routes and removes it
+before invoking the plugin. Claude Code and Codex receive it through
+`BB_PLUGIN_USER_TOKEN`; local mode keeps its existing provider authentication.
+
+The loopback enrollment-key endpoint also requires an admin in `multi` mode.
+The colocated launcher and in-process plugins use a server credential that
+rotates on each server start and is stored in the owner-only
+`server-service-token` file under the server data directory. The launcher sends
+it only to a loopback server when preparing the local daemon's enrollment.
+
+### CLI login and account management
+
+Sign in to a multi-user server with `bb login --email EMAIL`. The CLI prompts
+for the password and creates a PAT. Use `--password-file PATH` for unattended
+sign-in, or `bb login --token TOKEN` to save an existing PAT. Without either
+option, `bb login` reads a PAT from a hidden prompt or standard input. Login
+validates the credential before saving it to the server origin's profile in
+`<BB_DATA_DIR>/client.json`, with file permissions `0600`. `BB_SERVER_URL`
+selects the server; `BB_TOKEN` overrides its saved token for CLI requests,
+including plugin commands. `bb whoami [--json]` shows the current user.
+`bb logout [--json]` removes only that profile's saved login. It does not
+revoke the PAT or unset `BB_TOKEN`.
+
+Admins use `bb user list`, `bb user role USER_ID admin|member`, and
+`bb user remove USER_ID`. System users and the last account admin cannot be
+removed or demoted. `bb invite create [--email EMAIL] [--role admin|member]`
+prints a seven-day, single-use token. `bb invite list` lists pending unexpired
+invites without tokens; `bb invite revoke ID` invalidates one. New users run
+`bb invite accept TOKEN --email EMAIL --name NAME` and enter their password,
+or supply `--password-file PATH`, then sign in with `bb login`.
+`bb token create NAME`, `bb token list`, and `bb token revoke ID` manage only
+the current user's PATs. New token values are shown once. All these commands
+accept `--json`.
+
+Roles are guardrails for a trusted team. A member who runs an agent effectively
+has shell access to its host. In multi mode, each turn supplies a signed
+seven-day `BB_TOKEN` to the agent shell through the launch environment. It
+authenticates as the user who sent the turn, or as the thread creator for
+turns no user sent, with that user's current role. It stops authenticating if
+that user is removed and is masked in runtime environment displays. Turns with
+neither a sending user nor a remaining creator, including threads created
+before multi mode, get no `BB_TOKEN`. In local mode, shells need no
+credential.
+
+`GET /api/v1/me` returns the authenticated user. Admins update roles with
+`PUT /api/v1/users/:id/role` (`{"role":"admin"|"member"}`) and remove accounts
+with `DELETE /api/v1/users/:id`. Invite management uses
+`GET /api/v1/auth/invites` and `DELETE /api/v1/auth/invites/:id`.
+`POST /api/v1/auth/invites/accept` accepts `inviteToken`, `email`, `name`, and
+`password` without a prior login; it creates the account and a session cookie.
+The SDK exposes these through `experimental_auth` and `experimental_users`.
+Pass `{ context: { authToken: TOKEN } }` to `createNodeBbSdk` or
+`createBrowserBbSdk` to send a Bearer header on typed requests and uploads.
+The Node SDK also sends the token in its default WebSocket handshake.
 
 The startup `Server listening` and `app` lines show the actual listener address.
 With wildcard binding they show `http://0.0.0.0:<port>`, while bb's health check
@@ -2240,6 +2398,50 @@ and at `/api/v1/plugins/bb--mcp/http/mcp` on the loopback address.
 `bb mcp status` prints both. Remote apps sign in through the bb account, and
 an approved app can run any `bb` command; `bb mcp clients` lists them and
 `bb mcp revoke <grant-id>` disconnects one. The local address needs no
-sign-in and has the same trust as the `bb` CLI on that machine. See the
+sign-in and has the same trust as the `bb` CLI on that machine. In `multi`
+auth mode MCP is unavailable: ordinary local and gate OAuth requests do not
+carry a bb user identity and fail server authentication. See the
 [MCP skill](../plugins/mcp/skills/mcp/SKILL.md) for the tools and the few
 commands that cannot run over MCP.
+
+
+### Share access through bb connect
+
+In Settings > Remote access, choose **Manage server access** to add or remove
+existing bb accounts. Only the gate's server owner can manage membership.
+Admins can use the same gate API through this server:
+
+```sh
+bb user connect-members list --json
+bb user connect-members add EMAIL --role member --json
+bb user connect-members remove CONNECT_USER_ID --json
+```
+
+The SDK methods are `experimental_users.listConnectMembers`,
+`experimental_users.addConnectMember({ email, role? })`, and
+`experimental_users.removeConnectMember({ userId })`. These use
+`GET /api/v1/users/connect-members`, `POST /api/v1/users/connect-members`, and
+`DELETE /api/v1/users/connect-members/:id`. The id belongs to the bb account,
+not the local server user. All three require a local admin and a server pairing
+owned by the gate account. Gate membership roles do not change local roles or
+allow members to manage sharing.
+
+In `multi` mode, also create a local invite restricted to the account's email:
+`bb invite create --email EMAIL`. The gate forwards a signed identity with
+its account id, verified email, server id, and a one-minute expiry. The server
+verifies HMAC-SHA256 using the active tunnel credential, then resolves the local
+user by email. An existing user keeps their local role. On first access, an
+unexpired email invite creates a local member and consumes the invite, even if
+the invite requested admin. Generic invites do not authorize gate registration.
+Without an email invite or an existing account, access returns `403`.
+
+Gate membership also allows access to this server's shared ports. Machine
+shares keep their existing owner-only access. Signed server identities never
+reach shared ports. Removing membership rejects new gate requests; it does
+not delete the local account, revoke its PATs, or close existing sockets.
+In `local` mode, everyone admitted by the gate acts as the local owner.
+Members running agents effectively have host shell access, including secrets.
+
+Tunnels opened before signed identity support keep local owner access. Reconnect
+the tunnel to use gate identities in `multi` mode. Daemon machine keys retain
+their existing behavior. MCP OAuth access remains available in local mode.

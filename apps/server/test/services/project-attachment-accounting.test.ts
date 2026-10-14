@@ -26,6 +26,7 @@ import {
   projectAttachmentPaths,
   threadScope,
   type PromptInput,
+  LOCAL_OWNER_USER_ID,
 } from "@bb/domain";
 import {
   copyProjectAttachments,
@@ -186,6 +187,7 @@ describe("project attachment accounting", () => {
         },
       ]);
       createPromptHistoryEntry(h.db, {
+        userId: LOCAL_OWNER_USER_ID,
         projectId: project.id,
         threadId: thread.id,
         scope: "thread",

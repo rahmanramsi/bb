@@ -14,7 +14,7 @@ import {
   type ClientTurnRequestId,
   type ProviderErrorInfo,
   type ProviderRateLimitState,
-  type Thread,
+  type ThreadRecord,
   type TurnRequestEventData,
 } from "@bb/domain";
 import type { PluginTurnFailedEvent } from "@get-bb/plugin-sdk";
@@ -203,7 +203,7 @@ export function buildTurnFailedEvent(
 
 function latestRateLimits(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
 ): ProviderRateLimitState | null {
   const row = getLatestStoredRateLimitsEvent(db, {
     threadId: thread.id,

@@ -683,7 +683,7 @@ describe("MCP plugin route isolation", () => {
       expect(machineCaller.status).toBe(200);
     }
     expect(captured.map((req) => req.headers.get(GATE_AUTH_HEADER))).toEqual(
-      allowed.flatMap(() => ["session", "machine"]),
+      allowed.flatMap(() => ["user", "machine"]),
     );
   });
 });

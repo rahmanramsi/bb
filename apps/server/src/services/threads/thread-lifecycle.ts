@@ -38,7 +38,7 @@ import { COMPETING_TURN_ERROR_CODE } from "@bb/host-daemon-contract";
 import {
   type ProvisioningTranscriptEntry,
   type SystemThreadInterruptedReason,
-  type Thread,
+  type ThreadRecord,
   type ThreadEventScope,
   type ThreadEventType,
   type ThreadLifecycleEvent,
@@ -788,7 +788,7 @@ function shouldAutoSendQueuedMessagesAfterThreadStart(
 }
 
 function recordEmptyThreadStartProviderSessionInTransaction(
-  args: SettleThreadStartCommandResultArgs & { thread: Thread },
+  args: SettleThreadStartCommandResultArgs & { thread: ThreadRecord },
 ): void {
   if (
     !args.report.ok ||
@@ -979,7 +979,7 @@ export function settleTurnSubmitCommandResult(
   return emptyCommandResultSideEffects();
 }
 
-export function ensureThreadCanStartRequest(thread: Thread): void {
+export function ensureThreadCanStartRequest(thread: ThreadRecord): void {
   if (isPreStartThreadStatus(thread.status)) {
     throwThreadNotWritable(
       thread,
@@ -1002,6 +1002,7 @@ export async function prepareReadyThreadTurnCommand(
   );
   if (providerThreadId) {
     const preparedCommand = await prepareTurnSubmitCommandPayload(deps, {
+      authorUserId: args.authorUserId,
       environment: args.environment,
       execution: args.execution,
       input: args.input,
@@ -1121,7 +1122,7 @@ export function settleThreadStorageDeleteCommandResult(
 
 export function requestThreadStorageDeletion(
   deps: CommandResultSideEffectsDeps,
-  thread: Pick<Thread, "environmentId" | "id">,
+  thread: Pick<ThreadRecord, "environmentId" | "id">,
   environment: { hostId: string; id: string } | null,
 ): void {
   deps.pendingInteractions.interruptPendingInteractionsForThreadIds({

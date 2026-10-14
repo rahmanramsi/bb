@@ -115,6 +115,7 @@ describe("pending interaction schemas", () => {
         statusReason: null,
         createdAt: 1,
         resolvedAt: 2,
+        resolvedByUserId: null,
       }),
     ).toMatchObject({
       resolution: {
@@ -165,6 +166,7 @@ describe("pending interaction schemas", () => {
         statusReason: null,
         createdAt: 1,
         resolvedAt: 2,
+        resolvedByUserId: null,
       }),
     ).toMatchObject({
       payload: {
@@ -211,6 +213,7 @@ describe("pending interaction schemas", () => {
       statusReason: "Pending interaction expired",
       createdAt: 1,
       resolvedAt: 2,
+      resolvedByUserId: null,
     });
 
     expect(result.success).toBe(false);
@@ -332,6 +335,7 @@ describe("pending interaction schemas", () => {
         statusReason: null,
         createdAt: 1,
         resolvedAt: 2,
+        resolvedByUserId: null,
       }),
     ).toThrow();
 
@@ -367,6 +371,7 @@ describe("pending interaction schemas", () => {
         statusReason: null,
         createdAt: 1,
         resolvedAt: 2,
+        resolvedByUserId: null,
       }),
     ).toThrow("User question free text cannot be blank");
   });
@@ -461,6 +466,7 @@ describe("pending interaction schemas", () => {
         statusReason: null,
         createdAt: 1,
         resolvedAt: 2,
+        resolvedByUserId: null,
       }),
     ).toThrow(
       `User question selected choices cannot exceed ${USER_QUESTION_MAX_SELECTED}`,
@@ -491,6 +497,7 @@ describe("pending interaction schemas", () => {
         statusReason: null,
         createdAt: 1,
         resolvedAt: 2,
+        resolvedByUserId: null,
       }),
     ).toThrow(
       `User question free text cannot exceed ${USER_QUESTION_MAX_FREE_TEXT_LENGTH} characters`,

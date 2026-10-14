@@ -1,6 +1,7 @@
 import {
   PluginCliError,
   cliCommand,
+  experimental_assertCliAdmin,
   defineCli,
   type BbPluginApi,
   type PluginCliResult,
@@ -25,7 +26,7 @@ import type { ConnectStatus } from "./types.js";
 
 const DESCRIPTION = [
   "Remote access via getbb.app — this bb becomes reachable at https://<handle>.getbb.app.",
-  "Share HTTP ports from any enrolled host (owner session only).",
+  "Share HTTP ports from any enrolled host (bb account sign-in required).",
   "",
   "  1. Sign this bb in to your bb account:",
   "       bb account login",
@@ -203,12 +204,16 @@ export function registerConnectCli(args: {
           { kind: "requires", option: "server", needs: ["code"] },
           { kind: "requires", option: "base-url", needs: ["code"] },
         ],
-        run: (input) =>
+        run: (input, ctx) =>
           attempt(async () => {
             const code = input.options.code;
             if (code === undefined) {
               return { exitCode: 0, stdout: input.help };
             }
+            experimental_assertCliAdmin(
+              ctx,
+              "Pairing this bb with a bb account",
+            );
             const server = input.options.server;
             const baseUrl =
               input.options["base-url"] ??
@@ -255,6 +260,7 @@ export function registerConnectCli(args: {
             }),
         }),
         off: cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Turn remote access off and stay signed in",
           description:
             "Closes the tunnel until `bb connect on`. This bb stays signed in to your bb account; `bb account logout` forgets the pairing.",
@@ -271,6 +277,7 @@ export function registerConnectCli(args: {
             }),
         }),
         on: cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Turn remote access back on",
           options: { json: JSON_OPTION },
           run: (input) =>
@@ -435,6 +442,7 @@ export function registerConnectCli(args: {
             }),
         }),
         "machine-code": cliCommand({
+          experimental_requiredRole: "admin",
           summary:
             "Mint a one-time code that enrolls the bb mobile app as a connect machine",
           options: { json: JSON_OPTION },

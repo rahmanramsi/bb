@@ -14,6 +14,7 @@ import {
   threadScope,
   turnScope,
   type ThreadEvent,
+  LOCAL_OWNER_USER_ID,
 } from "@bb/domain";
 import { groupHostDaemonEvents } from "@bb/host-daemon-contract";
 import { validatePluginMachineProviderDeclaration } from "@get-bb/plugin-sdk/internal/host-policy";
@@ -138,6 +139,7 @@ describe("composed machine thread lifecycle", () => {
         });
 
         const thread = await createThreadFromRequest(harness.deps, {
+          createdByUserId: LOCAL_OWNER_USER_ID,
           projectId: project.id,
           environment: {
             type: "provider",

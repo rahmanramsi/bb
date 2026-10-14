@@ -1,10 +1,11 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import {
   SERVER_OFFLINE_AFTER_MS,
   isLive,
   schema,
   server,
+  serverMembers,
   sha256Hex,
   tunnelConnectedLookup,
   type ConnectDb,
@@ -132,7 +133,14 @@ export async function listAccountServers(
       revokedAt: server.revokedAt,
     })
     .from(server)
-    .where(eq(server.userId, userId))
+    .leftJoin(
+      serverMembers,
+      and(
+        eq(serverMembers.serverId, server.id),
+        eq(serverMembers.userId, userId),
+      ),
+    )
+    .where(or(eq(server.userId, userId), eq(serverMembers.userId, userId)))
     .all();
 
   return Promise.all(

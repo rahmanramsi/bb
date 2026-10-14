@@ -57,6 +57,7 @@ export interface CreateQueuedThreadMessageInput {
   threadId: string;
   content: PromptInput[];
   senderThreadId?: string | null;
+  authorUserId?: string | null;
   /**
    * How the dispatch this row is queued from was requested, and the plugin
    * that requested it, so a drained re-attempt carries the provenance its
@@ -230,8 +231,7 @@ export interface QueuedThreadMessageEditHoldArgs {
   threadId: string;
 }
 
-export interface HoldQueuedThreadMessageForEditArgs
-  extends QueuedThreadMessageEditHoldArgs {
+export interface HoldQueuedThreadMessageForEditArgs extends QueuedThreadMessageEditHoldArgs {
   heldUntil: number;
 }
 
@@ -366,6 +366,7 @@ function queuedMessageGroupingEnvelopeMatches(
 ): boolean {
   return (
     firstQueuedMessage !== null &&
+    queuedMessage.authorUserId === firstQueuedMessage.authorUserId &&
     queuedMessage.senderThreadId === firstQueuedMessage.senderThreadId &&
     queuedMessage.model === firstQueuedMessage.model &&
     queuedMessage.reasoningLevel === firstQueuedMessage.reasoningLevel &&
@@ -403,6 +404,7 @@ function requireClaimedQueuedThreadMessage(
 export function listQueuedThreadMessages(
   db: DbQueryConnection,
   threadId: string,
+  userId?: string,
 ): QueuedThreadMessageRow[] {
   return db
     .select()
@@ -410,6 +412,7 @@ export function listQueuedThreadMessages(
     .where(
       and(
         eq(queuedThreadMessages.threadId, threadId),
+        userId === undefined ? undefined : eq(queuedThreadMessages.authorUserId, userId),
         isNull(queuedThreadMessages.claimedAt),
         isNull(queuedThreadMessages.claimToken),
       ),
@@ -506,10 +509,7 @@ function resolveQueuedThreadMessageNeighbor(
     return false;
   }
 
-  const neighbor = getQueuedThreadMessage(
-    db,
-    args.neighborQueuedMessageId,
-  );
+  const neighbor = getQueuedThreadMessage(db, args.neighborQueuedMessageId);
   if (
     !neighbor ||
     neighbor.threadId !== args.threadId ||
@@ -558,7 +558,8 @@ function applyQueuedThreadMessageGroupBoundary(
     const groupedMessages = queuedMessages.slice(0, boundaryIndex + 1);
     const hasMixedSender = groupedMessages.some(
       (queuedMessage) =>
-        queuedMessage.senderThreadId !== firstQueuedMessage?.senderThreadId,
+        queuedMessage.senderThreadId !== firstQueuedMessage?.senderThreadId ||
+        queuedMessage.authorUserId !== firstQueuedMessage?.authorUserId,
     );
     if (hasMixedSender) {
       return { kind: "invalid_sender" };
@@ -648,6 +649,7 @@ export function createQueuedThreadMessageInTransaction(
       threadId: input.threadId,
       content: JSON.stringify(input.content),
       senderThreadId: input.senderThreadId ?? null,
+      authorUserId: input.authorUserId ?? null,
       origin: input.origin ?? null,
       originPluginId: input.originPluginId ?? null,
       requestedByInitiator: input.requestedBy?.initiator ?? null,
@@ -971,10 +973,7 @@ export function listIdleThreadsWithQueuedMessages(
           notExists(manuallyStoppedQueuePauseQuery(db, threads.id)),
           notOrdinaryTurnEndQueuedThreadMessage(),
         ),
-        or(
-          isNull(threads.environmentId),
-          ne(environments.status, "destroyed"),
-        ),
+        or(isNull(threads.environmentId), ne(environments.status, "destroyed")),
         // Only rows an idle thread actually unblocks. A thread whose only
         // queued row is waiting on a clock or a plugin is not a drain
         // candidate, and listing it would re-run the whole send pipeline
@@ -1178,10 +1177,7 @@ export function reorderQueuedThreadMessage({
   try {
     result = db.transaction(
       (tx): ReorderQueuedThreadMessageResult => {
-        const movedQueuedMessage = getQueuedThreadMessage(
-          tx,
-          queuedMessageId,
-        );
+        const movedQueuedMessage = getQueuedThreadMessage(tx, queuedMessageId);
         if (!movedQueuedMessage || movedQueuedMessage.threadId !== threadId) {
           return { kind: "not_found" };
         }
@@ -1911,7 +1907,10 @@ export function listRetryableFailedQueuedThreadMessages(
         ),
       ),
     )
-    .orderBy(asc(queuedThreadMessages.nextAttemptAt), asc(queuedThreadMessages.id))
+    .orderBy(
+      asc(queuedThreadMessages.nextAttemptAt),
+      asc(queuedThreadMessages.id),
+    )
     .all();
 }
 

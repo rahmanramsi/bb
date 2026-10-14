@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { fileURLToPath } from "node:url";
 import { createScriptedEchoRuntime } from "@bb/agent-runtime/test";
 import { getThread, listEvents } from "@bb/db";
@@ -157,6 +158,7 @@ describe("checkpoint identity through runtime, ingestion, and editing", () => {
           const thread = getThread(harness.db, source.id);
           if (!thread) throw new Error("Missing source thread");
           const edit = editThreadMessage(harness.deps, {
+            authorUserId: LOCAL_OWNER_USER_ID,
             environment,
             thread,
             payload: {

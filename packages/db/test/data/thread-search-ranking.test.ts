@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { describe, expect, it } from "vitest";
 import { createConnection } from "../../src/connection.js";
 import { noopNotifier } from "../../src/notifier.js";
@@ -214,6 +215,7 @@ describe("thread search ranking evals", () => {
     const db = seedWorkspace();
     try {
       const results = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query,
         limitPerGroup: 20,
       })[group];

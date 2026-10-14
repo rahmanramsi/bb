@@ -12,6 +12,7 @@ import {
   profile,
   schema,
   server,
+  serverMembers,
   session,
   sha256Hex,
   user,
@@ -621,4 +622,37 @@ describe("machine label assignment", () => {
         .all(),
     ).toEqual([{ label: "shared-atomic" }, { label: "shared-atomic-2" }]);
   });
+});
+
+it("lists shared servers for members and drops them when membership is removed", async () => {
+  seedUser("shared-owner");
+  seedUser("shared-member");
+  seedServer({
+    id: "shared",
+    userId: "shared-owner",
+    name: "Team",
+    subdomain: "team",
+  });
+  seedServer({
+    id: "private",
+    userId: "shared-owner",
+    name: "Private",
+    subdomain: "private",
+  });
+  db.insert(serverMembers)
+    .values({
+      serverId: "shared",
+      userId: "shared-member",
+      role: "member",
+      createdAt: now,
+    })
+    .run();
+  expect(await listAccountServers(db, "shared-member", now.getTime())).toEqual([
+    { handle: "team", name: "Team", live: false },
+  ]);
+  db.delete(user).where(eq(user.id, "shared-member")).run();
+  expect(db.select().from(serverMembers).all()).toEqual([]);
+  expect(
+    await listAccountServers(db, "shared-owner", now.getTime()),
+  ).toHaveLength(2);
 });

@@ -75,12 +75,34 @@ export default async function mcpPlugin(bb: BbPluginApi): Promise<void> {
     (error) => bb.log.warn(`MCP request failed: ${error.message}`),
   );
   bb.onDispose(() => handler.close());
+  let multiUserLookup: Promise<boolean> | null = null;
+  const serverIsMultiUser = async (): Promise<boolean> => {
+    multiUserLookup ??= bb.sdk.experimental_auth
+      .session()
+      .then((session) => session.authMode === "multi");
+    try {
+      return await multiUserLookup;
+    } catch (error) {
+      multiUserLookup = null;
+      throw error;
+    }
+  };
 
   for (const method of ["POST", "GET", "DELETE"]) {
     bb.http.route(
       method,
       MCP_ROUTE_PATH,
       async (context) => {
+        if (await serverIsMultiUser()) {
+          return Response.json(
+            {
+              error: "forbidden",
+              message:
+                "The bb MCP endpoint is unavailable while this server runs in multi-user mode.",
+            },
+            { status: 403 },
+          );
+        }
         const problem = mcpAccessProblem(context.req.raw.headers);
         if (problem !== null) {
           return Response.json(
@@ -187,6 +209,7 @@ export default async function mcpPlugin(bb: BbPluginApi): Promise<void> {
           },
         }),
         revoke: cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Disconnect a remote app",
           positionals: [
             {

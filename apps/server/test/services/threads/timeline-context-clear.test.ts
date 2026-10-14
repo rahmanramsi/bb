@@ -4,7 +4,7 @@ import {
   THREAD_CONTEXT_CLEAR_OPERATION,
   threadScope,
   turnScope,
-  type Thread,
+  type ThreadRecord,
 } from "@bb/domain";
 import {
   createConnection,
@@ -26,7 +26,7 @@ import {
 } from "../../../src/services/threads/timeline.js";
 
 function clientTurnRequestedEvent(
-  thread: Thread,
+  thread: ThreadRecord,
   sequence: number,
   value: number,
   text: string,
@@ -59,7 +59,7 @@ function clientTurnRequestedEvent(
   };
 }
 
-function setup(): { db: DbConnection; thread: Thread } {
+function setup(): { db: DbConnection; thread: ThreadRecord } {
   const db = createConnection(":memory:");
   migrate(db);
   const host = upsertHost(db, noopNotifier, {

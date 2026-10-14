@@ -1,7 +1,10 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { encodeClientTurnRequestIdNumber } from "@bb/domain";
+import {
+  encodeClientTurnRequestIdNumber,
+  LOCAL_OWNER_USER_ID,
+} from "@bb/domain";
 import type { PromptInput } from "@bb/domain";
 import {
   buildExecutionOptions,
@@ -81,6 +84,7 @@ describe("hero plugin: agent-enrichment (Phase 2 surfaces)", () => {
       { threadId: thread.id },
     );
     const command = await buildThreadStartCommand(harness.deps, {
+      authorUserId: null,
       environment,
       execution,
       fork: null,
@@ -227,6 +231,7 @@ describe("hero plugin: agent-enrichment (Phase 2 surfaces)", () => {
       },
     ];
     await sendThreadMessage(harness.deps, {
+      authorUserId: LOCAL_OWNER_USER_ID,
       environment,
       payload: {
         input,
@@ -264,6 +269,7 @@ describe("hero plugin: agent-enrichment (Phase 2 surfaces)", () => {
     const { environment, thread } = seedThreadFixture(4);
     await expect(
       sendThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
           input: [

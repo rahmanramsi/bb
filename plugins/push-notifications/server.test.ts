@@ -66,6 +66,7 @@ function pendingQuestion(threadId: string, prompt: string): PendingInteraction {
     createdAt: 1,
     expiresAt: null,
     resolvedAt: null,
+    resolvedByUserId: null,
     turnId: `turn-${threadId}`,
     providerId: "codex",
     providerThreadId: `provider-${threadId}`,

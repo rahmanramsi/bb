@@ -304,64 +304,13 @@ describe("thread event appends", () => {
     }
   });
 
-  it("advances lastReadAt and notifies read-state-changed for a user-initiated turn request", async () => {
+  it("notifies only events-appended for a turn request", async () => {
     const { environment, harness, thread } =
       await createThreadEventTestContext();
     try {
       harness.db
         .update(threads)
         .set({
-          lastReadAt: 1_000,
-          latestAttentionAt: 1_000,
-          updatedAt: 1_000,
-        })
-        .where(eq(threads.id, thread.id))
-        .run();
-      vi.spyOn(Date, "now").mockReturnValue(2_000);
-      const notifyThreadSpy = vi.spyOn(harness.deps.hub, "notifyThread");
-
-      appendClientTurnEvent(harness.deps, {
-        threadId: thread.id,
-        environmentId: environment.id,
-        type: "client/turn/requested",
-        input: textInput("kick off the audit"),
-        target: { kind: "new-turn" },
-        execution: {
-          model: "gpt-5",
-          reasoningLevel: "medium",
-          permissionMode: "full",
-          serviceTier: "default",
-          source: "client/turn/requested",
-        },
-        initiator: "user",
-        senderThreadId: null,
-        requestMethod: "turn/start",
-        source: "tell",
-      });
-
-      expect(getThread(harness.db, thread.id)?.lastReadAt).toBe(2_000);
-      expect(notifyThreadSpy).toHaveBeenCalledWith(
-        thread.id,
-        ["events-appended", "read-state-changed"],
-        {
-          eventTypes: ["client/turn/requested"],
-          timelineSequence: 1,
-          projectId: thread.projectId,
-        },
-      );
-    } finally {
-      await harness.cleanup();
-    }
-  });
-
-  it("does not advance lastReadAt for an agent-initiated turn request", async () => {
-    const { environment, harness, thread } =
-      await createThreadEventTestContext();
-    try {
-      harness.db
-        .update(threads)
-        .set({
-          lastReadAt: 1_000,
           latestAttentionAt: 1_000,
           updatedAt: 1_000,
         })
@@ -389,7 +338,6 @@ describe("thread event appends", () => {
         source: "tell",
       });
 
-      expect(getThread(harness.db, thread.id)?.lastReadAt).toBe(1_000);
       expect(notifyThreadSpy).toHaveBeenCalledWith(
         thread.id,
         ["events-appended"],

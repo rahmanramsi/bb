@@ -14,6 +14,8 @@ The MCP server plugin lets an MCP client control this bb. It is off by default. 
 - **Remote**: `https://<your bb connect address>/mcp`. This needs a signed-in bb account (`bb account login`) and bb connect. Add it as a custom connector in ChatGPT or Claude. The app sends you to a bb account page where you approve access for this bb.
 - **Local**: `http://127.0.0.1:<port>/api/v1/plugins/bb--mcp/http/mcp`. Apps on the same machine can use it without signing in. It has the same trust as the `bb` CLI on that machine. Requests from web pages are refused.
 
+On a server with `BB_AUTH_MODE=multi`, MCP access is unavailable. Ordinary local and gate OAuth requests do not carry a bb user identity and fail server authentication.
+
 ## What approving an app grants
 
 Access is all or nothing. An approved app can run any `bb` command: it can see everything in this bb, and it can start and message agents and open terminals, which run commands and change files on the machines this bb controls. Approve only apps you trust, and disconnect the ones you no longer use.

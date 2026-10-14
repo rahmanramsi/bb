@@ -6,7 +6,11 @@ import {
   type DbTransaction,
   updateThread,
 } from "@bb/db";
-import type { PromptInput, SystemMessageSubject, Thread } from "@bb/domain";
+import type {
+  PromptInput,
+  SystemMessageSubject,
+  ThreadRecord,
+} from "@bb/domain";
 import { renderTemplate } from "@bb/templates";
 import type { LoggedPendingInteractionWorkSessionDeps } from "../../types.js";
 import { NotificationBuffer } from "../lib/notification-buffer.js";
@@ -43,8 +47,8 @@ interface QueueParentSystemMessageBestEffortArgs {
 }
 
 interface HandleThreadOwnershipChangeArgs {
-  previousThread: Thread;
-  updatedThread: Thread;
+  previousThread: ThreadRecord;
+  updatedThread: ThreadRecord;
 }
 
 interface ReleaseUnarchivedChildrenFromArchivedThreadArgs {
@@ -215,11 +219,11 @@ async function sendThreadOwnershipNotices(
 function releaseUnarchivedChildrenFromArchivedThreadInTransaction(
   deps: ThreadOwnershipTransactionDeps,
   args: ReleaseUnarchivedChildrenFromArchivedThreadArgs,
-): Thread[] {
+): ThreadRecord[] {
   const childThreads = listUnarchivedAssignedChildThreads(deps.db, {
     parentThreadId: args.parentThreadId,
   });
-  const released: Thread[] = [];
+  const released: ThreadRecord[] = [];
 
   for (const childThread of childThreads) {
     const updatedThread = updateThread(deps.db, deps.hub, childThread.id, {
@@ -243,7 +247,7 @@ function releaseUnarchivedChildrenFromArchivedThreadInTransaction(
 export function archiveThreadAndReleaseChildren(
   deps: Pick<LoggedPendingInteractionWorkSessionDeps, "db" | "hub">,
   args: ArchiveThreadAndReleaseChildrenArgs,
-): Thread | null {
+): ThreadRecord | null {
   const notificationBuffer = new NotificationBuffer();
   const result = deps.db.transaction(
     (tx) => {

@@ -16,6 +16,7 @@ import {
   type PromptInput,
   type ThreadEventTurnStatus,
   type ThreadStatus,
+  LOCAL_OWNER_USER_ID,
 } from "@bb/domain";
 import { describe, expect, it, vi } from "vitest";
 import { editThreadMessage } from "../../src/services/threads/thread-edit-message.js";
@@ -259,6 +260,7 @@ function seedEditableThread(
       : {}),
   });
   createPromptHistoryEntry(harness.db, {
+    userId: LOCAL_OWNER_USER_ID,
     input: [{ type: "text", text: "First message", mentions: [] }],
     projectId: project.id,
     requestSequence: 2,
@@ -276,6 +278,7 @@ function seedEditableThread(
       providerCheckpointId: "checkpoint-last",
     });
     createPromptHistoryEntry(harness.db, {
+      userId: LOCAL_OWNER_USER_ID,
       input: [{ type: "text", text: "Original last message", mentions: [] }],
       projectId: project.id,
       requestSequence: 7,
@@ -301,6 +304,7 @@ describe("editThreadMessage", () => {
 
       await expect(
         editThreadMessage(harness.deps, {
+          authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
           payload: {
@@ -351,6 +355,7 @@ describe("editThreadMessage", () => {
 
       await expect(
         editThreadMessage(harness.deps, {
+          authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
           payload: {
@@ -380,6 +385,7 @@ describe("editThreadMessage", () => {
       });
 
       const editPromise = editThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
         payload: {
@@ -417,6 +423,7 @@ describe("editThreadMessage", () => {
 
       await expect(
         editThreadMessage(harness.deps, {
+          authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
           payload: {
@@ -513,6 +520,7 @@ describe("editThreadMessage", () => {
       });
 
       const editPromise = editThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
         payload: {
@@ -581,6 +589,7 @@ describe("editThreadMessage", () => {
 
         await expect(
           editThreadMessage(harness.deps, {
+            authorUserId: LOCAL_OWNER_USER_ID,
             environment,
             thread,
             payload: {
@@ -623,12 +632,14 @@ describe("editThreadMessage", () => {
         ).toEqual([7, 8]);
         expect(
           listStoredProjectPromptHistoryRows(harness.db, {
+            userId: LOCAL_OWNER_USER_ID,
             projectId: thread.projectId,
             limit: 10,
           }).map((entry) => entry.requestSequence),
         ).toEqual([8]);
         expect(
           listStoredThreadPromptHistoryRows(harness.db, {
+            userId: LOCAL_OWNER_USER_ID,
             threadId: thread.id,
             limit: 10,
           }),
@@ -652,6 +663,7 @@ describe("editThreadMessage", () => {
         permissionMode: "full" as const,
       };
       const editPromise = editThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
         payload,
@@ -722,6 +734,7 @@ describe("editThreadMessage", () => {
       await reportQueuedCommandSuccess(harness, discard, {});
       await expect(
         editThreadMessage(harness.deps, {
+          authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
           payload,
@@ -736,12 +749,14 @@ describe("editThreadMessage", () => {
       ).toHaveLength(0);
       expect(
         listStoredProjectPromptHistoryRows(harness.db, {
+          userId: LOCAL_OWNER_USER_ID,
           projectId: thread.projectId,
           limit: 10,
         }).map((entry) => entry.requestSequence),
       ).toEqual([2]);
       expect(
         listStoredThreadPromptHistoryRows(harness.db, {
+          userId: LOCAL_OWNER_USER_ID,
           threadId: thread.id,
           limit: 10,
         }).map((entry) => entry.requestSequence),
@@ -761,11 +776,13 @@ describe("editThreadMessage", () => {
       };
 
       const firstEdit = editThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
         payload,
       });
       const secondEdit = editThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
         payload,
@@ -837,6 +854,7 @@ describe("editThreadMessage", () => {
         });
         const operationId = `edit-op-${providerId}-${name.replaceAll(" ", "-")}`;
         const editPromise = editThreadMessage(harness.deps, {
+          authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
           payload: {
@@ -899,6 +917,7 @@ describe("editThreadMessage", () => {
         turnId: "turn-last",
       });
       createPromptHistoryEntry(harness.db, {
+        userId: LOCAL_OWNER_USER_ID,
         input: [{ type: "text", text: "Original last message", mentions: [] }],
         projectId: thread.projectId,
         requestSequence: 8,
@@ -911,6 +930,7 @@ describe("editThreadMessage", () => {
         throw new Error("Expected stopped Pi thread");
       }
       const editPromise = editThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread: stoppedThread,
         payload: {
@@ -961,6 +981,7 @@ describe("editThreadMessage", () => {
 
       await expect(
         editThreadMessage(harness.deps, {
+          authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
           payload: {
@@ -990,6 +1011,7 @@ describe("editThreadMessage", () => {
       });
 
       const editPromise = editThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
         payload: {
@@ -1027,6 +1049,7 @@ describe("editThreadMessage", () => {
       });
 
       const editPromise = editThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
         payload: {
@@ -1068,6 +1091,7 @@ describe("editThreadMessage", () => {
       });
 
       const editPromise = editThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
         payload: {
@@ -1133,6 +1157,7 @@ describe("editThreadMessage", () => {
         systemNotice: null,
       });
       const editPromise = editThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
         payload: {
@@ -1162,6 +1187,7 @@ describe("editThreadMessage", () => {
     await withTestHarness(async (harness) => {
       const { environment, thread } = seedEditableThread(harness);
       const editPromise = editThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
         payload: {
@@ -1240,6 +1266,7 @@ describe("editThreadMessage", () => {
         });
       try {
         const editPromise = editThreadMessage(harness.deps, {
+          authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
           payload: {
@@ -1277,6 +1304,7 @@ describe("editThreadMessage", () => {
     await withTestHarness(async (harness) => {
       const { environment, thread } = seedEditableThread(harness);
       const editPromise = editThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
         payload: {
@@ -1343,6 +1371,7 @@ describe("editThreadMessage", () => {
         const before = listEvents(harness.db, { threadId: thread.id });
         await expect(
           editThreadMessage(harness.deps, {
+            authorUserId: LOCAL_OWNER_USER_ID,
             environment,
             thread,
             payload: {
@@ -1382,6 +1411,7 @@ describe("editThreadMessage", () => {
       });
       const before = listEvents(harness.db, { threadId: thread.id });
       const editing = editThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
         payload: {
@@ -1446,6 +1476,7 @@ describe("editThreadMessage", () => {
 
       await expect(
         editThreadMessage(harness.deps, {
+          authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
           payload: {
@@ -1493,6 +1524,7 @@ describe("editThreadMessage", () => {
 
       await expect(
         editThreadMessage(harness.deps, {
+          authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
           payload: {
@@ -1524,6 +1556,7 @@ describe("editThreadMessage", () => {
 
         await expect(
           editThreadMessage(harness.deps, {
+            authorUserId: LOCAL_OWNER_USER_ID,
             environment,
             thread,
             payload: {
@@ -1548,6 +1581,7 @@ describe("editThreadMessage", () => {
         firstTurnId: legacyCodexTurnId,
       });
       const editPromise = editThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
         payload: {
@@ -1586,6 +1620,7 @@ describe("editThreadMessage", () => {
 
         await expect(
           editThreadMessage(harness.deps, {
+            authorUserId: LOCAL_OWNER_USER_ID,
             environment,
             thread,
             payload: {
@@ -1611,6 +1646,7 @@ describe("editThreadMessage", () => {
         });
         const originalEvents = listEvents(harness.db, { threadId: thread.id });
         const editPromise = editThreadMessage(harness.deps, {
+          authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
           payload: {
@@ -1654,6 +1690,7 @@ describe("editThreadMessage", () => {
 
       await expect(
         editThreadMessage(harness.deps, {
+          authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
           payload: {

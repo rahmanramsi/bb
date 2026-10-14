@@ -19,6 +19,7 @@ import { systemEnvironmentProvidersQueryKey } from "@/hooks/queries/environment-
 import {
   hostsQueryKey,
   systemMachineProvidersQueryKey,
+  userDirectoryQueryKey,
 } from "@/hooks/queries/query-keys";
 import { TooltipProvider } from "@bb/shared-ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -37,9 +38,45 @@ import {
   formatBranchComparison,
   GitStatusRow,
   ThreadMetadataCard,
+  CreatedByRow,
 } from "./ThreadMetadataContent";
 
 const localHost = { locality: "local", identity: null } as const;
+
+it("shows the creator's name in shared thread metadata and stays quiet for the local owner", () => {
+  const client = new QueryClient();
+  const alice = {
+    id: "usr_alice",
+    name: "Alice",
+    email: "alice@example.test",
+    role: "admin",
+  };
+  client.setQueryData(userDirectoryQueryKey(), { users: [alice] });
+  const thread = makeThreadFixture({ createdByUserId: alice.id });
+  const element = () => (
+    <QueryClientProvider client={client}>
+      <CreatedByRow thread={thread} />
+    </QueryClientProvider>
+  );
+  const view = render(element());
+  expect(screen.queryByText("Created by")).toBeNull();
+  act(() =>
+    client.setQueryData(userDirectoryQueryKey(), {
+      users: [
+        alice,
+        {
+          id: "usr_bob",
+          name: "Bob",
+          email: "bob@example.test",
+          role: "member",
+        },
+      ],
+    }),
+  );
+  view.rerender(element());
+  expect(screen.getByText("Alice")).toBeTruthy();
+  expect(screen.getByText("Created by")).toBeTruthy();
+});
 const connectedLocalHost: EnvironmentDisplayHostContext = {
   locality: "local",
   identity: { name: "Michael-M4", connected: true },

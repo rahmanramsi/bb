@@ -18,6 +18,10 @@ import {
   type SenderThreadMetadata,
 } from "@/hooks/useSenderThreadMetadataById";
 import { useSecondTick } from "@/hooks/useSecondTick";
+import {
+  useUserAttribution,
+  type UserAttribution,
+} from "@/hooks/queries/user-queries";
 import { usePluginDisplayName } from "@/lib/plugin-logos";
 import { PluginIcon } from "@/components/plugin/PluginIcon";
 import {
@@ -475,10 +479,13 @@ function visibleQueuedMessageTextChunks(
 function queuedMessageSenderLabel(
   queuedMessage: ThreadQueuedMessage,
   senderThreadMetadataById: ReadonlyMap<string, SenderThreadMetadata>,
+  attribution: UserAttribution,
 ): string | null {
   if (queuedMessage.payload.kind === "retry") return null;
   if (queuedMessage.initiator === "system") return "System";
-  if (queuedMessage.initiator !== "agent") return null;
+  if (queuedMessage.initiator === "user") {
+    return attribution.nameFor(queuedMessage.authorUserId);
+  }
   return (
     senderThreadMetadataById.get(queuedMessage.senderThreadId ?? "")?.title ??
     queuedMessage.senderThreadId ??
@@ -1195,6 +1202,7 @@ export function QueuedMessagesList({
   onExpandedChange,
 }: QueuedMessagesListProps) {
   const senderThreadMetadataById = useSenderThreadMetadataById();
+  const userAttribution = useUserAttribution();
   const processingLabel =
     processingAction === "edit"
       ? "Editing…"
@@ -1564,6 +1572,7 @@ export function QueuedMessagesList({
           senderLabel={queuedMessageSenderLabel(
             queuedMessage,
             senderThreadMetadataById,
+            userAttribution,
           )}
           resolveMentionLink={resolveMentionLink}
           index={messageIndex}

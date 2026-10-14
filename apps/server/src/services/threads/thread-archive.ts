@@ -15,7 +15,7 @@ import {
   listNonDeletedHiddenSourceThreads,
 } from "@bb/db";
 import type { EnvironmentRow } from "@bb/db";
-import type { Thread } from "@bb/domain";
+import type { ThreadRecord } from "@bb/domain";
 import type { AppDeps } from "../../types.js";
 import {
   pruneThreadEventHistoryBestEffort,
@@ -40,7 +40,7 @@ interface ArchiveThreadEnvironment {
 
 interface ArchiveThreadWithLifecycleEffectsArgs {
   environment: ArchiveThreadEnvironment | null;
-  thread: Pick<Thread, "environmentId" | "id" | "status">;
+  thread: Pick<ThreadRecord, "environmentId" | "id" | "status">;
 }
 
 interface ArchiveEnvironmentThreadsArgs {
@@ -48,13 +48,13 @@ interface ArchiveEnvironmentThreadsArgs {
 }
 
 interface ArchiveThreadAndChildrenArgs {
-  parentThread: Thread;
+  parentThread: ThreadRecord;
 }
 
 function archiveThreadWithLifecycleEffects(
   deps: AppDeps,
   args: ArchiveThreadWithLifecycleEffectsArgs,
-): Thread | null {
+): ThreadRecord | null {
   const archivedThread = archiveThreadAndReleaseChildren(deps, {
     threadId: args.thread.id,
   });
@@ -133,7 +133,7 @@ export function archiveThreadAndChildren(
 
 function archiveThreadTrees(
   deps: AppDeps,
-  roots: Thread[],
+  roots: ThreadRecord[],
   resolveEnvironment: (
     thread: ArchiveThreadWithLifecycleEffectsArgs["thread"],
   ) => ArchiveThreadEnvironment | null,
@@ -169,7 +169,7 @@ function archiveThreadTrees(
 
 export function countUnarchivedThreadDescendants(
   db: AppDeps["db"],
-  thread: Thread,
+  thread: ThreadRecord,
 ): number {
   return listArchiveCandidates(db, [thread]).filter(
     (candidate) =>
@@ -180,9 +180,9 @@ export function countUnarchivedThreadDescendants(
   ).length;
 }
 
-function listArchiveCandidates(db: AppDeps["db"], roots: Thread[]) {
+function listArchiveCandidates(db: AppDeps["db"], roots: ThreadRecord[]) {
   type ArchiveCandidate = Pick<
-    Thread,
+    ThreadRecord,
     | "id"
     | "environmentId"
     | "status"

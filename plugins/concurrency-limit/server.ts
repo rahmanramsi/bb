@@ -2,6 +2,7 @@ import {
   defineRpcContract,
   PluginCliError,
   cliCommand,
+  experimental_assertCliAdmin,
   defineCli,
   type BbPluginApi,
   type MessageDispatchHookDecision,
@@ -88,6 +89,7 @@ export const concurrencyLimitRpcContract = defineRpcContract({
     output: hostConfigurationSchema,
   },
   setConfiguration: {
+    experimental_requiredRole: "admin",
     input: configurationSchema,
     output: hostConfigurationSchema,
   },
@@ -298,9 +300,13 @@ export default async function concurrencyLimitPlugin(
             },
           ],
           options: { json: JSON_OPTION },
-          async run(input) {
+          async run(input, ctx) {
             const requested = input.positionals.limit;
             if (requested !== undefined) {
+              experimental_assertCliAdmin(
+                ctx,
+                "Setting the overall concurrency limit",
+              );
               await saveConfiguration({
                 ...configuration,
                 globalLimit: parseLimitArgument(requested, "unlimited"),
@@ -330,7 +336,7 @@ export default async function concurrencyLimitPlugin(
             },
           ],
           options: { json: JSON_OPTION },
-          async run(input) {
+          async run(input, ctx) {
             const hostId = input.positionals["host-id"];
             const view = await readConfiguration();
             if (!view.hosts.some((candidate) => candidate.id === hostId)) {
@@ -338,6 +344,10 @@ export default async function concurrencyLimitPlugin(
             }
             const requested = input.positionals.limit;
             if (requested !== undefined) {
+              experimental_assertCliAdmin(
+                ctx,
+                "Setting a host concurrency limit",
+              );
               await saveConfiguration(
                 setHostOverride(
                   configuration,

@@ -184,6 +184,12 @@ const pendingInteractionColumns: ExpectedColumn[] = [
   { name: "payload", type: "text", notNull: true, primaryKey: false },
   { name: "resolution", type: "text", notNull: false, primaryKey: false },
   {
+    name: "resolved_by_user_id",
+    type: "text",
+    notNull: false,
+    primaryKey: false,
+  },
+  {
     name: "status_reason",
     type: "text",
     notNull: false,
@@ -202,6 +208,14 @@ const pendingInteractionForeignKeys: ExpectedForeignKey[] = [
     to: "id",
     onUpdate: "NO ACTION",
     onDelete: "CASCADE",
+  },
+  {
+    name: "pending_interactions.resolved_by_user_id",
+    table: "user",
+    from: "resolved_by_user_id",
+    to: "id",
+    onUpdate: "NO ACTION",
+    onDelete: "SET NULL",
   },
 ];
 const pendingInteractionIndexes: ExpectedIndex[] = [

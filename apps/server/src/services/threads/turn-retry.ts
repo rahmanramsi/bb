@@ -4,7 +4,7 @@ import type {
   ClientTurnRequestId,
   PermissionMode,
   PromptInput,
-  Thread,
+  ThreadRecord,
 } from "@bb/domain";
 import type {
   RetryTurnRequest,
@@ -52,7 +52,7 @@ function hasQueuedRetryFor(
  */
 function requireFailedTurn(
   deps: Pick<TurnRetryDeps, "db">,
-  args: { thread: Thread; turnRequestId: ClientTurnRequestId | null },
+  args: { thread: ThreadRecord; turnRequestId: ClientTurnRequestId | null },
 ) {
   const { thread } = args;
   if (thread.status !== "error") {
@@ -84,7 +84,8 @@ function requireFailedTurn(
 }
 
 export interface RetryFailedTurnArgs {
-  thread: Thread;
+  authorUserId: string | null;
+  thread: ThreadRecord;
   request: RetryTurnRequest;
 }
 
@@ -209,6 +210,7 @@ export async function retryFailedTurn(
     const attempt = chain.attemptNumber + 1;
     const outcome = await attemptDispatch(deps, {
       thread,
+      authorUserId: args.authorUserId,
       payload: {
         // A retry never steers: it re-runs a turn, so a thread that is busy
         // again is something to wait behind rather than to interrupt.

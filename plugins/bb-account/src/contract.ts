@@ -142,20 +142,24 @@ export const accountPrivateRpcContract = defineRpcContract({
     output: accountStatusSchema,
   },
   "login.start": {
+    experimental_requiredRole: "admin",
     input: z.object({ baseUrl: baseUrlOverrideSchema }).strict(),
     output: loginViewSchema,
   },
   "login.poll": {
+    experimental_requiredRole: "admin",
     input: z
       .object({ loginId: z.string().min(1).nullable().default(null) })
       .strict(),
     output: loginPollOutputSchema,
   },
   "login.cancel": {
+    experimental_requiredRole: "admin",
     input: z.object({ loginId: z.string().min(1) }).strict(),
     output: z.object({ login: loginViewSchema.nullable() }).strict(),
   },
   redeemCode: {
+    experimental_requiredRole: "admin",
     input: z
       .object({
         code: z.string().trim().min(1).max(64),
@@ -165,6 +169,7 @@ export const accountPrivateRpcContract = defineRpcContract({
     output: accountStatusSchema,
   },
   signOut: {
+    experimental_requiredRole: "admin",
     input: emptyInputSchema,
     output: signOutResultSchema,
   },

@@ -77,6 +77,8 @@ describe("hosts", () => {
       notifyHost,
       notifyProject() {},
       notifySystem() {},
+      notifyUserThread() {},
+      notifyUserSystem() {},
       notifyThread() {},
     };
     const host = upsertHost(db, notifier, {
@@ -102,6 +104,8 @@ describe("hosts", () => {
       notifyHost,
       notifyProject() {},
       notifySystem() {},
+      notifyUserThread() {},
+      notifyUserSystem() {},
       notifyThread() {},
     };
     const host = upsertHost(db, notifier, {
@@ -192,6 +196,8 @@ describe("hosts", () => {
       notifyHost,
       notifyProject() {},
       notifySystem() {},
+      notifyUserThread() {},
+      notifyUserSystem() {},
       notifyThread() {},
     };
     const host = upsertHost(db, notifier, {
@@ -217,6 +223,8 @@ describe("hosts", () => {
       notifyHost,
       notifyProject() {},
       notifySystem() {},
+      notifyUserThread() {},
+      notifyUserSystem() {},
       notifyThread() {},
     };
     const host = upsertHost(db, notifier, {

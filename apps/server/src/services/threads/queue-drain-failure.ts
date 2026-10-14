@@ -4,7 +4,7 @@ import {
 } from "@bb/db";
 import {
   QUEUED_MESSAGE_FAILURE_REASON_MAX_LENGTH,
-  type Thread,
+  type ThreadRecord,
 } from "@bb/domain";
 import { sliceUtf16Head } from "@bb/text-utils";
 import { ApiError } from "../../errors.js";
@@ -61,7 +61,7 @@ export function recordQueuedMessageDrainFailure(
     error: unknown;
     now: number;
     row: { id: string; threadId: string };
-    thread: Thread;
+    thread: ThreadRecord;
   },
 ): void {
   const { host } = dispatchEnvironmentAndHost(deps, args.thread.environmentId);

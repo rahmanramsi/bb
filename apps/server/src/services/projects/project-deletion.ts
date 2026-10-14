@@ -16,7 +16,7 @@ import {
   threads,
   type DbQueryConnection,
 } from "@bb/db";
-import type { Thread, ThreadStatus } from "@bb/domain";
+import type { ThreadRecord, ThreadStatus } from "@bb/domain";
 import type {
   AppDeps,
   LoggedPendingInteractionWorkSessionDeps,
@@ -69,7 +69,7 @@ function listProjectDeletionThreads(
 function tombstoneProjectThreadsForDeletion(
   deps: ProjectDeletionDeps,
   args: ProjectDeletionArgs,
-): { deletedThreads: Thread[]; projectThreads: ProjectDeletionThread[] } {
+): { deletedThreads: ThreadRecord[]; projectThreads: ProjectDeletionThread[] } {
   const notificationBuffer = new NotificationBuffer();
   const result = deps.db.transaction(
     (tx) => {
@@ -77,7 +77,7 @@ function tombstoneProjectThreadsForDeletion(
         projectId: args.projectId,
       });
 
-      const deletedThreads: Thread[] = [];
+      const deletedThreads: ThreadRecord[] = [];
       const threadsForDeletion = listProjectDeletionThreads(tx, args);
       for (const thread of threadsForDeletion) {
         if (thread.deletedAt === null) {

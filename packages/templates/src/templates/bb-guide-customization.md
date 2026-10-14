@@ -57,6 +57,66 @@ startup-only change, run `bb-app stop && bb-app start` or restart the desktop
 app. Until then, changing or unsetting `BB_SERVER_BIND_HOST` does not close a
 previous `0.0.0.0` listener.
 
+`BB_AUTH_MODE` (startup-only, `local` by default) controls sign-in. `local`
+treats every request as the built-in local owner. `multi` requires a session
+cookie (`POST /api/v1/auth/sign-in`) or a personal access token
+(`Authorization: Bearer bbpat_…`, created with `POST /api/v1/auth/tokens`) on
+every API and WebSocket request, including loopback. The first account
+registered on a `multi` server becomes an admin; later sign-ups need an admin's
+invite. Admin-only actions return `403` to members.
+
+Read and unread state, pins and pin order, UI preferences, appearance, and
+prompt history are kept per user; projects and threads are shared. Threads,
+queued messages, and resolved interactions record who created, wrote, or
+answered them (`createdByUserId`, `authorUserId`, `resolvedByUserId`);
+`bb user list` maps those ids to names for admins.
+
+Sign in to a multi-user server with `bb login --email EMAIL`. The CLI prompts
+for the password and creates a PAT. Use `--password-file PATH` for unattended
+sign-in, or `bb login --token TOKEN` to save an existing PAT. Without either
+option, `bb login` reads a PAT from a hidden prompt or standard input. Login
+validates the credential before saving it to the server origin's profile in
+`<BB_DATA_DIR>/client.json`, with file permissions `0600`. `BB_SERVER_URL`
+selects the server; `BB_TOKEN` overrides its saved token for CLI requests,
+including plugin commands. `bb whoami [--json]` shows the current user.
+`bb logout [--json]` removes only that profile's saved login. It does not
+revoke the PAT or unset `BB_TOKEN`.
+
+Admins use `bb user list`, `bb user role USER_ID admin|member`, and
+`bb user remove USER_ID`. System users and the last account admin cannot be
+removed or demoted. `bb invite create [--email EMAIL] [--role admin|member]`
+prints a seven-day, single-use token. `bb invite list` lists pending unexpired
+invites without tokens; `bb invite revoke ID` invalidates one. New users run
+`bb invite accept TOKEN --email EMAIL --name NAME` and enter their password,
+or supply `--password-file PATH`, then sign in with `bb login`.
+`bb token create NAME`, `bb token list`, and `bb token revoke ID` manage only
+the current user's PATs. New token values are shown once. All these commands
+accept `--json`.
+
+In the multi-mode app, open the user menu in the navigation rail to sign out
+or open Settings → Account. Everyone manages their own personal access
+tokens; admins also manage users and invites. Copy new tokens and invite
+links before selecting Done. Share invite links yourself; bb does not send
+invite emails. The link opens an account registration page. Local mode does
+not show these controls. Thread lists and headers show creators in multi mode.
+
+Roles are guardrails for a trusted team. A member who runs an agent effectively
+has shell access to its host. In multi mode, each turn supplies a signed
+seven-day `BB_TOKEN` to the agent shell through the launch environment. It
+authenticates as the user who sent the turn, or as the thread creator for
+turns no user sent, with that user's current role. It stops authenticating if
+that user is removed and is masked in runtime environment displays. Turns with
+neither a sending user nor a remaining creator, including threads created
+before multi mode, get no `BB_TOKEN`. In local mode, shells need no
+credential.
+
+Plugin RPC methods and commands that change server-wide settings, such as
+`bb concurrency-limit global 0` or `bb pool routing claude`, are admin-only and
+fail for members with `admin_required`. Session cookies are `Secure` when
+`BB_APP_URL` uses HTTPS. Repeated failed sign-ins for one email get `429`.
+Realtime and terminal connections close when their credential is revoked, the
+user is removed, or the user's role changes.
+
 Settings → General → Command line installs the bb CLI for use outside bb: it
 puts the `bb` command on PATH on the computer that runs the bb server, so the
 user, a script, or an agent running outside bb (such as Claude Code or Codex)
@@ -616,3 +676,45 @@ stops the sampler and flushes the in-flight profile; existing files remain.
 The launch flag only grants permission and still requires a restart to change.
 
 Storage cleanup can run in the background with `bb storage cleanup --machine HOST_ID --kind orphans|development|worktrees --yes`. Inspect `maintenance` with `bb storage usage`; failures release the machine lock and can be retried. Archived storage cleanup waits through the archive undo grace and rechecks eligibility before each batch.
+
+
+### Share access through bb connect
+
+In Settings > Remote access, choose **Manage server access** to add or remove
+existing bb accounts. Only the gate's server owner can manage membership.
+Admins can use the same gate API through this server:
+
+```sh
+bb user connect-members list --json
+bb user connect-members add EMAIL --role member --json
+bb user connect-members remove CONNECT_USER_ID --json
+```
+
+The SDK methods are `experimental_users.listConnectMembers`,
+`experimental_users.addConnectMember({ email, role? })`, and
+`experimental_users.removeConnectMember({ userId })`. These use
+`GET /api/v1/users/connect-members`, `POST /api/v1/users/connect-members`, and
+`DELETE /api/v1/users/connect-members/:id`. The id belongs to the bb account,
+not the local server user. All three require a local admin and a server pairing
+owned by the gate account. Gate membership roles do not change local roles or
+allow members to manage sharing.
+
+In `multi` mode, also create a local invite restricted to the account's email:
+`bb invite create --email EMAIL`. The gate forwards a signed identity with
+its account id, verified email, server id, and a one-minute expiry. The server
+verifies HMAC-SHA256 using the active tunnel credential, then resolves the local
+user by email. An existing user keeps their local role. On first access, an
+unexpired email invite creates a local member and consumes the invite, even if
+the invite requested admin. Generic invites do not authorize gate registration.
+Without an email invite or an existing account, access returns `403`.
+
+Gate membership also allows access to this server's shared ports. Machine
+shares keep their existing owner-only access. Signed server identities never
+reach shared ports. Removing membership rejects new gate requests; it does
+not delete the local account, revoke its PATs, or close existing sockets.
+In `local` mode, everyone admitted by the gate acts as the local owner.
+Members running agents effectively have host shell access, including secrets.
+
+Tunnels opened before signed identity support keep local owner access. Reconnect
+the tunnel to use gate identities in `multi` mode. Daemon machine keys and MCP
+OAuth credentials retain their existing behavior.

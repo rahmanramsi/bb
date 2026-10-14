@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
   deleteThread,
@@ -166,6 +167,7 @@ describe("internal interactive request lifecycle", () => {
       });
       const resolved =
         harness.deps.pendingInteractions.resolvePendingInteraction({
+          resolvedByUserId: LOCAL_OWNER_USER_ID,
           threadId: thread.id,
           interactionId,
           resolution: createAllowOnceResolution(),
@@ -327,6 +329,7 @@ describe("internal interactive request lifecycle", () => {
       });
       const resolved =
         harness.deps.pendingInteractions.resolvePendingInteraction({
+          resolvedByUserId: LOCAL_OWNER_USER_ID,
           threadId: thread.id,
           interactionId,
           resolution: sessionResolution,
@@ -706,6 +709,7 @@ describe("internal interactive request lifecycle", () => {
         threadId: thread.id,
       });
       harness.deps.pendingInteractions.resolvePendingInteraction({
+        resolvedByUserId: LOCAL_OWNER_USER_ID,
         threadId: thread.id,
         interactionId,
         resolution: createAllowOnceResolution(),

@@ -199,6 +199,7 @@ export const hostDaemonContributedEnvEntrySchema = z
             "machine-git",
             "machine-environment",
             "project-environment",
+            "thread-auth",
           ]),
         })
         .strict(),

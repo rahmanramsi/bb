@@ -17,7 +17,7 @@ import {
   threadScope,
   turnScope,
 } from "@bb/domain";
-import type { ClientTurnRequestId, Thread } from "@bb/domain";
+import type { ClientTurnRequestId, ThreadRecord } from "@bb/domain";
 import {
   createConnection,
   createProject,
@@ -115,7 +115,7 @@ function requestId(value: number): ClientTurnRequestId {
 
 function setup(connection?: DbConnection): {
   db: DbConnection;
-  thread: Thread;
+  thread: ThreadRecord;
 } {
   const db = connection ?? createConnection(":memory:");
   if (connection === undefined) migrate(db);
@@ -135,7 +135,7 @@ function setup(connection?: DbConnection): {
 
 function insertTurns(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   turnCount: number,
   itemsPerTurn: readonly number[] | number,
 ): void {
@@ -219,7 +219,7 @@ function insertTurns(
 
 function insertTurnsWithReusedFileChangeItemId(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   turnCount: number,
   fillerItemsPerTurn: number,
 ): void {
@@ -326,7 +326,7 @@ function insertTurnsWithReusedFileChangeItemId(
 
 function walkAllFileChangeDiffs(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   eventBudget: number,
 ): string[] {
   const diffsByPage: string[][] = [];
@@ -373,7 +373,7 @@ interface WalkResult {
 
 function walkAllPages(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   eventBudget: number,
 ): WalkResult {
   const messagesByPage: string[][] = [];

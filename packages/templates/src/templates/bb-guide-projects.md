@@ -39,8 +39,16 @@ Global prompt history:
 
   bb prompt-history list [--cursor <cursor>] [--limit <number>]
 
-  Lists accepted prompts across projects and threads newest first. Pass the
-  returned cursor to continue from the next page.
+  Lists your accepted prompts across projects and threads newest first. Each
+  user has their own prompt history. Pass the returned cursor to continue from
+  the next page.
+
+People:
+
+  bb user list                            List users with ids and roles
+
+  Maps createdByUserId, authorUserId, and resolvedByUserId on threads, queued
+  messages, and interactions to names.
 
 Discovery:
 

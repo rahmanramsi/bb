@@ -7,7 +7,7 @@ import {
   PermissionEscalation,
   ResolvedThreadExecutionOptions,
   RuntimeThreadExecutionOptions,
-  Thread,
+  ThreadRecord,
   ClientTurnRequestId,
   EnvironmentStatus,
   promptInputHasCommandMention,
@@ -70,6 +70,7 @@ interface ThreadUnarchiveCommandEnvironment {
 }
 
 export interface ThreadStartCommandArgs {
+  authorUserId: string | null;
   environment: ThreadRuntimeCommandEnvironment;
   execution: ResolvedThreadExecutionOptions;
   fork: ThreadForkDescriptor | null;
@@ -80,7 +81,7 @@ export interface ThreadStartCommandArgs {
   providerId: string;
   requestId: ClientTurnRequestId;
   syncGeneratedTitle: boolean;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 interface PreparedTurnSubmitCommandBuildArgs {
@@ -101,6 +102,7 @@ interface PreparedTurnSubmitCommandBuildArgs {
 }
 
 interface PrepareTurnSubmitCommandPayloadArgs {
+  authorUserId: string | null;
   environment: ThreadRuntimeCommandEnvironment;
   execution: ResolvedThreadExecutionOptions;
   permissionEscalation: PermissionEscalation;
@@ -108,7 +110,7 @@ interface PrepareTurnSubmitCommandPayloadArgs {
   inputGroups?: PromptInput[][];
   providerThreadId?: string;
   target: TurnSubmitTarget;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 interface FinalizeTurnSubmitCommandPayloadArgs {
@@ -148,7 +150,7 @@ interface DispatchThreadRenameCommandArgs {
 interface DispatchThreadUnarchiveCommandArgs {
   environment: ThreadUnarchiveCommandEnvironment;
   providerThreadId: string;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 interface DispatchArchivedThreadProviderArchiveCommandArgs {
@@ -273,6 +275,7 @@ export async function buildThreadStartCommand(
 ): Promise<Extract<HostDaemonCommand, { type: "thread.start" }>> {
   await deps.providerRegistry.whenRegistrationsSettled();
   const runtimeContext = await resolveThreadRuntimeCommandConfig(deps, {
+    authorUserId: args.authorUserId,
     thread: args.thread,
     environment: args.environment,
     model: args.execution.model,
@@ -370,6 +373,7 @@ export async function prepareTurnSubmitCommandPayload(
     args.thread.id,
   );
   const runtimeContext = await resolveThreadRuntimeCommandConfig(deps, {
+    authorUserId: args.authorUserId,
     thread: args.thread,
     environment: args.environment,
     model: args.execution.model,

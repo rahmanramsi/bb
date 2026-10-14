@@ -29,7 +29,11 @@ import {
   setProjectGitRemoteUrlIfMissing,
   updateHost,
 } from "@bb/db";
-import { PERSONAL_PROJECT_ID, type JsonValue } from "@bb/domain";
+import {
+  PERSONAL_PROJECT_ID,
+  type JsonValue,
+  LOCAL_OWNER_USER_ID,
+} from "@bb/domain";
 import type {
   PluginDispatchEnvironmentIntent,
   PluginEnvironmentProviderDeclaration,
@@ -293,6 +297,7 @@ describe("machine and environment provider composition", () => {
       });
 
       const thread = await createThreadFromRequest(harness.deps, {
+        createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
           type: "provider",
           environmentProviderId: "test-sandbox",
@@ -356,6 +361,7 @@ describe("machine and environment provider composition", () => {
       );
 
       await createThreadFromRequest(harness.deps, {
+        createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
           type: "provider",
           environmentProviderId: "test-sandbox",
@@ -402,6 +408,7 @@ describe("machine and environment provider composition", () => {
       installCompositionMachine(create);
 
       await createThreadFromRequest(harness.deps, {
+        createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
           type: "provider",
           environmentProviderId: "test-sandbox",
@@ -441,6 +448,7 @@ describe("machine and environment provider composition", () => {
 
       await expect(
         createThreadFromRequest(harness.deps, {
+          createdByUserId: LOCAL_OWNER_USER_ID,
           environment: {
             type: "provider",
             environmentProviderId: "test-sandbox",
@@ -538,6 +546,7 @@ describe("machine and environment provider composition", () => {
       );
 
       const thread = await createThreadFromRequest(harness.deps, {
+        createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
           type: "provider",
           environmentProviderId: "test-sandbox",
@@ -617,6 +626,7 @@ function createTargetThread(
   const sourceHostId = source?.type === "local_path" ? source.hostId : null;
   const hostId = args.hostId ?? sourceHostId ?? "host-1";
   return createThreadFromRequest(harness.deps, {
+    createdByUserId: LOCAL_OWNER_USER_ID,
     environment: {
       type: "provider",
       environmentProviderId: args.environmentProviderId ?? PROVIDER_ID,
@@ -727,6 +737,7 @@ describe("shared machine preparation retention", () => {
         let nextThreadId: string | null = null;
         try {
           const next = await createThreadFromRequest(harness.deps, {
+            createdByUserId: LOCAL_OWNER_USER_ID,
             projectId: otherProject.id,
             environment: {
               type: "provider",
@@ -922,6 +933,7 @@ describe("environment providers are asked inside provisioning", () => {
       });
 
       const child = await createThreadFromRequest(harness.deps, {
+        createdByUserId: LOCAL_OWNER_USER_ID,
         environment: { type: "project-default" },
         input: textInput("Do the thing"),
         origin: "cli",
@@ -1499,6 +1511,7 @@ describe("environment providers are asked inside provisioning", () => {
       if (failedThread === null) return;
 
       const outcome = await attemptDispatch(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         thread: failedThread,
         payload: { input: textInput("Retry the task"), mode: "start" },
         source: { kind: "inline" },
@@ -1727,6 +1740,7 @@ describe("provider validate at create time", () => {
         .get();
       await expect(
         createThreadFromRequest(harness.deps, {
+          createdByUserId: LOCAL_OWNER_USER_ID,
           environment: { type: "project-default" },
           input: textInput("test"),
           origin: "cli",
@@ -2518,6 +2532,7 @@ describe("core's worktree beside providers", () => {
       });
 
       const created = await createThreadFromRequest(harness.deps, {
+        createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
           type: "host",
           hostId: host.id,

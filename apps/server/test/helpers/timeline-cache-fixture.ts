@@ -4,7 +4,7 @@ import path from "node:path";
 import {
   threadScope,
   turnScope,
-  type Thread,
+  type ThreadRecord,
   type ThreadEventItemType,
   type ThreadEventType,
 } from "@bb/domain";
@@ -26,7 +26,7 @@ export interface TestThread {
   coldDb: DbConnection;
   db: DbConnection;
   projectId: string;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 export interface RowSpec {

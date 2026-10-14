@@ -306,6 +306,7 @@ function makeThread(
     pinSortKey: null,
     deletedAt: null,
     lastReadAt: null,
+    createdByUserId: null,
     latestAttentionAt: 1,
     createdAt: 1,
     updatedAt: threadUpdatedAt,
@@ -1199,6 +1200,7 @@ describe("CommandPalette", () => {
     const active = makeThread("active", {
       title: "Matching active thread",
       lastReadAt: Date.now(),
+      createdByUserId: null,
     });
     const archived = makeThread("archived", { archivedAt: Date.now() });
     modeState.searchResponse = {
@@ -1355,6 +1357,7 @@ describe("CommandPalette", () => {
       makeThread(`fix-${index}`, {
         title: `Fix ${index}`,
         lastReadAt: Date.now(),
+        createdByUserId: null,
         updatedAt: Date.now() - index,
       }),
     );
@@ -1427,6 +1430,7 @@ describe("CommandPalette", () => {
       makeThread(`fix-${index}`, {
         title: `Fix ${index}`,
         lastReadAt: Date.now(),
+        createdByUserId: null,
         updatedAt: Date.now() - index,
       }),
     );
@@ -1481,6 +1485,7 @@ describe("CommandPalette", () => {
       makeThread(id, {
         title,
         lastReadAt: now,
+        createdByUserId: null,
         updatedAt: now - minutesAgo * 60_000,
       });
     const mossPlugins = thread("moss-plugins", "Moss plugins", 600);
@@ -1750,6 +1755,7 @@ describe("CommandPalette", () => {
         makeThread("idle", { lastReadAt: Date.now() }),
         makeThread("working", {
           lastReadAt: Date.now(),
+          createdByUserId: null,
           runtime: {
             displayStatus: "active",
           },
@@ -1758,6 +1764,7 @@ describe("CommandPalette", () => {
         makeThread("waiting", { hasPendingInteraction: true }),
         makeThread("workflow", {
           lastReadAt: Date.now(),
+          createdByUserId: null,
           activity: {
             ...makeThread("workflow").activity,
             activeWorkflowCount: 1,

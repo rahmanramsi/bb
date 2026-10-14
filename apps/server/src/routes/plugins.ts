@@ -9,10 +9,17 @@ import type { WSContext, WSMessageReceive, WSEvents } from "hono/ws";
 import type {
   ExperimentalPluginWebSocket,
   ExperimentalPluginWebSocketHandlers,
+  PluginCliContext,
   PluginCliExecutionResult,
 } from "@get-bb/plugin-sdk";
 import type { ServerRuntimeConfig } from "../types.js";
 import { ApiError } from "../errors.js";
+import type { AuthenticatedSocketRegistry } from "../ws/authenticated-sockets.js";
+import {
+  assertAdmin,
+  getRequestPrincipal,
+  requirePrincipal,
+} from "../request-context.js";
 import {
   browserRequestProblem,
   type BrowserRequestProblem,
@@ -201,6 +208,9 @@ function localAuthProblem(
   context: Context,
   deps: PluginRoutesDeps,
 ): WireAuthProblem | null {
+  if (getRequestPrincipal(context) === null) {
+    return { status: 401, error: "Unauthorized" };
+  }
   return browserRequestProblem(context, deps, {
     requireJsonForMutation: true,
   });
@@ -292,6 +302,8 @@ function pluginWebSocketError(event: Event): Error {
 }
 
 function pluginWebSocketEvents(args: {
+  authenticatedSockets: AuthenticatedSocketRegistry | undefined;
+  isActive: (() => Promise<boolean>) | undefined;
   handlers: ExperimentalPluginWebSocketHandlers;
   id: string;
   plugins: PluginService;
@@ -334,6 +346,9 @@ function pluginWebSocketEvents(args: {
         return;
       }
       args.route.sockets.add(exposed);
+      if (args.isActive !== undefined) {
+        args.authenticatedSockets?.track(socket, args.isActive);
+      }
       if (args.handlers.onOpen !== undefined) {
         invoke(socket, "open", () => args.handlers.onOpen?.(exposed));
       }
@@ -341,6 +356,7 @@ function pluginWebSocketEvents(args: {
     onMessage(event, socket) {
       const exposed = expose(socket);
       if (
+        args.authenticatedSockets?.isRevoked(socket) ||
         !args.route.active ||
         !args.route.sockets.has(exposed) ||
         args.handlers.onMessage === undefined
@@ -355,6 +371,7 @@ function pluginWebSocketEvents(args: {
       );
     },
     onClose(event, socket) {
+      args.authenticatedSockets?.untrack(socket);
       const exposed = expose(socket);
       if (!args.route.sockets.delete(exposed)) return;
       if (args.handlers.onClose !== undefined) {
@@ -383,6 +400,7 @@ export function registerPluginRoutes(
   installJobs: PluginInstallJobs,
   updateJobs: PluginUpdateJobs,
   upgradeWebSocket?: UpgradeWebSocket,
+  authenticatedSockets?: AuthenticatedSocketRegistry,
 ): void {
   const appAssetCompressionCache = createAppAssetCompressionCache(
     MAX_CACHED_APP_ASSETS,
@@ -443,6 +461,8 @@ export function registerPluginRoutes(
       );
     }
     return pluginWebSocketEvents({
+      authenticatedSockets,
+      isActive: context.get("bbAuthenticatedCredential")?.isActive,
       handlers: result.handlers,
       id,
       plugins,
@@ -517,12 +537,9 @@ export function registerPluginRoutes(
         400,
       );
     }
-    const ctx: {
-      cwd?: string;
-      threadId?: string;
-      projectId?: string;
-      signal?: AbortSignal;
-    } = {};
+    const ctx: PluginCliContext = {
+      experimental_callerRole: requirePrincipal(context).role,
+    };
     if (typeof body?.cwd === "string") ctx.cwd = body.cwd;
     if (typeof body?.threadId === "string") ctx.threadId = body.threadId;
     if (typeof body?.projectId === "string") ctx.projectId = body.projectId;
@@ -652,6 +669,7 @@ export function registerPluginRoutes(
   });
 
   app.post("/plugins/updates/check", async (context) => {
+    assertAdmin(context);
     const json: unknown = await context.req.json().catch(() => null);
     const body = pluginUpdateCheckRequestSchema.safeParse(json);
     if (!body.success) {
@@ -680,6 +698,7 @@ export function registerPluginRoutes(
   });
 
   app.post("/plugins/cache/prune", async (context) => {
+    assertAdmin(context);
     const json: unknown = await context.req.json().catch(() => null);
     const body = pluginCachePruneRequestSchema.safeParse(json);
     if (!body.success) {
@@ -689,6 +708,7 @@ export function registerPluginRoutes(
   });
 
   app.post("/plugins/:id/update", async (context) => {
+    assertAdmin(context);
     const json: unknown = await context.req.json().catch(() => null);
     const body = pluginApplyUpdateRequestSchema.safeParse(json);
     if (!body.success) {
@@ -720,6 +740,7 @@ export function registerPluginRoutes(
   });
 
   app.post("/plugins/install", async (context) => {
+    assertAdmin(context);
     const problem = localAuthProblem(context, deps);
     if (problem) {
       return context.json({ ok: false, error: problem.error }, problem.status);
@@ -757,6 +778,7 @@ export function registerPluginRoutes(
   });
 
   app.post("/plugins/reload", async (context) => {
+    assertAdmin(context);
     const id = context.req.query("id") ?? undefined;
     const outcome = await plugins.reload(id);
     if (!outcome.ok) return context.json(outcome, 422);
@@ -768,6 +790,7 @@ export function registerPluginRoutes(
   );
 
   app.put("/plugins/safe-mode", async (context) => {
+    assertAdmin(context);
     const json: unknown = await context.req.json().catch(() => null);
     const body = pluginSafeModeRequestSchema.safeParse(json);
     if (!body.success) {
@@ -780,6 +803,7 @@ export function registerPluginRoutes(
   });
 
   app.post("/plugins/:id/enable", async (context) => {
+    assertAdmin(context);
     const plugin = await plugins.setEnabled(context.req.param("id"), true);
     if (!plugin)
       return context.json({ ok: false, error: "unknown plugin" }, 404);
@@ -787,6 +811,7 @@ export function registerPluginRoutes(
   });
 
   app.post("/plugins/:id/disable", async (context) => {
+    assertAdmin(context);
     const plugin = await plugins.setEnabled(context.req.param("id"), false);
     if (!plugin)
       return context.json({ ok: false, error: "unknown plugin" }, 404);
@@ -806,6 +831,7 @@ export function registerPluginRoutes(
   });
 
   app.put("/plugins/:id/settings", async (context) => {
+    assertAdmin(context);
     const json: unknown = await context.req.json().catch(() => null);
     const body = pluginSettingsUpdateRequestSchema.safeParse(json);
     if (!body.success) {
@@ -830,6 +856,7 @@ export function registerPluginRoutes(
   });
 
   app.delete("/plugins/:id", async (context) => {
+    assertAdmin(context);
     const id = context.req.param("id");
     if (plugins.isBuiltin(id)) {
       return context.json(
@@ -863,6 +890,7 @@ export function registerPluginRoutes(
         400,
       );
     }
+    if (body.data.rotate === true) assertAdmin(context);
     const token = await plugins.httpToken(context.req.param("id"), {
       rotate: body.data.rotate,
     });
@@ -983,6 +1011,21 @@ export function registerPluginRoutes(
           },
         },
         404,
+      );
+    }
+    if (
+      lookup.value.requiredRole === "admin" &&
+      requirePrincipal(context).role !== "admin"
+    ) {
+      return context.json(
+        {
+          ok: false,
+          error: {
+            code: "forbidden",
+            message: `plugin "${id}" rpc method "${method}" requires a server admin`,
+          },
+        },
+        403,
       );
     }
     const outcome = await plugins.invokeRpcHandler(

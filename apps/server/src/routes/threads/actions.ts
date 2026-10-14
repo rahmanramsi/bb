@@ -11,8 +11,8 @@ import {
   setQueuedThreadMessageGroupBoundary,
   unarchiveThread,
   unpinThread,
+  setThreadLastReadAt,
   updateQueuedThreadMessage,
-  updateThread,
   type ReorderPinnedThreadResult,
   type ReorderQueuedThreadMessageResult,
   type SetQueuedThreadMessageGroupBoundaryResult,
@@ -26,11 +26,15 @@ import {
 import type { Hono } from "hono";
 import {
   createStandaloneBuiltinCompactCommandInput,
-  type Thread,
+  type ThreadRecord,
   type ThreadQueuedMessage,
 } from "@bb/domain";
 import type { AppDeps } from "../../types.js";
 import { ApiError } from "../../errors.js";
+import {
+  requirePrincipal,
+  requireThreadViewerId,
+} from "../../request-context.js";
 import {
   emitPluginMessageCancelled,
   emitPluginThreadUnarchived,
@@ -136,7 +140,7 @@ function toQueuedMessageOrderResponse(
 
 async function compactThreadContext(
   deps: AppDeps,
-  thread: Thread,
+  thread: ThreadRecord,
 ): Promise<void> {
   ensureThreadIsWritable(thread);
   if (!deps.providerRegistry.supportsManualCompaction(thread.providerId)) {
@@ -156,6 +160,7 @@ async function compactThreadContext(
 
   const environment = await requireThreadCommandEnvironment(deps, { thread });
   await sendThreadMessage(deps, {
+    authorUserId: null,
     environment,
     payload: {
       input: createStandaloneBuiltinCompactCommandInput(),
@@ -204,11 +209,24 @@ function toQueuedMessageGroupBoundaryResponse(
 
 function buildActivePinnedThreadRootListResponse(
   deps: AppDeps,
+  userId: string,
 ): ThreadListResponse {
   return toThreadListEntryResponses(deps, {
     threads: listActiveVisiblePinnedThreadRootsWithPendingInteractionState(
       deps.db,
+      userId,
     ),
+  });
+}
+
+function markThreadReadForUser(
+  deps: AppDeps,
+  args: { threadId: string; userId: string },
+): void {
+  setThreadLastReadAt(deps.db, deps.hub, {
+    lastReadAt: Date.now(),
+    threadId: args.threadId,
+    userId: args.userId,
   });
 }
 
@@ -242,9 +260,13 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
 
   post(routes.send, async (context, payload) => {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
-    return context.json(
-      await acceptThreadSendRequest(deps, { payload, thread }),
-    );
+    const authorUserId = requirePrincipal(context).userId;
+    const response = await acceptThreadSendRequest(deps, {
+      authorUserId,
+      payload,
+      thread,
+    });
+    return context.json(response);
   });
 
   post(routes.editMessage, async (context, payload) => {
@@ -253,6 +275,7 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
       thread,
     });
     const result = await editThreadMessage(deps, {
+      authorUserId: requirePrincipal(context).userId,
       environment,
       payload,
       thread,
@@ -263,13 +286,18 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
   post(routes.retry, async (context, payload) => {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
     ensureThreadIsWritable(thread);
-    const result = await retryFailedTurn(deps, { request: payload, thread });
+    const result = await retryFailedTurn(deps, {
+      authorUserId: requirePrincipal(context).userId,
+      request: payload,
+      thread,
+    });
     return context.json(result);
   });
 
   post(routes.createQueuedMessage, async (context, payload) => {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
     const queuedMessage = await createQueuedMessageForThread(deps, {
+      authorUserId: requirePrincipal(context).userId,
       payload,
       thread,
     });
@@ -484,6 +512,7 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
       { threadId: thread.id },
     );
     const preparedRuntimeCommand = await prepareTurnSubmitCommandPayload(deps, {
+      authorUserId: requirePrincipal(context).userId,
       environment,
       execution,
       input: [],
@@ -547,36 +576,50 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
     const publicThread = requirePublicThread(deps.db, context.req.param("id"));
     const thread = pinThread(deps.db, deps.hub, {
       threadId: publicThread.id,
+      userId: requirePrincipal(context).userId,
     });
     if (!thread) {
       throw new ApiError(404, "thread_not_found", "Thread not found");
     }
-    return context.json(toThreadResponseFromThread(deps, { thread }));
+    return context.json(
+      toThreadResponseFromThread(deps, {
+        thread,
+        viewerUserId: requireThreadViewerId(context),
+      }),
+    );
   });
 
   post(routes.unpin, (context) => {
     const publicThread = requirePublicThread(deps.db, context.req.param("id"));
     const thread = unpinThread(deps.db, deps.hub, {
       threadId: publicThread.id,
+      userId: requirePrincipal(context).userId,
     });
     if (!thread) {
       throw new ApiError(404, "thread_not_found", "Thread not found");
     }
-    return context.json(toThreadResponseFromThread(deps, { thread }));
+    return context.json(
+      toThreadResponseFromThread(deps, {
+        thread,
+        viewerUserId: requireThreadViewerId(context),
+      }),
+    );
   });
 
   patch(routes.pinOrder, (context, payload) => {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
+    const userId = requirePrincipal(context).userId;
     assertPinnedThreadOrderResult(
       reorderPinnedThread({
         db: deps.db,
         notifier: deps.hub,
         threadId: thread.id,
+        userId,
         previousThreadId: payload.previousThreadId,
         nextThreadId: payload.nextThreadId,
       }),
     );
-    return context.json(buildActivePinnedThreadRootListResponse(deps));
+    return context.json(buildActivePinnedThreadRootListResponse(deps, userId));
   });
 
   post(routes.archiveAll, (context) => {
@@ -652,29 +695,39 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
     );
     scheduleThreadProvisioningAdvance(deps, thread.id);
     return context.json(
-      toThreadResponseFromThread(deps, { thread: restoringThread }),
+      toThreadResponseFromThread(deps, {
+        thread: restoringThread,
+        viewerUserId: requireThreadViewerId(context),
+      }),
     );
   });
 
   post(routes.read, (context) => {
-    requirePublicThread(deps.db, context.req.param("id"));
-    const thread = updateThread(deps.db, deps.hub, context.req.param("id"), {
-      lastReadAt: Date.now(),
+    const thread = requirePublicThread(deps.db, context.req.param("id"));
+    markThreadReadForUser(deps, {
+      threadId: thread.id,
+      userId: requirePrincipal(context).userId,
     });
-    if (!thread) {
-      throw new ApiError(404, "thread_not_found", "Thread not found");
-    }
-    return context.json(toThreadResponseFromThread(deps, { thread }));
+    return context.json(
+      toThreadResponseFromThread(deps, {
+        thread,
+        viewerUserId: requireThreadViewerId(context),
+      }),
+    );
   });
 
   post(routes.unread, (context) => {
-    requirePublicThread(deps.db, context.req.param("id"));
-    const thread = updateThread(deps.db, deps.hub, context.req.param("id"), {
+    const thread = requirePublicThread(deps.db, context.req.param("id"));
+    setThreadLastReadAt(deps.db, deps.hub, {
       lastReadAt: null,
+      threadId: thread.id,
+      userId: requirePrincipal(context).userId,
     });
-    if (!thread) {
-      throw new ApiError(404, "thread_not_found", "Thread not found");
-    }
-    return context.json(toThreadResponseFromThread(deps, { thread }));
+    return context.json(
+      toThreadResponseFromThread(deps, {
+        thread,
+        viewerUserId: requireThreadViewerId(context),
+      }),
+    );
   });
 }

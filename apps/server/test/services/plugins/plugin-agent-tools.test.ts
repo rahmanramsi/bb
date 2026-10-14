@@ -721,6 +721,7 @@ describe("plugin tools reach thread runtime config", () => {
     );
     const buildCommand = (requestValue: number) =>
       buildThreadStartCommand(harness.deps, {
+        authorUserId: null,
         environment,
         execution,
         fork: null,
@@ -893,6 +894,7 @@ describe("plugin tools reach thread runtime config", () => {
         { threadId: target.thread.id },
       );
       return buildThreadStartCommand(harness.deps, {
+        authorUserId: null,
         environment: target.environment,
         execution,
         fork: null,
@@ -1016,6 +1018,7 @@ describe("plugin tools reach thread runtime config", () => {
       { threadId: beta.thread.id },
     );
     const turnSubmit = await prepareTurnSubmitCommandPayload(harness.deps, {
+      authorUserId: null,
       environment: beta.environment,
       execution: betaExecution,
       permissionEscalation: "ask",

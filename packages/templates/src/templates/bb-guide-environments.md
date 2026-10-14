@@ -234,9 +234,9 @@ Remote access (bb connect):
   choice for expose, unexpose, and shares. Server-host URLs use
   `https://<server-label>--<port>.getbb.app`; machine-host URLs use
   `https://<machine-label>--<port>.getbb.app` and proxy directly through that
-  machine's daemon. Access is owner-session-gated — only viewers signed into
-  the owner's getbb.app account can open the URL; it is not a public internet
-  link. Agents should run expose from the thread that started the server, share
+  machine's daemon. Viewers sign in to getbb.app. Server-host shares also
+  admit accounts added with `bb user connect-members add EMAIL`; machine-host
+  shares require the owner's account. These are private links. Agents should run expose from the thread that started the server, share
   the returned URL, and unexpose from the same thread when it stops.
   `bb connect status` shows all shares with host + URL. `shares --json` returns
   the resolved `host` and rows with `hostId`, `hostName`, `port`, and `url`.

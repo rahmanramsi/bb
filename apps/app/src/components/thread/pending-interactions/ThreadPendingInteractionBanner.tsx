@@ -26,6 +26,7 @@ import { MarkdownPreview } from "@/components/ui/markdown-preview.js";
 import { getDetailScrollMaxHeightClass } from "@/components/ui/detail-scroll-size.js";
 import { UserQuestionAnswerForm } from "@/components/thread/user-questions/UserQuestionInteractionContent.js";
 import { useResolveThreadPendingInteraction } from "@/hooks/mutations/thread-interaction-mutations";
+import { useUserAttribution } from "@/hooks/queries/user-queries";
 import { PluginPendingInteractionComposer } from "@/components/plugin/PluginPendingInteractionComposer";
 import {
   classifyInteractionRequest,
@@ -194,6 +195,18 @@ interface PlanReviewRequestBannerProps {
   collapsedByDefault: boolean;
 }
 
+function useResolvingLabel(
+  label: string,
+  interaction: Pick<PendingInteraction, "resolvedByUserId" | "status">,
+): string {
+  const resolverName = useUserAttribution().nameFor(
+    interaction.resolvedByUserId,
+  );
+  return interaction.status === "resolving" && resolverName !== null
+    ? `${label} · answered by ${resolverName}`
+    : label;
+}
+
 function useApprovalDecisionSubmission({
   fallbackMessage,
   interaction,
@@ -245,9 +258,10 @@ function PlanReviewRequestBanner({
     });
   const { approval } = request;
   const { plan, planFilePath } = request.review;
+  const label = useResolvingLabel("Plan review", interaction);
   return (
     <PendingInteractionShell
-      label="Plan review"
+      label={label}
       title={approval.reason ?? "Ready to code?"}
       expandedByDefault={!collapsedByDefault}
       errorMessage={errorMessage}
@@ -315,10 +329,11 @@ function ApprovalPendingInteractionBanner({
     () => buildApprovalSubject({ interaction, payload, subject }),
     [interaction, payload, subject],
   );
+  const label = useResolvingLabel("Approval needed", interaction);
 
   return (
     <PendingInteractionShell
-      label="Approval needed"
+      label={label}
       title={view.title}
       expandedByDefault={!collapsedByDefault}
       errorMessage={errorMessage}
@@ -347,12 +362,14 @@ function ThreadUserQuestionPendingInteractionBanner({
   collapsedByDefault,
 }: UserQuestionPendingInteractionBannerProps) {
   const isResolving = interaction.status === "resolving";
+  const label = useResolvingLabel(
+    questions.length === 1 ? "Question" : `${questions.length} questions`,
+    interaction,
+  );
 
   return (
     <PendingInteractionShell
-      label={
-        questions.length === 1 ? "Question" : `${questions.length} questions`
-      }
+      label={label}
       expandedByDefault={!collapsedByDefault}
       sourceThread={sourceThread}
       testId="user-question-banner"

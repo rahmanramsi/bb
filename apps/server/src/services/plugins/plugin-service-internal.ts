@@ -5,7 +5,7 @@ import type { DbConnection, HostRow } from "@bb/db";
 import type {
   DynamicTool,
   PendingInteraction,
-  Thread,
+  ThreadRecord,
   ThreadQueuedMessage,
 } from "@bb/domain";
 import type {
@@ -220,18 +220,21 @@ export interface PluginThreadEventEmitter {
     terminal: import("@bb/server-contract").TerminalSession,
   ): void;
   emitHostDeleted(host: HostRow): void;
-  emitThreadCreated(thread: Thread): void;
-  emitThreadActive(thread: Thread): void;
-  emitThreadIdle(thread: Thread): void;
-  emitThreadFailed(thread: Thread): void;
-  emitThreadArchived(thread: Thread): void;
-  emitThreadUnarchived(thread: Thread): void;
+  emitThreadCreated(thread: ThreadRecord): void;
+  emitThreadActive(thread: ThreadRecord): void;
+  emitThreadIdle(thread: ThreadRecord): void;
+  emitThreadFailed(thread: ThreadRecord): void;
+  emitThreadArchived(thread: ThreadRecord): void;
+  emitThreadUnarchived(thread: ThreadRecord): void;
   emitThreadParentChanged(
-    thread: Thread,
+    thread: ThreadRecord,
     previousParentThreadId: string | null,
   ): void;
-  emitThreadDeleted(thread: Thread): void;
-  emitInteractionPending(thread: Thread, interaction: PendingInteraction): void;
+  emitThreadDeleted(thread: ThreadRecord): void;
+  emitInteractionPending(
+    thread: ThreadRecord,
+    interaction: PendingInteraction,
+  ): void;
   /**
    * Queue lifecycle. The row is already in its new state when these fire; the
    * DTO is built once and shared by every listener, exactly like the thread

@@ -6,6 +6,10 @@ import type { ThreadQueuedMessage } from "@bb/domain";
 import { makeThreadQueuedMessage } from "@bb/test-helpers/domain-fixtures";
 import { QueuedMessagesList } from "./QueuedMessagesList";
 
+vi.mock("@/hooks/queries/user-queries", () => ({
+  useUserAttribution: () => ({ nameFor: () => null }),
+}));
+
 const noop = () => {};
 
 function makeQueuedMessage(id: string, text: string): ThreadQueuedMessage {

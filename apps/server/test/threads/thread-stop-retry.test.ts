@@ -1,7 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { getThread, listEvents, markThreadDeleted } from "@bb/db";
 import type { EnvironmentRow } from "@bb/db";
-import type { Thread } from "@bb/domain";
+import type { ThreadRecord } from "@bb/domain";
 import { describe, expect, it, vi } from "vitest";
 import {
   finalizeStoppedThread,
@@ -28,7 +28,7 @@ import { withTestHarness, type TestAppHarness } from "../helpers/test-app.js";
 
 interface ActiveThreadStopFixture {
   environment: EnvironmentRow;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 interface SeedActiveThreadStopFixtureArgs {

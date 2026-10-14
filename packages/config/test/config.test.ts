@@ -333,6 +333,24 @@ describe("consumer-specific config", () => {
     ).toThrow("BB_PERF_DIAGNOSTICS must be a boolean");
   });
 
+  it("defaults the auth mode to local and validates explicit modes", () => {
+    expect(
+      loadServerConfig({
+        env: createServerRuntimeEnv({ BB_AUTH_MODE: undefined }),
+      }).BB_AUTH_MODE,
+    ).toBe("local");
+    expect(
+      loadServerConfig({
+        env: createServerRuntimeEnv({ BB_AUTH_MODE: "multi" }),
+      }).BB_AUTH_MODE,
+    ).toBe("multi");
+    expect(() =>
+      loadServerConfig({
+        env: createServerRuntimeEnv({ BB_AUTH_MODE: "everyone" }),
+      }),
+    ).toThrow('BB_AUTH_MODE must be "local" or "multi"');
+  });
+
   it("carries the launcher's server launch id only when it is set", () => {
     expect(
       loadServerConfig({

@@ -1,6 +1,7 @@
 import type { Context, Hono } from "hono";
 import type { PluginInstallJob } from "@bb/server-contract";
 import type { PluginInstallJobs } from "../services/plugins/plugin-install-jobs.js";
+import { assertAdmin } from "../request-context.js";
 
 export function prefersRespondAsync(context: Context): boolean {
   return (context.req.header("prefer") ?? "")
@@ -50,6 +51,7 @@ export function registerPluginInstallJobRoutes(
   });
 
   app.post("/plugins/install-jobs/:jobId/cancel", (context) => {
+    assertAdmin(context);
     const job = installJobs.cancel(context.req.param("jobId"));
     if (job === undefined) {
       return context.json(

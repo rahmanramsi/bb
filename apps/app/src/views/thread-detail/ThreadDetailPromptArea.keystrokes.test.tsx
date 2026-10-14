@@ -334,6 +334,7 @@ function makePendingInteraction(threadId: string): PendingInteraction {
     statusReason: null,
     createdAt: 1,
     resolvedAt: null,
+    resolvedByUserId: null,
   };
 }
 

@@ -1014,6 +1014,32 @@ describe("bridge", () => {
     }
   });
 
+  it("adds the turn author's user credential to pooled Claude requests while preserving custom headers", () => {
+    const options = buildSessionOptions(
+      {
+        chromeEnabled: false,
+        disable1MContext: false,
+        sandboxEnabled: true,
+        serviceTier: "default",
+        workflowsEnabled: false,
+        cwd: "/tmp/worktree",
+        instructionMode: "append",
+        permissionMode: "default",
+        permissionScope: "workspace",
+      },
+      {
+        BB_PLUGIN_USER_TOKEN: "signed-user-token",
+        ANTHROPIC_BASE_URL: "http://127.0.0.1/pool",
+        ANTHROPIC_AUTH_TOKEN: "machine-hub-token",
+        ANTHROPIC_CUSTOM_HEADERS: "x-custom: value\nx-bb-user-token: stale",
+      },
+    );
+    expect(options.env?.ANTHROPIC_CUSTOM_HEADERS).toBe(
+      "x-custom: value\nx-bb-user-token: signed-user-token",
+    );
+    expect(options.env?.ANTHROPIC_AUTH_TOKEN).toBe("machine-hub-token");
+  });
+
   it("keeps manager sessions on a plain string system prompt", () => {
     const options = buildSessionOptions(
       {

@@ -53,6 +53,36 @@ export const CORE_COMMAND_GROUPS: readonly CommandGroup[] = [
       m.registerPromptHistoryCommands(program, deps.getUrl),
   ),
   group(
+    "login",
+    () => import("./commands/auth.js"),
+    (m) => (program, deps) => m.registerLoginCommand(program, deps.getUrl),
+  ),
+  group(
+    "logout",
+    () => import("./commands/auth.js"),
+    (m) => (program, deps) => m.registerLogoutCommand(program, deps.getUrl),
+  ),
+  group(
+    "whoami",
+    () => import("./commands/auth.js"),
+    (m) => (program, deps) => m.registerWhoamiCommand(program, deps.getUrl),
+  ),
+  group(
+    "invite",
+    () => import("./commands/auth.js"),
+    (m) => (program, deps) => m.registerInviteCommands(program, deps.getUrl),
+  ),
+  group(
+    "token",
+    () => import("./commands/auth.js"),
+    (m) => (program, deps) => m.registerTokenCommands(program, deps.getUrl),
+  ),
+  group(
+    "user",
+    () => import("./commands/user.js"),
+    (m) => (program, deps) => m.registerUserCommands(program, deps.getUrl),
+  ),
+  group(
     "provider",
     () => import("./commands/provider.js"),
     (m) => (program, deps) => m.registerProviderCommands(program, deps.getUrl),

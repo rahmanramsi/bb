@@ -24,11 +24,12 @@ import {
   formatClientTurnRequestIdSuffix,
   threadScope,
   turnScope,
+  LOCAL_OWNER_USER_ID,
 } from "@bb/domain";
 import type {
   ClientTurnRequestId,
   PromptInput,
-  Thread,
+  ThreadRecord,
   ThreadRuntimeState,
 } from "@bb/domain";
 import { HOST_RECONNECT_GRACE_MS } from "../../../src/constants.js";
@@ -65,16 +66,12 @@ interface CreateThreadWithEnvironmentArgs {
   environmentProviderId?: string;
   hostId: string;
   providerId?: string;
-  status?: Thread["status"];
-}
-
-interface ThreadWithPinSortKey extends Thread {
-  pinSortKey: string | null;
+  status?: ThreadRecord["status"];
 }
 
 interface CreateThreadListEntryArgs {
   environmentHostId: string | null;
-  thread: ThreadWithPinSortKey;
+  thread: ThreadRecord;
 }
 
 const planPromptInput: PromptInput[] = [
@@ -228,6 +225,9 @@ function createThreadListEntry(
 ): ThreadWithPendingInteractionState {
   return {
     ...args.thread,
+    lastReadAt: null,
+    pinnedAt: null,
+    pinSortKey: null,
     modelOverride: null,
     reasoningLevelOverride: null,
     storageDeletedAt: null,
@@ -416,6 +416,7 @@ describe("thread runtime display", () => {
           {
             now: 1_000,
             threads: listThreadsWithPendingInteractionState(db, {
+              viewerUserId: LOCAL_OWNER_USER_ID,
               projectId: project.id,
             }),
           },
@@ -454,6 +455,7 @@ describe("thread runtime display", () => {
       { db, hub, providerRegistry },
       {
         threads: listThreadsWithPendingInteractionState(db, {
+          viewerUserId: LOCAL_OWNER_USER_ID,
           projectId: project.id,
         }).filter((row) => row.id === thread.id),
       },
@@ -558,7 +560,7 @@ describe("thread runtime display", () => {
         threads: [empty.thread, waiting.thread, failed.thread].map((thread) =>
           createThreadListEntry({
             environmentHostId: hostId,
-            thread: { ...thread, pinSortKey: null },
+            thread,
           }),
         ),
       },

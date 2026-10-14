@@ -137,6 +137,34 @@ plugins' memory make the token a meaningful boundary for third-party plugins.
 bb account relies on it to keep `/api/connect/` requests, credential reads,
 refused-credential reports, and credential adoption to the connect plugin.
 
+## Admin-only RPC methods and CLI commands
+
+An RPC method contract accepts `experimental_requiredRole: "admin"`. The
+server's `POST /api/v1/plugins/<id>/rpc/<method>` route compares it with the
+authenticated principal and answers HTTP 403 with
+`{ ok: false, error: { code: "forbidden", message } }` before input
+validation or the handler run. `PluginRpcErrorCode` gains `forbidden`. Plugin
+callers that go through `bb.sdk.plugins.callRpc` authenticate with the server
+service token, which acts as an admin. In local mode every request is the local
+owner admin, so nothing changes.
+
+`PluginCliContext.experimental_callerRole` carries the invoking principal's role
+(`"admin" | "member"`); the server's plugin CLI route always sets it.
+`cliCommand` accepts `experimental_requiredRole: "admin"`, and `defineCli`
+refuses such commands with error code `admin_required` unless the role is
+`"admin"`. Help still renders. `experimental_assertCliAdmin(ctx, action)`
+throws the same `PluginCliError`; `defineCli` uses it, and show-or-set commands
+call it only when they write. A missing role counts as a member. The fake plugin
+host defaults `runCli` to an admin context and `callRpc` to an admin caller,
+with `experimental_callerRole: "member"` to test refusals.
+
+First-party callers: Concurrency limit, Account Pooler, bb connect, bb account,
+Storage retention, Keep Awake, Modal Sandbox, Custom instructions, and MCP mark
+their server-wide configuration, credential, enrollment, and bulk cleanup
+operations. Before stabilizing, audit whether plugin HTTP routes, WebSocket
+routes, and agent tools need the same role, whether `experimental_caller`
+should also carry the role, and whether RPC discovery should publish it.
+
 ## `bb.http.experimental_websocket`
 
 **What it does.** Registers an exact-path WebSocket upgrade in the plugin's
@@ -4114,9 +4142,48 @@ with third-party providers.
 
 ## Global prompt history (`bb.sdk.experimental_promptHistory`)
 
-`bb.sdk.experimental_promptHistory.list({ cursor?, limit?, signal? })` returns `{ entries, nextCursor }`: every accepted user prompt across projects and threads, newest first, each with `id`, `createdAt`, `input`, `projectId`, `threadId`, and `scope`: `"project"` for a prompt that started a top-level thread, the prompts core's new-thread composer recalls, or `"thread"` for a follow-up. The Prompt Library plugin ranks prompts whose scope matches the searching composer higher. `limit` is a digit string, defaulting to 100 and capped at 1000. `nextCursor` is an opaque string, or null on the last page. A page can hold fewer than `limit` entries while `nextCursor` is set, because stored rows whose input no longer parses are skipped. Prompts from a deleted thread remain listed until the thread row is removed, which cascades to its prompt history. The same route backs `bb prompt-history list`.
+`bb.sdk.experimental_promptHistory.list({ cursor?, limit?, signal? })` returns `{ entries, nextCursor }`: the calling user's accepted prompts across projects and threads, newest first (a plugin's server SDK calls as the local owner), each with `id`, `createdAt`, `input`, `projectId`, `threadId`, and `scope`: `"project"` for a prompt that started a top-level thread, the prompts core's new-thread composer recalls, or `"thread"` for a follow-up. The Prompt Library plugin ranks prompts whose scope matches the searching composer higher. `limit` is a digit string, defaulting to 100 and capped at 1000. `nextCursor` is an opaque string, or null on the last page. A page can hold fewer than `limit` entries while `nextCursor` is set, because stored rows whose input no longer parses are skipped. Prompts from a deleted thread remain listed until the thread row is removed, which cascades to its prompt history. The same route backs `bb prompt-history list`.
 
 Before stabilization, audit whether `limit` should be a number, whether the cursor format needs versioning, whether project or thread filters belong on this call rather than on `projects.promptHistory` and `threads.promptHistory`, and whether skipped rows should fill the page.
+
+## User management (`bb.sdk.experimental_users`)
+
+`list({ signal? })` returns `{ users }` for admins. `directory({ signal? })`
+returns the same attribution fields for authenticated callers and backs the
+app's `useUserAttribution` labels. `updateRole({ userId, role, signal? })`
+returns `{ user }`; `remove({ userId, signal? })` revokes the user's credentials
+and removes the account. Both require admin. System users and the last account
+admin are protected. The CLI uses these paths for `bb user list|role|remove`.
+
+`listConnectMembers({ signal? })` returns `{ members: [{ userId, email, role }] }`;
+`addConnectMember({ email, role?, signal? })` returns `{ member }`;
+`removeConnectMember({ userId, signal? })` returns `{ ok: true }`. Local admins
+manage the paired owner's gate membership through the same owner API as the
+gate's Server access page. Core callers are `bb user connect-members
+list|add|remove`. Connect ids differ from local user ids. Roles apply to gate
+membership and do not promote local users. Stabilization requires auditing
+membership revocation and reconnect behavior, ownership changes, and role
+semantics across the gate and local server.
+
+Before stabilization, audit directory email visibility, deleted-user attribution,
+and pagination for larger teams. Core attribution uses `directory`.
+
+## Account authentication (`bb.sdk.experimental_auth`)
+
+`me` returns the current user; `session` returns authentication mode, bootstrap
+status, and the optional current user. `signIn`, `signUp`, and `signOut` use
+server-owned account authentication. `createToken({ name })`, `listTokens`,
+and `revokeToken({ id })` manage the caller's PATs. `createInvite({ email?,
+role? })`, `listInvites`, and `revokeInvite({ id })` require admin;
+`acceptInvite({ inviteToken, email, name, password })` creates an account using
+a single-use invite. Core routes, SDK, and `bb login`, `bb whoami`,
+`bb token`, and `bb invite` share these implementations. Node and browser SDK
+contexts accept `authToken`, sent in the Authorization header; Node's default
+WebSocket factory also uses it. Session cookies remain the browser default.
+
+Before stabilization, audit cookie handling, PAT lifecycle, invite expiry and
+revocation, last-admin protection, and the account settings UI's use of these
+same routes.
 
 ## `ThreadChatMessageReference.experimental_messageSeq`
 

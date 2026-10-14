@@ -49,15 +49,21 @@ export const modalRpcContract = defineRpcContract({
     output: definitionSchema,
   },
   "image.set": {
+    experimental_requiredRole: "admin",
     input: z.object({ dockerfile: dockerfileSchema }).strict(),
     output: definitionSchema,
   },
-  "image.reset": { input: z.object({}).strict(), output: definitionSchema },
+  "image.reset": {
+    experimental_requiredRole: "admin",
+    input: z.object({}).strict(),
+    output: definitionSchema,
+  },
   "launch.options": {
     input: z.object({}).strict(),
     output: modalLaunchOptionsSchema,
   },
   "launch.options.set": {
+    experimental_requiredRole: "admin",
     input: modalLaunchOptionsSchema,
     output: modalLaunchOptionsSchema,
   },
@@ -275,6 +281,7 @@ export function registerRpcAndCli(
           },
         }),
         "image set": cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Save a Dockerfile for future machines",
           options: {
             file: {
@@ -302,6 +309,7 @@ export function registerRpcAndCli(
           },
         }),
         "image reset": cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Restore the bundled Dockerfile",
           options: jsonOption,
           run(input) {

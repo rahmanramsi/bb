@@ -71,6 +71,7 @@ const question: PendingInteraction = {
   statusReason: null,
   createdAt: 1,
   resolvedAt: null,
+  resolvedByUserId: null,
   resolution: null,
   payload: {
     kind: "user_question",

@@ -115,6 +115,7 @@ const interaction: PluginPendingInteraction = {
   createdAt: 1,
   expiresAt: 2,
   resolvedAt: null,
+  resolvedByUserId: null,
 };
 
 afterEach(() => {

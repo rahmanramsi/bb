@@ -4,6 +4,7 @@
   "globalPassThroughEnv": ["npm_config_store_dir", "pnpm_config_store_dir"],
   "tasks": {
     "@bb/db#db:generate": { "cache": false },
+    "@bb/connect-db#db:generate": { "cache": false },
     "@bb/desktop#smoke:browser-broker": {
       "cache": false,
       "dependsOn": [

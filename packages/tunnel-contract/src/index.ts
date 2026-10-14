@@ -1,3 +1,4 @@
+export * from "./gate-identity.js";
 export const PROTOCOL_VERSION = 1;
 
 export const TUNNEL_PROTOCOL_QUERY_PARAM = "v";

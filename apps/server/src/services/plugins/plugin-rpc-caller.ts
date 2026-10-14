@@ -5,6 +5,7 @@ import {
   DEFAULT_BB_REQUEST_TIMEOUT_MS,
   type BbSdk,
 } from "@bb/sdk";
+import { createNodeWebsocketFactory } from "@bb/sdk/node-websocket";
 import type { ExperimentalPluginRpcCaller } from "@get-bb/plugin-sdk";
 
 export const PLUGIN_RPC_CALLER_HEADER = "x-bb-plugin-caller";
@@ -51,19 +52,27 @@ export function createPluginRpcCallerRegistry(): PluginRpcCallerRegistry {
   };
 }
 
-export function createPluginRpcCallerSdk(args: {
+export function createPluginLoopbackSdk(args: {
   baseUrl: string;
-  token: string;
+  callerToken: string | null;
+  serviceToken: string;
 }): BbSdk {
   const timeoutFetch = createRequestTimeoutFetch({
     timeoutMs: DEFAULT_BB_REQUEST_TIMEOUT_MS,
   });
+  const authorization = `Bearer ${args.serviceToken}`;
   return createNodeBbSdk({
     baseUrl: args.baseUrl,
     fetch: (input, init) => {
       const headers = new Headers(init?.headers);
-      headers.set(PLUGIN_RPC_CALLER_HEADER, args.token);
+      headers.set("authorization", authorization);
+      if (args.callerToken !== null) {
+        headers.set(PLUGIN_RPC_CALLER_HEADER, args.callerToken);
+      }
       return timeoutFetch(input, { ...init, headers });
     },
+    websocket: createNodeWebsocketFactory({
+      headers: { authorization },
+    }),
   });
 }

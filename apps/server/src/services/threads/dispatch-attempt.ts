@@ -20,9 +20,10 @@ import {
   type ResolvedThreadExecutionOptions,
   startedOnBehalfOfSchema,
   type StartedOnBehalfOf,
-  type Thread,
+  type ThreadRecord,
   type ThreadCreateOrigin,
   type ThreadQueuedMessage,
+  TEAM_THREAD_VIEWER_ID,
 } from "@bb/domain";
 import type { SendMessageRequest } from "@bb/server-contract";
 import type {
@@ -152,7 +153,7 @@ function intendedThreadIntent(
 
 export function intendedThreadEnvironmentIntent(
   deps: Pick<LoggedPendingInteractionWorkSessionDeps, "db">,
-  thread: Pick<Thread, "id" | "environmentId">,
+  thread: Pick<ThreadRecord, "id" | "environmentId">,
 ): PluginDispatchEnvironmentIntent | null {
   if (thread.environmentId !== null) {
     return { kind: "environment", environmentId: thread.environmentId };
@@ -180,7 +181,7 @@ export function intendedThreadHostId(
 
 export function threadTargetHostId(
   deps: Pick<LoggedPendingInteractionWorkSessionDeps, "db">,
-  thread: Pick<Thread, "id" | "environmentId">,
+  thread: Pick<ThreadRecord, "id" | "environmentId">,
 ): string | null {
   return thread.environmentId !== null
     ? (getEnvironment(deps.db, thread.environmentId)?.hostId ?? null)
@@ -226,7 +227,8 @@ export type DispatchAttemptSource =
     };
 
 export interface DispatchAttemptArgs {
-  thread: Thread;
+  thread: ThreadRecord;
+  authorUserId: string | null;
   payload: SendMessageRequest & { inputGroups?: PromptInput[][] };
   source: DispatchAttemptSource;
   /**
@@ -261,7 +263,7 @@ export type DispatchAttemptOutcome =
  * — not a separate code path — that decides which.
  */
 export function resolveDispatchAttemptKind(
-  thread: Thread,
+  thread: ThreadRecord,
   mode: SendMessageRequest["mode"],
 ): DispatchAttemptKind {
   if (thread.status !== "active") return "start-turn";
@@ -368,6 +370,7 @@ async function runDispatchAttempt(
     input: payload.input,
     execution,
     senderThreadId,
+    authorUserId: args.authorUserId,
     origin: args.origin,
     originPluginId: args.originPluginId,
     requestedBy: args.startedOnBehalfOf,
@@ -402,7 +405,7 @@ async function runDispatchAttempt(
   };
   const continued: {
     outcome: DispatchAttemptOutcome | null;
-    reattemptThread: Thread | null;
+    reattemptThread: ThreadRecord | null;
   } = {
     outcome: null,
     reattemptThread: null,
@@ -511,6 +514,7 @@ async function runDispatchAttempt(
 
     if (firstDispatch) {
       admitted.value = await admitPendingThread(deps, {
+        authorUserId: args.authorUserId,
         claimed,
         payload: resolvedPayload,
         respectManualStopPause,
@@ -527,7 +531,10 @@ async function runDispatchAttempt(
   if (!sendNow && hasMessageDispatchHooks()) {
     const outcome = await runMessageDispatchHookPass(deps, {
       thread,
-      threadResponse: toThreadResponseFromThread(deps, { thread }),
+      threadResponse: toThreadResponseFromThread(deps, {
+        thread,
+        viewerUserId: TEAM_THREAD_VIEWER_ID,
+      }),
       project: requirePublicProject(deps.db, thread.projectId),
       environmentId: thread.environmentId,
       intendedHostId:
@@ -608,6 +615,7 @@ async function runDispatchAttempt(
   const environment = await requireThreadCommandEnvironment(deps, { thread });
   try {
     await sendThreadMessage(deps, {
+      authorUserId: args.authorUserId,
       environment,
       payload: resolvedPayload,
       thread,
@@ -648,7 +656,7 @@ class DispatchThreadStatusChangedError extends Error {}
 function reattemptDispatchForThreadChange(
   deps: LoggedPendingInteractionWorkSessionDeps,
   args: DispatchAttemptArgs,
-  thread: Thread | null,
+  thread: ThreadRecord | null,
   reattempted: boolean,
 ): Promise<DispatchAttemptOutcome> {
   if (thread === null) {
@@ -689,17 +697,18 @@ function consumeClaimedRows(
 }
 
 interface AdmitPendingThreadArgs {
+  authorUserId: string | null;
   claimed: ClaimedQueuedThreadMessageRow[] | null;
   payload: SendMessageRequest & { inputGroups?: PromptInput[][] };
   respectManualStopPause: boolean;
   /** Creation's own record; null on a re-attempt, which reads it back. */
   startContext: PendingThreadStartContext | null;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 interface PendingThreadAdmission {
   claimedRow: ClaimedQueuedThreadMessageRow | null;
-  startingThread: Thread;
+  startingThread: ThreadRecord;
 }
 
 /**
@@ -749,7 +758,7 @@ async function admitPendingThread(
     threadId: args.thread.id,
   });
   const claimedRow = args.claimed?.[0] ?? null;
-  let startingThread: Thread;
+  let startingThread: ThreadRecord;
   try {
     startingThread = deps.db.transaction(
       (tx) => {
@@ -774,6 +783,7 @@ async function admitPendingThread(
         const starting = getThread(tx, args.thread.id);
         if (starting === null) throw new PendingThreadAdmissionLost();
         requestThreadProvision(deps, {
+          authorUserId: args.authorUserId,
           thread: starting,
           environmentIntent: startContext.environmentIntent,
           execution,

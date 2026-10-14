@@ -61,6 +61,7 @@ export interface ThreadDetailHeaderActionsMenuArgs {
 }
 
 interface ThreadDetailHeaderProps {
+  creator?: ReactNode;
   actionsMenu: ((args: ThreadDetailHeaderActionsMenuArgs) => ReactNode) | null;
   isSecondaryPanelOpen: boolean;
   onClosePane?: () => void;
@@ -74,6 +75,7 @@ interface ThreadDetailHeaderProps {
 }
 
 export function ThreadDetailHeader({
+  creator,
   actionsMenu,
   isSecondaryPanelOpen,
   onClosePane,
@@ -200,7 +202,7 @@ export function ThreadDetailHeader({
       >
         <p
           className={cn(
-            "relative min-w-0 text-sm font-normal transition-colors",
+            "relative flex min-w-0 items-center gap-2 text-sm font-normal transition-colors",
             isEditing && "overflow-visible",
             isSplitPaneHeader &&
               !isFocused &&
@@ -213,6 +215,7 @@ export function ThreadDetailHeader({
           onPointerDown={beginPaneDrag ? handleTitlePointerDown : undefined}
         >
           {isEditing ? editor : <ThreadTitle title={threadTitle} />}
+          {creator}
         </p>
       </div>
       {actionsMenu == null ? null : (

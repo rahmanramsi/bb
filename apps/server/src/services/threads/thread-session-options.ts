@@ -10,7 +10,7 @@ import {
   threadSessionOptionsStateSchema,
   type SessionOptionSelectionPatch,
   type SessionOptionSelections,
-  type Thread,
+  type ThreadRecord,
   type ThreadSessionOption,
 } from "@bb/domain";
 import { ApiError } from "../../errors.js";
@@ -94,7 +94,7 @@ function sameSelections(
 
 export function seedThreadSessionOptionSelections(
   deps: Pick<AppDeps, "db" | "hub">,
-  args: { thread: Thread; selections: SessionOptionSelections },
+  args: { thread: ThreadRecord; selections: SessionOptionSelections },
 ): void {
   if (Object.keys(args.selections).length === 0) {
     return;
@@ -141,7 +141,7 @@ export function resolvePendingThreadSessionOptions(
 
 export function applyThreadSessionOptionPatch(
   deps: Pick<AppDeps, "db" | "hub">,
-  args: { thread: Thread; patch: SessionOptionSelectionPatch },
+  args: { thread: ThreadRecord; patch: SessionOptionSelectionPatch },
 ): void {
   const state = readThreadSessionOptionState(deps.db, args.thread.id);
   const result = applySessionOptionSelectionPatch({

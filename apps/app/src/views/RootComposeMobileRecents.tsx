@@ -3,6 +3,7 @@ import { useAtom } from "jotai";
 import type { ProviderInfo, ThreadListEntry } from "@bb/domain";
 import { RouteAnchor } from "@/components/ui/app-route-anchor";
 import { ThreadStatusGlyph } from "@/components/thread/ThreadStatusGlyph";
+import { ThreadCreator } from "@/components/thread/ThreadCreator";
 import { ThreadActionsContextMenu } from "@/components/thread/ThreadActionsMenu";
 import { threadListEntryActionTarget } from "@/lib/thread-actions/thread-action-target";
 import { getSidebarThreadRowPaddingLeft } from "@bb/shared-ui/sidebar-row-classes";
@@ -385,6 +386,7 @@ function MobileRecentThreadRow({
                 title={getThreadDisplayTitle(thread)}
                 className={cn("font-medium", COARSE_POINTER_TEXT_BASE_CLASS)}
               />
+              <ThreadCreator userId={thread.createdByUserId} />
             </span>
             <span
               className={cn(

@@ -3,6 +3,7 @@ import { SETTINGS_ROUTE_PATH, getSettingsRoutePath } from "@/lib/route-paths";
 
 export const SETTINGS_NAV_SECTIONS = [
   { icon: "Settings", id: "general", label: "General" },
+  { icon: "Lock", id: "account", label: "Account" },
   { icon: "Bot", id: "providers", label: "Providers" },
   { icon: "AiBrain01", id: "ai-services", label: "AI services" },
   { icon: "Palette", id: "appearance", label: "Appearance" },

@@ -268,6 +268,12 @@ export interface PluginTurnFailedEvent {
  *
  * `thread` is the same public DTO GET /threads/:id serves and `entry` is the
  * queued row GET /threads/:id/queued-messages serves.
+ *
+ * Plugins act for the whole team, so per-user thread state in `thread` and in
+ * `bb.sdk` thread reads is team-wide: `pinnedAt` is the most recent pin by any
+ * user, null only when nobody has the thread pinned. `pinSortKey` and
+ * `lastReadAt` come from that same user's state, or from the user who read the
+ * thread most recently when nobody pinned it.
  */
 export interface PluginThreadEventPayloads {
   "experimental_environment.removed": { removal: EnvironmentRemoval };
@@ -947,6 +953,12 @@ export interface PluginCliContext {
   projectId?: string;
   /** Aborted when the invoking CLI HTTP request disconnects. */
   signal?: AbortSignal;
+  /**
+   * The invoking user's server role. bb always sets it. `defineCli` treats a
+   * missing role as a member, so commands that require an admin refuse to
+   * run when code calls `run` without one.
+   */
+  experimental_callerRole?: "admin" | "member";
 }
 
 export type PluginInteractionCancelReason =

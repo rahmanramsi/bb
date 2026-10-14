@@ -1,4 +1,6 @@
 import { MobileAppSection } from "@/components/settings/MobileAppSection";
+import { AccountSettings } from "@/components/settings/AccountSettings";
+import { useAuth } from "@/hooks/useAuth";
 import { MachineEnvironmentSettings } from "@/components/settings/MachineEnvironmentSettings";
 import { MachineAccessSettings } from "@/components/settings/MachineAccessSettings";
 import { useMemo, useRef, useState, type ReactNode } from "react";
@@ -1156,6 +1158,7 @@ export function ExperimentsSettingsSection({
 }
 
 export function SettingsView() {
+  const auth = useAuth();
   const navigate = useNavigate();
   const themePreference = useThemePreference();
   const systemConfigQuery = useSystemConfig();
@@ -1184,8 +1187,26 @@ export function SettingsView() {
   const updateAppearanceMutation = useUpdateAppearance();
   const appThemePreview = useAppThemePreview();
   const location = useLocation();
-  const { activePluginId, activeSection, hasUnknownSection } =
+  const { activePluginId, activeSection, hasUnknownSection, sections } =
     useSettingsNavState();
+  if (
+    (activeSection === "account" && auth?.authMode !== "multi") ||
+    (auth?.authMode === "multi" &&
+      auth.user?.role !== "admin" &&
+      (activePluginId !== null ||
+        !sections.some((section) => section.id === activeSection)))
+  ) {
+    return (
+      <Navigate
+        to={
+          auth?.authMode === "multi"
+            ? "/settings/appearance"
+            : SETTINGS_ROUTE_PATH
+        }
+        replace
+      />
+    );
+  }
   if (hasUnknownSection) {
     return <Navigate to={SETTINGS_ROUTE_PATH} replace />;
   }
@@ -1207,14 +1228,14 @@ export function SettingsView() {
   }
 
   let content: ReactNode = null;
-  if (activePluginId !== null) {
+  if (activeSection === "account") {
+    content = <AccountSettings />;
+  } else if (activePluginId !== null) {
     content = <PluginSettingsPage pluginId={activePluginId} />;
   } else if (activeSection === "providers") {
     content = (
       <ProvidersSettingsSection
-        disabled={
-          systemConfigQuery.data === undefined
-        }
+        disabled={systemConfigQuery.data === undefined}
         generalSettings={generalSettings}
         onGeneralSettingsChange={(next) =>
           updateGeneralSettingsMutation.mutateAsync(next)
@@ -1305,9 +1326,7 @@ export function SettingsView() {
   } else if (activeSection === "experiments") {
     content = (
       <ExperimentsSettingsSection
-        disabled={
-          systemConfigQuery.data === undefined
-        }
+        disabled={systemConfigQuery.data === undefined}
         experiments={experiments}
         performanceDiagnosticsAvailable={
           systemConfigQuery.data?.performanceDiagnosticsAvailable ?? false
@@ -1355,9 +1374,7 @@ export function SettingsView() {
             })
           }
           desktopBrowserAvailable={desktopBrowserAvailable}
-          generalSettingsDisabled={
-            systemConfigQuery.data === undefined
-          }
+          generalSettingsDisabled={systemConfigQuery.data === undefined}
           managedBranchPrefix={generalSettings.managedBranchPrefix}
           onManagedBranchPrefixChange={async (prefix) => {
             await updateGeneralSettingsMutation.mutateAsync({
@@ -1394,9 +1411,7 @@ export function SettingsView() {
             })
           }
           enabled={generalSettings.showDiagnosticEvents}
-          disabled={
-            systemConfigQuery.data === undefined
-          }
+          disabled={systemConfigQuery.data === undefined}
           onEnabledChange={(enabled) =>
             updateGeneralSettingsMutation.mutate({
               showDiagnosticEvents: enabled,

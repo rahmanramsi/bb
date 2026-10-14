@@ -124,7 +124,7 @@ import type {
 import { requestEnvironmentProviderRecheck } from "./plugin-environment-provider-registry.js";
 import { requestServerAccessRecheck } from "./plugin-server-access-registry.js";
 import {
-  createPluginRpcCallerSdk,
+  createPluginLoopbackSdk,
   type PluginRpcCallerCredential,
 } from "./plugin-rpc-caller.js";
 import type { ServerLogger } from "../../types.js";
@@ -192,6 +192,7 @@ export interface PluginWebSocketRouteRecord {
 
 export interface PluginRpcHandler {
   publication: ReturnType<typeof publishRpcMethod>;
+  requiredRole: "admin" | null;
   inputSchema: StandardSchemaV1;
   outputSchema: StandardSchemaV1;
   handler: (
@@ -486,6 +487,7 @@ export function createPluginApi(options: {
   getMachineEnrollments: () => MachineEnrollments;
   getAppUrl: () => string | null;
   getLoopbackBaseUrl: () => string | undefined;
+  getServiceToken: () => string | undefined;
   /**
    * This load's rpc caller token, attached to the plugin's
    * `bb.sdk.plugins.callRpc` requests so handlers see it as the caller.
@@ -556,6 +558,7 @@ export function createPluginApi(options: {
     getSdk,
     getAppUrl,
     getLoopbackBaseUrl,
+    getServiceToken,
     rpcCaller,
     publishSignal,
     settingsChanged,
@@ -1348,7 +1351,8 @@ export function createPluginApi(options: {
       assertLive();
       const sdk = getSdk();
       const loopbackBaseUrl = getLoopbackBaseUrl();
-      if (!sdk || loopbackBaseUrl === undefined) {
+      const serviceToken = getServiceToken();
+      if (!sdk || loopbackBaseUrl === undefined || serviceToken === undefined) {
         throw new Error(
           "bb.sdk is not available until the server is listening — " +
             "use it inside handlers, services, or timers, not at factory load time",
@@ -1357,9 +1361,10 @@ export function createPluginApi(options: {
       wrappedSdk ??= wrapSdkForPlugin(
         sdk,
         pluginId,
-        createPluginRpcCallerSdk({
+        createPluginLoopbackSdk({
           baseUrl: loopbackBaseUrl,
-          token: rpcCaller.token,
+          callerToken: rpcCaller.token,
+          serviceToken,
         }),
       );
       return wrappedSdk;

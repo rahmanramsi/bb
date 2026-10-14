@@ -13,6 +13,7 @@ import {
   type ThreadPullRequest,
   type ThreadTimelinePendingTodos,
   type WorkspaceStatus,
+  LOCAL_OWNER_USER_ID,
 } from "@bb/domain";
 import { BbHttpError, type BbSdk } from "@bb/sdk";
 import type {
@@ -581,6 +582,12 @@ function printThreadStatus(
     printEnvironmentPullRequest(pullRequest);
   }
   console.log(`  Created: ${new Date(thread.createdAt).toLocaleString()}`);
+  if (
+    thread.createdByUserId !== null &&
+    thread.createdByUserId !== LOCAL_OWNER_USER_ID
+  ) {
+    console.log(`  Created by: ${thread.createdByUserId}`);
+  }
   console.log(`  Updated: ${new Date(thread.updatedAt).toLocaleString()}`);
 }
 

@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { describe, expect, it } from "vitest";
 import type { PromptHistoryScope, PromptInput } from "@bb/domain";
 import { createConnection } from "../../src/connection.js";
@@ -63,7 +64,7 @@ function insert(
     threadId: string;
   },
 ) {
-  return createPromptHistoryEntry(db, args);
+  return createPromptHistoryEntry(db, { ...args, userId: LOCAL_OWNER_USER_ID });
 }
 
 describe("prompt history page query", () => {
@@ -115,7 +116,11 @@ describe("prompt history page query", () => {
     const pages: string[][] = [];
     let before = null;
     do {
-      const page = listPromptHistoryPage(fixture.db, { before, limit: 3 });
+      const page = listPromptHistoryPage(fixture.db, {
+        userId: LOCAL_OWNER_USER_ID,
+        before,
+        limit: 3,
+      });
       pages.push(page.map((row) => row.id));
       const last = page.at(-1);
       before = page.length === 3 && last !== undefined ? last : null;
@@ -140,9 +145,11 @@ describe("prompt history page query", () => {
     });
 
     expect(
-      listPromptHistoryPage(fixture.db, { before: null, limit: 10 }).map(
-        (entry) => entry.id,
-      ),
+      listPromptHistoryPage(fixture.db, {
+        userId: LOCAL_OWNER_USER_ID,
+        before: null,
+        limit: 10,
+      }).map((entry) => entry.id),
     ).toEqual([row.id]);
   });
 });

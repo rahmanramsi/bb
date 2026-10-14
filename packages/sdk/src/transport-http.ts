@@ -12,7 +12,21 @@ export function createHttpTransport(
   args: CreateHttpTransportArgs,
 ): BbSdkTransport {
   const baseUrl = args.baseUrl ?? SAME_ORIGIN_BASE_URL;
-  const fetchImpl = args.fetch ?? fetch;
+  const baseFetch = args.fetch ?? fetch;
+  const token = args.context?.authToken;
+  const fetchImpl: typeof baseFetch =
+    token === undefined
+      ? baseFetch
+      : (input, init) => {
+          const headers = new Headers(
+            input instanceof Request ? input.headers : undefined,
+          );
+          new Headers(init?.headers).forEach((value, key) =>
+            headers.set(key, value),
+          );
+          headers.set("authorization", `Bearer ${token}`);
+          return baseFetch(input, { ...init, headers });
+        };
   const client = createApiClient(baseUrl, { fetch: fetchImpl });
 
   return {

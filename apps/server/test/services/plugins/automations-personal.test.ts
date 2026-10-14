@@ -7,7 +7,10 @@ describe("Personal automations", () => {
   it("creates and updates an hourly script through the real project SDK", async () => {
     const server = await startTestServer();
     try {
-      server.pluginService.bindSdk({ baseUrl: server.baseUrl });
+      server.pluginService.bindSdk({
+        baseUrl: server.baseUrl,
+        serviceToken: server.deps.userAuth.serviceToken,
+      });
       const entry = await server.pluginService.install("builtin:automations", {
         kind: "root",
       });

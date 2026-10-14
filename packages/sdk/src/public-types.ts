@@ -27,6 +27,7 @@ export type * from "./areas/guide.js";
 export type * from "./areas/hosts.js";
 export type * from "./areas/plugins.js";
 export type * from "./areas/prompt-history.js";
+export type * from "./areas/users.js";
 export type * from "./areas/projects.js";
 export type * from "./areas/providers.js";
 export type * from "./areas/status.js";
@@ -37,3 +38,5 @@ export type * from "./areas/thread-sections.js";
 export type * from "./areas/threads.js";
 export type * from "./areas/desktop-browsers.js";
 export type * from "./areas/server.js";
+
+export type * from "./areas/auth.js";

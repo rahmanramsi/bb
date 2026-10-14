@@ -18,7 +18,7 @@ import {
   threadEventTypeSchema,
   type AppSettings,
   type CompletedTurnDisplay,
-  type Thread,
+  type ThreadRecord,
   type ThreadEventType,
 } from "@bb/domain";
 import {
@@ -32,6 +32,7 @@ import {
 import type { AppDeps } from "../../types.js";
 import { COMMAND_TIMEOUT_MS } from "../../constants.js";
 import { ApiError } from "../../errors.js";
+import { requirePrincipal } from "../../request-context.js";
 import { requirePublicThread } from "../../services/lib/entity-lookup.js";
 import { callHostRetryableOnlineRpc } from "../../services/hosts/online-rpc.js";
 import { requireThreadStorageTarget } from "../../services/threads/thread-storage.js";
@@ -213,7 +214,7 @@ export function registerThreadDataRoutes(app: Hono, deps: AppDeps): void {
     ThreadConversationOutlineResponse["items"]
   >();
   const CONVERSATION_OUTLINE_CACHE_MAX_ENTRIES = 128;
-  const resolveConversationRowsOptions = (thread: Thread) => {
+  const resolveConversationRowsOptions = (thread: ThreadRecord) => {
     const providerDisplayName = resolveThreadProviderDisplayName(
       deps,
       thread.providerId,
@@ -500,6 +501,7 @@ export function registerThreadDataRoutes(app: Hono, deps: AppDeps): void {
       listThreadPromptHistory(deps, {
         threadId,
         limit,
+        userId: requirePrincipal(context).userId,
       }),
     );
   });

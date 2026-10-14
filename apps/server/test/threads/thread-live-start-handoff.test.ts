@@ -5,7 +5,7 @@ import {
   threadScope,
   turnScope,
   type ResolvedThreadExecutionOptions,
-  type Thread,
+  type ThreadRecord,
 } from "@bb/domain";
 import { groupHostDaemonEvents } from "@bb/host-daemon-contract";
 import { describe, expect, it } from "vitest";
@@ -48,8 +48,8 @@ interface StartLiveThreadStartRpcArgs {
 interface LiveThreadStartRpcFixture {
   environment: EnvironmentRow;
   startCommand: QueuedCommand;
-  thread: Thread;
-  owner: Thread;
+  thread: ThreadRecord;
+  owner: ThreadRecord;
 }
 
 interface FailLiveStartRpcArgs {
@@ -82,6 +82,7 @@ async function startLiveThreadStartRpc(
   });
 
   await requestThreadStart(args.harness.deps, {
+    authorUserId: null,
     thread,
     environment,
     fork: null,

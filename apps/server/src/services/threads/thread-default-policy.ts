@@ -4,7 +4,7 @@ import type {
   ProjectExecutionDefaults,
   RecordedPermissionMode,
   ReasoningLevel,
-  Thread,
+  ThreadRecord,
 } from "@bb/domain";
 import { getEnvironment } from "@bb/db";
 import { DEFAULT_ENVIRONMENT_PROVIDER_ID } from "../environments/environment-provider-ids.js";
@@ -74,11 +74,11 @@ interface CreateThreadExecutionDefaultsResolved {
 
 interface IsManagedChildThreadArgs {
   parentThread?: ParentThread | null;
-  thread: Pick<Thread, "parentThreadId" | "projectId">;
+  thread: Pick<ThreadRecord, "parentThreadId" | "projectId">;
 }
 
 interface ResolveThreadDefaultPermissionModeArgs {
-  thread: Pick<Thread, "providerId">;
+  thread: Pick<ThreadRecord, "providerId">;
 }
 
 interface ResolveThreadExecutionPermissionModeArgs {
@@ -88,7 +88,7 @@ interface ResolveThreadExecutionPermissionModeArgs {
   projectExecutionPermissionMode?: PermissionMode;
   requestedPermissionMode?: PermissionMode;
   thread: Pick<
-    Thread,
+    ThreadRecord,
     "originKind" | "parentThreadId" | "projectId" | "providerId"
   >;
 }

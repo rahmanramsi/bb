@@ -19,6 +19,7 @@ import type {
 } from "./transport.js";
 
 export interface CreateNodeTransportArgs {
+  context?: BbSdkContext;
   baseUrl?: string;
   cliConfig?: CliConfig;
   fetch?: FetchImplementation;
@@ -27,9 +28,7 @@ export interface CreateNodeTransportArgs {
   websocket?: BbRealtimeSocketFactory;
 }
 
-export interface CreateNodeBbSdkArgs extends CreateNodeTransportArgs {
-  context?: BbSdkContext;
-}
+export interface CreateNodeBbSdkArgs extends CreateNodeTransportArgs {}
 
 export interface FetchLocalHostIdArgs {
   cliConfig?: CliConfig;
@@ -49,6 +48,7 @@ export function createNodeTransport(
   args: CreateNodeTransportArgs = {},
 ): BbSdkTransport {
   return createHttpTransport({
+    context: args.context,
     baseUrl: args.baseUrl ?? resolveCliConfig(args.cliConfig).BB_SERVER_URL,
     fetch:
       args.fetch ??
@@ -57,7 +57,14 @@ export function createNodeTransport(
       }),
     realtimeUrl: args.realtimeUrl,
     runtime: "node",
-    websocket: args.websocket ?? createNodeWebsocketFactory(),
+    websocket:
+      args.websocket ??
+      createNodeWebsocketFactory({
+        headers:
+          args.context?.authToken === undefined
+            ? undefined
+            : { authorization: `Bearer ${args.context.authToken}` },
+      }),
   });
 }
 

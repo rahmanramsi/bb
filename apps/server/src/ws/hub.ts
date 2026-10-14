@@ -221,6 +221,7 @@ export class HostOnlineRpcUnavailableError extends Error {
 export class NotificationHub implements DbNotifier {
   private readonly clientKeysBySocket = new Map<HubSocket, Set<string>>();
   private readonly clientSocketsByKey = new Map<string, Set<HubSocket>>();
+  private readonly clientUserIdsBySocket = new Map<HubSocket, string>();
   private readonly daemonSessions = new Map<
     string,
     {
@@ -281,7 +282,12 @@ export class NotificationHub implements DbNotifier {
     PendingThreadListEventsAppended
   >();
 
-  registerClient(socket: HubSocket): void {
+  registerClient(socket: HubSocket, userId: string): void {
+    this.ensureClientKeys(socket);
+    this.clientUserIdsBySocket.set(socket, userId);
+  }
+
+  private ensureClientKeys(socket: HubSocket): void {
     if (!this.clientKeysBySocket.has(socket)) {
       this.clientKeysBySocket.set(socket, new Set());
     }
@@ -289,6 +295,7 @@ export class NotificationHub implements DbNotifier {
 
   unregisterClient(socket: HubSocket): void {
     this.unregisterTerminalClientSocket(socket);
+    this.clientUserIdsBySocket.delete(socket);
     const keys = this.clientKeysBySocket.get(socket);
     if (!keys) {
       return;
@@ -520,7 +527,7 @@ export class NotificationHub implements DbNotifier {
   }
 
   subscribe(socket: HubSocket, target: RealtimeSubscriptionTarget): void {
-    this.registerClient(socket);
+    this.ensureClientKeys(socket);
     const key = subscriptionKey(target);
     this.clientKeysBySocket.get(socket)?.add(key);
 
@@ -969,6 +976,48 @@ export class NotificationHub implements DbNotifier {
       entity: "system",
       changes,
     });
+  }
+
+  notifyUserThread(
+    userId: string,
+    threadId: string,
+    changes: ThreadChangeKind[],
+    metadata?: ThreadChangeMetadata,
+  ): void {
+    this.notifyUserClients(userId, {
+      type: "changed",
+      entity: "thread",
+      id: threadId,
+      ...(metadata ? { metadata } : {}),
+      changes,
+    });
+  }
+
+  notifyUserSystem(userId: string, changes: SystemChangeKind[]): void {
+    this.notifyUserClients(userId, {
+      type: "changed",
+      entity: "system",
+      changes,
+    });
+  }
+
+  private notifyUserClients(
+    userId: string,
+    message: ServerChangedMessage,
+  ): void {
+    const payload = serializeServerMessage(message);
+    if (payload === null) {
+      return;
+    }
+    const sockets = new Set<HubSocket>();
+    for (const key of subscriptionKeysForMessage(message)) {
+      for (const socket of this.clientSocketsByKey.get(key) ?? []) {
+        if (this.clientUserIdsBySocket.get(socket) === userId) {
+          sockets.add(socket);
+        }
+      }
+    }
+    this.notifyClientsByKeySet(sockets, payload);
   }
 
   private deleteThreadEventWaiter(

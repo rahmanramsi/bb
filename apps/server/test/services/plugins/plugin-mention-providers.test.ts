@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createConnection, migrate, type DbConnection } from "@bb/db";
-import { type PromptInput } from "@bb/domain";
+import { type PromptInput, LOCAL_OWNER_USER_ID } from "@bb/domain";
 import type { Logger } from "@bb/logger";
 import { createAiServiceRegistry } from "../../../src/services/ai/ai-service-registry.js";
 import {
@@ -345,6 +345,7 @@ describe("plugin mention providers (bb.ui.registerMentionProvider)", () => {
     const { environment, thread } = seedColdIdleThreadFixture(harness, 1);
 
     await sendThreadMessage(harness.deps, {
+      authorUserId: LOCAL_OWNER_USER_ID,
       environment,
       payload: {
         input: pluginMentionInput({
@@ -401,6 +402,7 @@ describe("plugin mention providers (bb.ui.registerMentionProvider)", () => {
     const { environment, thread } = seedColdIdleThreadFixture(harness, 11);
 
     await sendThreadMessage(harness.deps, {
+      authorUserId: LOCAL_OWNER_USER_ID,
       environment,
       payload: {
         input: pluginMentionInput({
@@ -496,6 +498,7 @@ describe("plugin mention providers (bb.ui.registerMentionProvider)", () => {
 
     await expect(
       sendThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
           input: pluginMentionInput({
@@ -542,6 +545,7 @@ describe("plugin mention providers (bb.ui.registerMentionProvider)", () => {
     await harness.pluginService.setEnabled("mentions", false);
     await expect(
       sendThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
           ...basePayload,
@@ -563,6 +567,7 @@ describe("plugin mention providers (bb.ui.registerMentionProvider)", () => {
 
     await expect(
       sendThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
           ...basePayload,
@@ -580,6 +585,7 @@ describe("plugin mention providers (bb.ui.registerMentionProvider)", () => {
 
     await expect(
       sendThreadMessage(harness.deps, {
+        authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
           ...basePayload,

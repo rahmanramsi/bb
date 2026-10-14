@@ -1,3 +1,4 @@
+import { actAsLocalOwner } from "../../helpers/principal.js";
 import { registerPluginUpdateJobRoutes } from "../../../src/routes/plugin-update-jobs.js";
 import { pluginUpdateJobResponseSchema } from "@bb/server-contract";
 import { createPluginUpdateJobs } from "../../../src/services/plugins/plugin-update-jobs.js";
@@ -366,6 +367,7 @@ describe("plugin update service and routes", () => {
     });
     await service.install(`git:${repo}@main`, { kind: "root" });
     app = new Hono();
+    actAsLocalOwner(app);
     const updateJobs = createPluginUpdateJobs({ notifyChanged: () => {} });
     registerPluginUpdateJobRoutes(app, updateJobs);
     registerPluginRoutes(

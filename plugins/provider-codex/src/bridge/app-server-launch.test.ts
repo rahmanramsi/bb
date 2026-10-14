@@ -7,6 +7,7 @@ describe("Codex Account Pool launch", () => {
   it("adds an in-memory base URL and environment-backed hub header", () => {
     vi.stubEnv("CODEX_OPENAI_BASE_URL", "https://bb.example/pool/v1");
     vi.stubEnv("CODEX_POOL_AUTH_TOKEN", "secret-machine-token");
+    vi.stubEnv("BB_PLUGIN_USER_TOKEN", "secret-user-token");
     const launch = resolveAppServerLaunch();
     expect(launch.command).toBe("codex");
     expect(launch.args).toContain(
@@ -20,6 +21,10 @@ describe("Codex Account Pool launch", () => {
       "model_providers.bb-account-pool.supports_websockets=false",
     );
     expect(JSON.stringify(launch.args)).not.toContain("secret-machine-token");
+    expect(launch.args).toContain(
+      'model_providers.bb-account-pool.env_http_headers.x-bb-user-token="BB_PLUGIN_USER_TOKEN"',
+    );
+    expect(JSON.stringify(launch.args)).not.toContain("secret-user-token");
   });
 
   it("leaves Codex's default transport alone when the pool is not routed", () => {

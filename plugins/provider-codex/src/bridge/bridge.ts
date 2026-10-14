@@ -382,6 +382,12 @@ export function resolveAppServerLaunch(env: NodeJS.ProcessEnv = process.env): {
       "model_providers.bb-account-pool.supports_websockets=false",
       "-c",
       'model_providers.bb-account-pool.env_http_headers.x-bb-account-pool-token="CODEX_POOL_AUTH_TOKEN"',
+      ...(env.BB_PLUGIN_USER_TOKEN
+        ? [
+            "-c",
+            'model_providers.bb-account-pool.env_http_headers.x-bb-user-token="BB_PLUGIN_USER_TOKEN"',
+          ]
+        : []),
     ],
   };
 }
@@ -393,6 +399,7 @@ function appServerLaunchEnv(
   const poolAuthToken = envVars?.[CODEX_POOL_AUTH_TOKEN_ENV];
   return {
     ...process.env,
+    BB_PLUGIN_USER_TOKEN: envVars?.BB_PLUGIN_USER_TOKEN ?? "",
     ...(poolBaseUrl === undefined
       ? {}
       : { [CODEX_POOL_BASE_URL_ENV]: poolBaseUrl }),

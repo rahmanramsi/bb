@@ -3,13 +3,14 @@ import {
   mergeHostAndProviderEnvironment,
 } from "../hosts/host-environment.js";
 import { getEnvironment, getHost, getProject } from "@bb/db";
-import type {
-  DynamicTool,
-  InstructionMode,
-  PermissionEscalation,
-  Thread,
-  ThreadTurnInitiator,
-  EnvironmentStatus,
+import {
+  LOCAL_OWNER_USER_ID,
+  type DynamicTool,
+  type InstructionMode,
+  type PermissionEscalation,
+  type ThreadRecord,
+  type ThreadTurnInitiator,
+  type EnvironmentStatus,
 } from "@bb/domain";
 import type {
   HostDaemonContributedEnvEntry,
@@ -37,6 +38,8 @@ import {
 import { readWorkspaceAgentContext } from "./workspace-agent-context.js";
 import { resolveDeprecatedWorkspaceProvisionType } from "../environments/environment-response.js";
 import { markTurnTraceSpan } from "../system/turn-trace.js";
+import { issueThreadShellToken } from "../user-auth.js";
+import { MACHINE_AUTH_SYSTEM_USER_ID } from "../machine-auth.js";
 
 const UPDATE_ENVIRONMENT_DIRECTORY_INSTRUCTIONS =
   "If the user asks you to move this thread to another checkout, worktree, or directory, make sure the target directory exists, then call `update_environment_directory` with its absolute path. After it succeeds, stop work in the current turn; future turns will run in the updated environment.";
@@ -51,9 +54,10 @@ export interface ThreadRuntimeCommandEnvironment {
 }
 
 interface ResolveThreadRuntimeCommandConfigArgs {
+  authorUserId: string | null;
   environment: ThreadRuntimeCommandEnvironment;
   model: string;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 interface ResolvePermissionEscalationArgs {
@@ -113,6 +117,20 @@ export function resolvePermissionEscalation(
   }
 
   return "ask";
+}
+
+function threadShellUserId(
+  args: ResolveThreadRuntimeCommandConfigArgs,
+): string | null {
+  const userId = args.authorUserId ?? args.thread.createdByUserId;
+  if (
+    userId === null ||
+    userId === LOCAL_OWNER_USER_ID ||
+    userId === MACHINE_AUTH_SYSTEM_USER_ID
+  ) {
+    return null;
+  }
+  return userId;
 }
 
 export async function resolveThreadRuntimeCommandConfig(
@@ -200,6 +218,47 @@ export async function resolveThreadRuntimeCommandConfig(
       },
     }),
   );
+  if (deps.config.authMode === "multi") {
+    for (let index = contributedEnv.length - 1; index >= 0; index -= 1) {
+      if (
+        contributedEnv[index].name === "BB_TOKEN" ||
+        contributedEnv[index].name === "BB_PLUGIN_USER_TOKEN"
+      )
+        contributedEnv.splice(index, 1);
+    }
+    const shellUserId = threadShellUserId(args);
+    if (shellUserId !== null) {
+      const token = await issueThreadShellToken(
+        deps.config.dataDir,
+        shellUserId,
+      );
+      contributedEnv.push({
+        name: "BB_TOKEN",
+        value: token,
+        source: { core: "thread-auth" },
+        reason:
+          "Authenticate the thread shell with the server account of the user who sent the turn",
+      });
+      if (
+        contributedEnv.some(
+          (entry) =>
+            (entry.name === "ANTHROPIC_BASE_URL" ||
+              entry.name === "CODEX_OPENAI_BASE_URL") &&
+            entry.value !== "" &&
+            "plugin" in entry.source &&
+            entry.source.plugin === "account-pool",
+        )
+      ) {
+        contributedEnv.push({
+          name: "BB_PLUGIN_USER_TOKEN",
+          value: token,
+          source: { core: "thread-auth" },
+          reason:
+            "Authenticate pooled provider requests as the user who sent the turn",
+        });
+      }
+    }
+  }
   markTurnTraceSpan("runtimeConfig.env");
   const injectedSkillSources = resolveSkillCatalog(deps, {
     projectSkillSources: workspaceAgentContext.projectSkillSources,

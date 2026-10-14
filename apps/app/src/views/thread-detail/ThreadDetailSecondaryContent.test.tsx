@@ -128,7 +128,6 @@ vi.mock(
       ThreadMetadataContent: (
         _props: ComponentProps<typeof actual.ThreadMetadataContent>,
       ) => React.createElement("div", { "data-testid": "metadata-content" }),
-      hasAnyThreadMetadata: () => false,
     };
   },
 );
@@ -242,6 +241,7 @@ function makeThread(): ThreadDetailSecondaryContentProps["metadata"]["thread"] {
     environmentId: null,
     id: "thread-1",
     lastReadAt: null,
+    createdByUserId: null,
     latestAttentionAt: 0,
     parentThreadId: null,
     pinnedAt: null,
@@ -458,6 +458,36 @@ describe("ThreadDetailSecondaryContent", () => {
       ),
     ).toBe(true);
   });
+
+  it.each([
+    ["usr_local_owner", false],
+    ["usr_bob", true],
+  ] as const)(
+    "shows creator metadata before its environment is assigned for %s: %s",
+    async (createdByUserId, visible) => {
+      const props = createProps();
+      props.metadata.thread.createdByUserId = createdByUserId;
+      render(
+        <MemoryRouter>
+          <DefaultPaneContextProvider
+            onRequestClose={null}
+            navigateInPane={noop}
+          >
+            <CompactViewportOverrideProvider isCompactViewport={false}>
+              <ThreadDetailSecondaryContent {...props} />
+            </CompactViewportOverrideProvider>
+          </DefaultPaneContextProvider>
+        </MemoryRouter>,
+      );
+      const panel = await screen.findByTestId("inline-secondary-panel");
+      expect(panel.contains(screen.queryByTestId("metadata-content"))).toBe(
+        visible,
+      );
+      expect(screen.queryByText("No thread details available.") === null).toBe(
+        visible,
+      );
+    },
+  );
 
   it("pins a split browser pane to its tab and gates native commands by pane focus", async () => {
     const renderBrowserDeck = vi.fn(() => null);

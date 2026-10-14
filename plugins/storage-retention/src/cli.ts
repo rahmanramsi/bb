@@ -1,6 +1,7 @@
 import type { Storage } from "./storage.js";
 import {
   cliCommand,
+  experimental_assertCliAdmin,
   defineCli,
   type BbPluginApi,
   type PluginCliResult,
@@ -62,6 +63,7 @@ export function registerCli(
       }),
       commands: {
         cleanup: cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Start background cleanup; read progress with storage usage",
           options: {
             machine: MACHINE,
@@ -118,8 +120,13 @@ export function registerCli(
             },
             yes: YES,
           },
-          run: (input) =>
-            output(async () => {
+          run: (input, ctx) => {
+            if (input.options.save)
+              experimental_assertCliAdmin(
+                ctx,
+                "Saving the storage retention policy",
+              );
+            return output(async () => {
               const state = await service.state();
               const cleanup = input.options["delete-storage-on-archive"];
               const devCleanup =
@@ -159,7 +166,8 @@ export function registerCli(
               )
                 return { policy, preview: await service.preview(policy) };
               return state;
-            }),
+            });
+          },
         }),
         usage: cliCommand({
           summary:
@@ -186,6 +194,7 @@ export function registerCli(
             }),
         }),
         "remove-orphans": cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Remove orphaned storage from the last scan",
           options: { machine: MACHINE, yes: YES },
           run: (input) =>
@@ -200,6 +209,7 @@ export function registerCli(
             }),
         }),
         "clear-large-files": cliCommand({
+          experimental_requiredRole: "admin",
           summary:
             "Delete files of 10 MB or more from archived threads on --machine, or on every scanned online machine",
           options: { machine: MACHINE, yes: YES },
@@ -242,6 +252,7 @@ export function registerCli(
             }),
         }),
         "clear-archived-files": cliCommand({
+          experimental_requiredRole: "admin",
           summary:
             "Clear all stored files from archived, stopped, unpinned threads on a machine",
           options: { machine: MACHINE, yes: YES },
@@ -257,6 +268,7 @@ export function registerCli(
             }),
         }),
         "remove-dev-instances": cliCommand({
+          experimental_requiredRole: "admin",
           summary:
             "Remove ~/.bb-dev instances whose source checkout no longer exists, stopping servers still running from them",
           options: {

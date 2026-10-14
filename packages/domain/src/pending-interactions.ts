@@ -596,6 +596,7 @@ const pendingInteractionBaseSchema = z.object({
   createdAt: z.number().int().nonnegative(),
   expiresAt: z.number().int().nonnegative().nullable().optional(),
   resolvedAt: z.number().int().nonnegative().nullable(),
+  resolvedByUserId: z.string().nullable(),
 });
 
 const providerPendingInteractionBaseSchema =

@@ -31,6 +31,7 @@ import type {
 } from "@bb/domain";
 import {
   evaluateThreadLifecycleEvent,
+  TEAM_THREAD_VIEWER_ID,
   threadSearchSourceKindSchema,
 } from "@bb/domain";
 import type { DbConnection, DbTransaction } from "../connection.js";
@@ -42,6 +43,7 @@ import {
   projects,
   terminalSessions,
   threadSearchSegments,
+  threadUserState,
   threads,
 } from "../schema.js";
 import { createThreadId } from "../ids.js";
@@ -117,6 +119,7 @@ export interface ThreadSearchResults {
 export interface SearchThreadsWithPendingInteractionStateArgs {
   query: string;
   limitPerGroup: number;
+  viewerUserId: string;
 }
 
 export interface UpsertThreadTitleSearchSegmentsArgs {
@@ -165,6 +168,7 @@ interface ThreadSearchMatchRow {
 interface HydrateThreadSearchGroupArgs {
   rows: readonly ThreadSearchMatchRow[];
   tokens: readonly string[];
+  viewerUserId: string;
 }
 
 interface ThreadSearchSnippet {
@@ -267,6 +271,7 @@ export interface CreateThreadInput {
   title?: string | null;
   titleFallback?: string | null;
   sectionId?: string | null;
+  createdByUserId?: string | null;
   pinned?: boolean;
   status?: ThreadStatus;
   parentThreadId?: string | null;
@@ -325,13 +330,7 @@ export function createThread(
           title: input.title ?? null,
           titleFallback: input.titleFallback ?? null,
           sectionId: input.sectionId ?? null,
-          pinnedAt: input.pinned ? now : null,
-          pinSortKey: input.pinned
-            ? createOrderKeyBetween({
-                previousKey: null,
-                nextKey: getFirstPinnedThread(tx)?.pinSortKey ?? null,
-              })
-            : null,
+          createdByUserId: input.createdByUserId ?? null,
           status: input.status ?? "starting",
           startupContext: input.startupContext ?? null,
           parentThreadId:
@@ -343,13 +342,31 @@ export function createThread(
           originKind,
           originPluginId: input.originPluginId ?? null,
           visibility,
-          lastReadAt: now,
           latestAttentionAt: now,
           createdAt: now,
           updatedAt: now,
         })
         .returning()
         .get();
+      if (createdThread.createdByUserId !== null) {
+        const pinned = input.pinned === true;
+        tx.insert(threadUserState)
+          .values({
+            threadId: createdThread.id,
+            userId: createdThread.createdByUserId,
+            lastReadAt: now,
+            pinnedAt: pinned ? now : null,
+            pinSortKey: pinned
+              ? createOrderKeyBetween({
+                  previousKey: null,
+                  nextKey:
+                    getFirstPinnedThread(tx, createdThread.createdByUserId)
+                      ?.pinSortKey ?? null,
+                })
+              : null,
+          })
+          .run();
+      }
       if (
         createdThread.originKind === "fork" &&
         createdThread.sourceThreadId !== null
@@ -447,22 +464,71 @@ export interface ListThreadsOptions {
   limit?: number;
   offset?: number;
   includeHidden?: boolean;
+  viewerUserId: string;
 }
 
 type ThreadRow = typeof threads.$inferSelect;
 
+export interface ThreadViewerState {
+  lastReadAt: number | null;
+  pinnedAt: number | null;
+  pinSortKey: string | null;
+}
+
+export type ViewerThreadRow = ThreadRow & ThreadViewerState;
+
+const EMPTY_THREAD_VIEWER_STATE: ThreadViewerState = {
+  lastReadAt: null,
+  pinnedAt: null,
+  pinSortKey: null,
+};
+
+const viewerLastReadAt = sql<
+  number | null
+>`CASE WHEN ${threadUserState.threadId} IS NULL THEN ${threads.createdAt} ELSE ${threadUserState.lastReadAt} END`;
+
+const threadViewerStateColumns = {
+  lastReadAt: viewerLastReadAt,
+  pinnedAt: threadUserState.pinnedAt,
+  pinSortKey: threadUserState.pinSortKey,
+};
+
+function threadUserStateJoin(viewerUserId: string): SQL {
+  if (viewerUserId === TEAM_THREAD_VIEWER_ID) {
+    return sql`${threadUserState.threadId} = ${threads.id} AND ${threadUserState.userId} = (SELECT team_state.user_id FROM thread_user_state AS team_state WHERE team_state.thread_id = ${threads.id} ORDER BY team_state.pinned_at IS NULL, team_state.pinned_at DESC, team_state.last_read_at IS NULL, team_state.last_read_at DESC, team_state.user_id LIMIT 1)`;
+  }
+  return sql`${threadUserState.threadId} = ${threads.id} AND ${threadUserState.userId} = ${viewerUserId}`;
+}
+
+export function getThreadViewerState(
+  db: DbQueryConnection,
+  args: { threadId: string; userId: string },
+): ThreadViewerState {
+  return (
+    db
+      .select(threadViewerStateColumns)
+      .from(threads)
+      .leftJoin(threadUserState, threadUserStateJoin(args.userId))
+      .where(eq(threads.id, args.threadId))
+      .get() ?? EMPTY_THREAD_VIEWER_STATE
+  );
+}
+
 export interface ListThreadsForProjectsOptions {
   projectIds: readonly string[];
   archived?: boolean;
+  viewerUserId: string;
 }
 
 export interface PinThreadArgs {
   pinnedAt?: number;
   threadId: string;
+  userId: string;
 }
 
 export interface UnpinThreadArgs {
   threadId: string;
+  userId: string;
 }
 
 export interface ReorderPinnedThreadArgs {
@@ -471,17 +537,18 @@ export interface ReorderPinnedThreadArgs {
   notifier: DbNotifier;
   previousThreadId: string | null;
   threadId: string;
+  userId: string;
 }
 
 interface ResolvePinnedThreadNeighborArgs {
   movedThreadId: string;
   neighborThreadId: string | null;
-  pinnedThreads: readonly ThreadRow[];
+  pinnedThreads: readonly ViewerThreadRow[];
 }
 
 interface PinThreadMutationResult {
   changed: boolean;
-  thread: ThreadRow;
+  thread: ViewerThreadRow;
 }
 
 type PinnedThreadRootCandidate = Pick<ThreadRow, "id" | "parentThreadId">;
@@ -494,12 +561,12 @@ interface FilterVisiblePinnedThreadRootsArgs<
 
 export interface ReorderPinnedThreadSuccess {
   kind: "reordered";
-  threads: ThreadRow[];
+  threads: ViewerThreadRow[];
 }
 
 export interface ReorderPinnedThreadUnchanged {
   kind: "unchanged";
-  threads: ThreadRow[];
+  threads: ViewerThreadRow[];
 }
 
 export interface ReorderPinnedThreadNotFound {
@@ -529,18 +596,22 @@ export type ReorderPinnedThreadResult =
 function pinnedThreadWhere() {
   return nonDeletedThreads(
     eq(threads.visibility, "visible"),
-    isNotNull(threads.pinnedAt),
-    isNotNull(threads.pinSortKey),
+    isNotNull(threadUserState.pinnedAt),
+    isNotNull(threadUserState.pinSortKey),
   );
 }
 
-function getFirstPinnedThread(db: DbQueryConnection): ThreadRow | null {
+function getFirstPinnedThread(
+  db: DbQueryConnection,
+  userId: string,
+): { pinSortKey: string | null } | null {
   return (
     db
-      .select()
+      .select({ pinSortKey: threadUserState.pinSortKey })
       .from(threads)
+      .innerJoin(threadUserState, threadUserStateJoin(userId))
       .where(pinnedThreadWhere())
-      .orderBy(asc(threads.pinSortKey), asc(threads.id))
+      .orderBy(asc(threadUserState.pinSortKey), asc(threads.id))
       .limit(1)
       .get() ?? null
   );
@@ -559,21 +630,27 @@ function filterVisiblePinnedThreadRoots<
 
 export function listActiveVisiblePinnedThreadRoots(
   db: DbQueryConnection,
-): ThreadRow[] {
+  userId: string,
+): ViewerThreadRow[] {
   const pinnedThreads = db
-    .select()
+    .select({ ...getTableColumns(threads), ...threadViewerStateColumns })
     .from(threads)
+    .innerJoin(threadUserState, threadUserStateJoin(userId))
     .where(liveThreads(pinnedThreadWhere()))
-    .orderBy(asc(threads.pinSortKey), asc(threads.id))
+    .orderBy(asc(threadUserState.pinSortKey), asc(threads.id))
     .all();
 
   return filterVisiblePinnedThreadRoots({ pinnedThreads });
 }
 
-function threadWithPendingInteractionBaseQuery(db: DbConnection) {
+function threadWithPendingInteractionBaseQuery(
+  db: DbConnection,
+  viewerUserId: string,
+) {
   return db
     .select({
       ...getTableColumns(threads),
+      ...threadViewerStateColumns,
       environmentBranchName: environments.branchName,
       environmentHostId: environments.hostId,
       environmentIsWorktree: environments.isWorktree,
@@ -583,15 +660,17 @@ function threadWithPendingInteractionBaseQuery(db: DbConnection) {
       hasPendingInteraction: sql<number>`EXISTS (SELECT 1 FROM ${pendingInteractions} WHERE ${pendingInteractions.threadId} = ${threads.id} AND ${pendingInteractions.status} = 'pending')`,
     })
     .from(threads)
-    .leftJoin(environments, eq(threads.environmentId, environments.id));
+    .leftJoin(environments, eq(threads.environmentId, environments.id))
+    .leftJoin(threadUserState, threadUserStateJoin(viewerUserId));
 }
 
 export function listActiveVisiblePinnedThreadRootsWithPendingInteractionState(
   db: DbConnection,
+  userId: string,
 ): ThreadWithPendingInteractionState[] {
-  const pinnedThreads = threadWithPendingInteractionBaseQuery(db)
+  const pinnedThreads = threadWithPendingInteractionBaseQuery(db, userId)
     .where(liveThreads(pinnedThreadWhere()))
-    .orderBy(asc(threads.pinSortKey), asc(threads.id))
+    .orderBy(asc(threadUserState.pinSortKey), asc(threads.id))
     .all()
     .map(toThreadWithPendingInteractionState);
 
@@ -600,7 +679,7 @@ export function listActiveVisiblePinnedThreadRootsWithPendingInteractionState(
 
 function resolvePinnedThreadNeighbor(
   args: ResolvePinnedThreadNeighborArgs,
-): ThreadRow | null | false {
+): ViewerThreadRow | null | false {
   if (args.neighborThreadId === null) {
     return null;
   }
@@ -614,7 +693,7 @@ function resolvePinnedThreadNeighbor(
   );
 }
 
-export interface ThreadWithPendingInteractionState extends ThreadRow {
+export interface ThreadWithPendingInteractionState extends ViewerThreadRow {
   environmentBranchName: string | null;
   environmentHostId: string | null;
   environmentIsWorktree: boolean | null;
@@ -624,7 +703,7 @@ export interface ThreadWithPendingInteractionState extends ThreadRow {
   hasPendingInteraction: boolean;
 }
 
-interface ThreadWithPendingInteractionStateRow extends ThreadRow {
+interface ThreadWithPendingInteractionStateRow extends ViewerThreadRow {
   environmentBranchName: string | null;
   environmentHostId: string | null;
   environmentIsWorktree: boolean | null;
@@ -760,11 +839,15 @@ function buildActiveProjectThreadOrderBy() {
 
 function buildPinnedThreadOrderBy() {
   return [
-    asc(sql`CASE WHEN ${threads.pinnedAt} IS NOT NULL THEN 0 ELSE 1 END`),
     asc(
-      sql`CASE WHEN ${threads.pinnedAt} IS NOT NULL THEN ${threads.pinSortKey} END`,
+      sql`CASE WHEN ${threadUserState.pinnedAt} IS NOT NULL THEN 0 ELSE 1 END`,
     ),
-    asc(sql`CASE WHEN ${threads.pinnedAt} IS NOT NULL THEN ${threads.id} END`),
+    asc(
+      sql`CASE WHEN ${threadUserState.pinnedAt} IS NOT NULL THEN ${threadUserState.pinSortKey} END`,
+    ),
+    asc(
+      sql`CASE WHEN ${threadUserState.pinnedAt} IS NOT NULL THEN ${threads.id} END`,
+    ),
   ];
 }
 
@@ -898,7 +981,7 @@ function normalizeThreadSearchHighlightText(text: string): {
   const originalStarts: number[] = [];
   const originalEnds: number[] = [];
 
-  for (let index = 0; index < text.length;) {
+  for (let index = 0; index < text.length; ) {
     const codePoint = text.codePointAt(index);
     if (codePoint === undefined) {
       break;
@@ -1150,7 +1233,7 @@ function hydrateThreadSearchGroup(
   }
 
   const threadsById = new Map(
-    threadWithPendingInteractionBaseQuery(db)
+    threadWithPendingInteractionBaseQuery(db, args.viewerUserId)
       .where(nonDeletedThreads(inArray(threads.id, threadIds)))
       .all()
       .map(toThreadWithPendingInteractionState)
@@ -1200,10 +1283,12 @@ export function searchThreadsWithPendingInteractionState(
     active: hydrateThreadSearchGroup(db, {
       tokens,
       rows: rows.filter((row) => row.archived === 0),
+      viewerUserId: args.viewerUserId,
     }),
     archived: hydrateThreadSearchGroup(db, {
       tokens,
       rows: rows.filter((row) => row.archived === 1),
+      viewerUserId: args.viewerUserId,
     }),
   };
 }
@@ -1406,16 +1491,40 @@ export function listArchivedThreadsPendingTeardown(
     id: threads.id,
     status: threads.status,
   };
-  const archived = and(isNotNull(threads.archivedAt), isNull(threads.deletedAt));
+  const archived = and(
+    isNotNull(threads.archivedAt),
+    isNull(threads.deletedAt),
+  );
   return db
     .select(selection)
     .from(threads)
-    .where(and(archived, inArray(threads.status, [...ARCHIVED_TEARDOWN_THREAD_STATUSES])))
+    .where(
+      and(
+        archived,
+        inArray(threads.status, [...ARCHIVED_TEARDOWN_THREAD_STATUSES]),
+      ),
+    )
     .union(
       db
         .select(selection)
         .from(threads)
-        .where(and(archived, inArray(threads.id, db.select({ threadId: terminalSessions.threadId }).from(terminalSessions).where(inArray(terminalSessions.status, NON_TERMINAL_SESSION_STATUSES))))),
+        .where(
+          and(
+            archived,
+            inArray(
+              threads.id,
+              db
+                .select({ threadId: terminalSessions.threadId })
+                .from(terminalSessions)
+                .where(
+                  inArray(
+                    terminalSessions.status,
+                    NON_TERMINAL_SESSION_STATUSES,
+                  ),
+                ),
+            ),
+          ),
+        ),
     )
     .all();
 }
@@ -1424,7 +1533,7 @@ export function listThreadsWithPendingInteractionState(
   db: DbConnection,
   options: ListThreadsOptions,
 ): ThreadWithPendingInteractionState[] {
-  let query = threadWithPendingInteractionBaseQuery(db)
+  let query = threadWithPendingInteractionBaseQuery(db, options.viewerUserId)
     .where(and(...buildListThreadsFilters(options)))
     .orderBy(...buildListThreadsOrderBy(options))
     .$dynamic();
@@ -1439,15 +1548,19 @@ export function listThreadsWithPendingInteractionState(
   return rows.map(toThreadWithPendingInteractionState);
 }
 
-export function hasActiveThreadAttention(db: DbConnection): boolean {
+export function hasActiveThreadAttention(
+  db: DbConnection,
+  userId: string,
+): boolean {
   const unreadThread = or(
-    isNull(threads.lastReadAt),
-    lt(threads.lastReadAt, threads.latestAttentionAt),
+    isNull(viewerLastReadAt),
+    lt(viewerLastReadAt, threads.latestAttentionAt),
   );
 
   const row = db
     .select({ id: threads.id })
     .from(threads)
+    .leftJoin(threadUserState, threadUserStateJoin(userId))
     .leftJoin(
       pendingInteractions,
       and(
@@ -1475,7 +1588,7 @@ export function listThreadsWithPendingInteractionStateForProjects(
     return [];
   }
 
-  const rows = threadWithPendingInteractionBaseQuery(db)
+  const rows = threadWithPendingInteractionBaseQuery(db, options.viewerUserId)
     .where(and(...buildListThreadsForProjectsFilters(options)))
     .orderBy(...buildListThreadsOrderBy(options))
     .all();
@@ -1620,6 +1733,50 @@ export function listActiveHostThreads(
     .all();
 }
 
+function getViewerThreadRow(
+  db: DbQueryConnection,
+  args: { threadId: string; userId: string },
+): ViewerThreadRow | null {
+  return (
+    db
+      .select({ ...getTableColumns(threads), ...threadViewerStateColumns })
+      .from(threads)
+      .leftJoin(threadUserState, threadUserStateJoin(args.userId))
+      .where(eq(threads.id, args.threadId))
+      .get() ?? null
+  );
+}
+
+export function getThreadForViewer(
+  db: DbQueryConnection,
+  args: { threadId: string; userId: string },
+): ViewerThreadRow | null {
+  return getViewerThreadRow(db, args);
+}
+
+function upsertThreadUserState(
+  db: DbQueryConnection,
+  args: {
+    threadId: string;
+    userId: string;
+    values: Partial<ThreadViewerState>;
+  },
+): void {
+  db.insert(threadUserState)
+    .values({
+      threadId: args.threadId,
+      userId: args.userId,
+      ...EMPTY_THREAD_VIEWER_STATE,
+      lastReadAt: getThreadViewerState(db, args).lastReadAt,
+      ...args.values,
+    })
+    .onConflictDoUpdate({
+      target: [threadUserState.threadId, threadUserState.userId],
+      set: args.values,
+    })
+    .run();
+}
+
 export function pinThread(
   db: ThreadWriteConnection,
   notifier: DbNotifier,
@@ -1627,9 +1784,7 @@ export function pinThread(
 ) {
   const result = db.transaction(
     (tx): PinThreadMutationResult | null => {
-      const existing =
-        tx.select().from(threads).where(eq(threads.id, args.threadId)).get() ??
-        null;
+      const existing = getViewerThreadRow(tx, args);
       if (!existing || existing.deletedAt !== null) {
         return null;
       }
@@ -1637,31 +1792,28 @@ export function pinThread(
         return { changed: false, thread: existing };
       }
 
-      const firstPinnedThread = getFirstPinnedThread(tx);
       const pinSortKey = createOrderKeyBetween({
         previousKey: null,
-        nextKey: firstPinnedThread?.pinSortKey ?? null,
+        nextKey: getFirstPinnedThread(tx, args.userId)?.pinSortKey ?? null,
       });
-      const now = Date.now();
-      const updated = tx
-        .update(threads)
-        .set({
-          pinnedAt: args.pinnedAt ?? now,
-          pinSortKey,
-          updatedAt: now,
-        })
-        .where(nonDeletedThreads(eq(threads.id, args.threadId)))
-        .returning()
-        .get();
-      return updated ? { changed: true, thread: updated } : null;
+      const pinnedAt = args.pinnedAt ?? Date.now();
+      upsertThreadUserState(tx, {
+        threadId: args.threadId,
+        userId: args.userId,
+        values: { pinnedAt, pinSortKey },
+      });
+      return { changed: true, thread: { ...existing, pinnedAt, pinSortKey } };
     },
     { behavior: "immediate" },
   );
 
   if (result?.changed) {
-    notifier.notifyThread(args.threadId, ["pin-state-changed"], {
-      projectId: result.thread.projectId,
-    });
+    notifier.notifyUserThread(
+      args.userId,
+      args.threadId,
+      ["pin-state-changed"],
+      { projectId: result.thread.projectId },
+    );
   }
   return result?.thread ?? null;
 }
@@ -1673,9 +1825,7 @@ export function unpinThread(
 ) {
   const result = db.transaction(
     (tx): PinThreadMutationResult | null => {
-      const existing =
-        tx.select().from(threads).where(eq(threads.id, args.threadId)).get() ??
-        null;
+      const existing = getViewerThreadRow(tx, args);
       if (!existing || existing.deletedAt !== null) {
         return null;
       }
@@ -1683,25 +1833,26 @@ export function unpinThread(
         return { changed: false, thread: existing };
       }
 
-      const updated = tx
-        .update(threads)
-        .set({
-          pinnedAt: null,
-          pinSortKey: null,
-          updatedAt: Date.now(),
-        })
-        .where(nonDeletedThreads(eq(threads.id, args.threadId)))
-        .returning()
-        .get();
-      return updated ? { changed: true, thread: updated } : null;
+      upsertThreadUserState(tx, {
+        threadId: args.threadId,
+        userId: args.userId,
+        values: { pinnedAt: null, pinSortKey: null },
+      });
+      return {
+        changed: true,
+        thread: { ...existing, pinnedAt: null, pinSortKey: null },
+      };
     },
     { behavior: "immediate" },
   );
 
   if (result?.changed) {
-    notifier.notifyThread(args.threadId, ["pin-state-changed"], {
-      projectId: result.thread.projectId,
-    });
+    notifier.notifyUserThread(
+      args.userId,
+      args.threadId,
+      ["pin-state-changed"],
+      { projectId: result.thread.projectId },
+    );
   }
   return result?.thread ?? null;
 }
@@ -1712,11 +1863,11 @@ export function reorderPinnedThread({
   notifier,
   previousThreadId,
   threadId,
+  userId,
 }: ReorderPinnedThreadArgs): ReorderPinnedThreadResult {
   const result = db.transaction(
     (tx): ReorderPinnedThreadResult => {
-      const movedThread =
-        tx.select().from(threads).where(eq(threads.id, threadId)).get() ?? null;
+      const movedThread = getViewerThreadRow(tx, { threadId, userId });
       if (!movedThread || movedThread.deletedAt !== null) {
         return { kind: "not_found" };
       }
@@ -1724,7 +1875,7 @@ export function reorderPinnedThread({
         return { kind: "not_pinned" };
       }
 
-      const currentThreads = listActiveVisiblePinnedThreadRoots(tx);
+      const currentThreads = listActiveVisiblePinnedThreadRoots(tx, userId);
       const currentIndex = currentThreads.findIndex(
         (thread) => thread.id === threadId,
       );
@@ -1776,10 +1927,16 @@ export function reorderPinnedThread({
         nextKey: nextThread?.pinSortKey ?? null,
       });
       const updated = tx
-        .update(threads)
-        .set({ pinSortKey, updatedAt: Date.now() })
-        .where(and(eq(threads.id, threadId), pinnedThreadWhere()))
-        .returning({ id: threads.id })
+        .update(threadUserState)
+        .set({ pinSortKey })
+        .where(
+          and(
+            eq(threadUserState.threadId, threadId),
+            eq(threadUserState.userId, userId),
+            isNotNull(threadUserState.pinnedAt),
+          ),
+        )
+        .returning({ threadId: threadUserState.threadId })
         .get();
       if (!updated) {
         return { kind: "stale_neighbor" };
@@ -1787,7 +1944,7 @@ export function reorderPinnedThread({
 
       return {
         kind: "reordered",
-        threads: listActiveVisiblePinnedThreadRoots(tx),
+        threads: listActiveVisiblePinnedThreadRoots(tx, userId),
       };
     },
     { behavior: "immediate" },
@@ -1798,7 +1955,7 @@ export function reorderPinnedThread({
       (thread) => thread.id === threadId,
     );
     if (reorderedThread) {
-      notifier.notifyThread(threadId, ["pin-state-changed"], {
+      notifier.notifyUserThread(userId, threadId, ["pin-state-changed"], {
         projectId: reorderedThread.projectId,
       });
     }
@@ -1806,10 +1963,46 @@ export function reorderPinnedThread({
   return result;
 }
 
+export interface SetThreadLastReadAtArgs {
+  lastReadAt: number | null;
+  threadId: string;
+  userId: string;
+}
+
+export interface SetThreadLastReadAtResult {
+  changed: boolean;
+  thread: ViewerThreadRow;
+}
+
+export function setThreadLastReadAt(
+  db: DbQueryConnection,
+  notifier: DbNotifier,
+  args: SetThreadLastReadAtArgs,
+): SetThreadLastReadAtResult | null {
+  const existing = getViewerThreadRow(db, args);
+  if (!existing) {
+    return null;
+  }
+  upsertThreadUserState(db, {
+    threadId: args.threadId,
+    userId: args.userId,
+    values: { lastReadAt: args.lastReadAt },
+  });
+  const changed = existing.lastReadAt !== args.lastReadAt;
+  notifier.notifyUserThread(
+    args.userId,
+    args.threadId,
+    ["read-state-changed"],
+    {
+      projectId: existing.projectId,
+    },
+  );
+  return { changed, thread: { ...existing, lastReadAt: args.lastReadAt } };
+}
+
 export interface UpdateThreadInput {
   environmentId?: string | null;
   sectionId?: string | null;
-  lastReadAt?: number | null;
   parentThreadId?: string | null;
   title?: string | null;
   visibility?: ThreadVisibility;
@@ -1828,7 +2021,6 @@ export function updateThread(
   }
   const changes: ThreadChangeKind[] = [];
   if ("title" in input || "sectionId" in input) changes.push("title-changed");
-  if ("lastReadAt" in input) changes.push("read-state-changed");
   if ("visibility" in input && input.visibility !== existing.visibility) {
     changes.push("title-changed");
   }
@@ -1851,9 +2043,6 @@ export function updateThread(
     set.sectionId = input.sectionId;
   }
   if ("environmentId" in input) set.environmentId = input.environmentId;
-  if ("lastReadAt" in input) {
-    set.lastReadAt = input.lastReadAt;
-  }
   if ("parentThreadId" in input) set.parentThreadId = input.parentThreadId;
   if ("visibility" in input) set.visibility = input.visibility;
 
@@ -2181,7 +2370,11 @@ export function archiveThread(
       )
       .returning()
       .all();
-    markThreadPruningPolicyWork(tx, archived.map((thread) => thread.id), "rate-limits");
+    markThreadPruningPolicyWork(
+      tx,
+      archived.map((thread) => thread.id),
+      "rate-limits",
+    );
     return archived;
   });
   for (const thread of updated) {

@@ -346,89 +346,95 @@ describe("createAgentRuntime lifecycle", () => {
       await runtime.shutdown();
     });
 
-    it("reinjects rotated machine credentials on the next turn and resume", async () => {
-      const record = createScriptedEchoRequestRecord();
-      const events: ThreadEvent[] = [];
-      const runtime = createScriptedEchoRuntime({
-        runtime: {
-          workspacePath: tmpDir,
-          env: record.env,
-          onEvent: (event) => events.push(event),
-        },
-      });
-      const credentials = (value: string) => [
-        {
-          name: "GH_TOKEN",
-          value,
-          source: { core: "machine-git" as const },
-          reason: "Server gh login",
-        },
-      ];
-      try {
-        await runtime.startThread({
-          environmentId: "env-1",
-          projectId: "p1",
-          threadId: "git-thread",
-          providerId: "fake",
-          contributedEnv: credentials("first-git-token"),
-          options: fullRuntimeOptions,
+    it.each([
+      { name: "GH_TOKEN", core: "machine-git" },
+      { name: "BB_TOKEN", core: "thread-auth" },
+    ] as const)(
+      "reinjects rotated $name credentials on the next turn and resume",
+      async ({ name, core }) => {
+        const record = createScriptedEchoRequestRecord();
+        const events: ThreadEvent[] = [];
+        const runtime = createScriptedEchoRuntime({
+          runtime: {
+            workspacePath: tmpDir,
+            env: record.env,
+            onEvent: (event) => events.push(event),
+          },
         });
-        await runtime.runTurn({
-          clientRequestId: "creq_222222224c",
-          threadId: "git-thread",
-          input: [promptTextInput({ text: "rotated-git-token" })],
-          contributedEnv: credentials("rotated-git-token"),
-          options: fullRuntimeOptions,
-        });
-        expect(record.last("turn/start")?.params).toMatchObject({
-          options: { envVars: { GH_TOKEN: "rotated-git-token" } },
-        });
-        await waitForThreadAgentMessageText({
-          events,
-          providerId: "fake",
-          runtime,
-          text: "rotated-git-token",
-          threadId: "git-thread",
-        });
-        await runtime.resumeThread({
-          environmentId: "env-1",
-          threadId: "git-resumed",
-          providerId: "fake",
-          providerThreadId: "old-git-thread",
-          contributedEnv: credentials("resumed-git-token"),
-          options: fullRuntimeOptions,
-        });
-        expect(record.last("thread/resume")?.params).toMatchObject({
-          options: { envVars: { GH_TOKEN: "resumed-git-token" } },
-        });
-        expect(
-          JSON.stringify(
+        const credentials = (value: string) => [
+          {
+            name,
+            value,
+            source: { core },
+            reason: "Server gh login",
+          },
+        ];
+        try {
+          await runtime.startThread({
+            environmentId: "env-1",
+            projectId: "p1",
+            threadId: "git-thread",
+            providerId: "fake",
+            contributedEnv: credentials("first-git-token"),
+            options: fullRuntimeOptions,
+          });
+          await runtime.runTurn({
+            clientRequestId: "creq_222222224c",
+            threadId: "git-thread",
+            input: [promptTextInput({ text: "rotated-git-token" })],
+            contributedEnv: credentials("rotated-git-token"),
+            options: fullRuntimeOptions,
+          });
+          expect(record.last("turn/start")?.params).toMatchObject({
+            options: { envVars: { [name]: "rotated-git-token" } },
+          });
+          await waitForThreadAgentMessageText({
+            events,
+            providerId: "fake",
+            runtime,
+            text: "rotated-git-token",
+            threadId: "git-thread",
+          });
+          await runtime.resumeThread({
+            environmentId: "env-1",
+            threadId: "git-resumed",
+            providerId: "fake",
+            providerThreadId: "old-git-thread",
+            contributedEnv: credentials("resumed-git-token"),
+            options: fullRuntimeOptions,
+          });
+          expect(record.last("thread/resume")?.params).toMatchObject({
+            options: { envVars: { [name]: "resumed-git-token" } },
+          });
+          expect(
+            JSON.stringify(
+              events.filter((event) => event.type === "provider.env-resolved"),
+            ),
+          ).not.toContain("first-git-token");
+          expect(
+            JSON.stringify(
+              events.filter((event) => event.type === "provider.env-resolved"),
+            ),
+          ).not.toContain("resumed-git-token");
+          expect(
             events.filter((event) => event.type === "provider.env-resolved"),
-          ),
-        ).not.toContain("first-git-token");
-        expect(
-          JSON.stringify(
-            events.filter((event) => event.type === "provider.env-resolved"),
-          ),
-        ).not.toContain("resumed-git-token");
-        expect(
-          events.filter((event) => event.type === "provider.env-resolved"),
-        ).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              entries: expect.arrayContaining([
-                expect.objectContaining({
-                  name: "GH_TOKEN",
-                  value: { masked: true },
-                }),
-              ]),
-            }),
-          ]),
-        );
-      } finally {
-        await runtime.shutdown();
-      }
-    });
+          ).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                entries: expect.arrayContaining([
+                  expect.objectContaining({
+                    name,
+                    value: { masked: true },
+                  }),
+                ]),
+              }),
+            ]),
+          );
+        } finally {
+          await runtime.shutdown();
+        }
+      },
+    );
 
     it("removes project overrides from a reused runtime on the next turn", async () => {
       const record = createScriptedEchoRequestRecord();

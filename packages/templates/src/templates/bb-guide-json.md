@@ -65,7 +65,10 @@ Fields beyond those shown exist; these are the ones scripts use.
     {active: {total, results}, archived: {total, results}}
 
   bb prompt-history list --json
-    {entries: [{id, createdAt, input, projectId, threadId, scope}], nextCursor: string | null}
+    {entries: [{id, createdAt, input, projectId, threadId, scope}], nextCursor: string | null}    (only the caller's prompts)
+
+  bb user list --json
+    {users: [{id, name, email, role}]}    (wrapped in .users)
 
   bb thread section list --json
     [{id, name, createdAt, updatedAt}]
@@ -120,3 +123,53 @@ Fields beyond those shown exist; these are the ones scripts use.
 
 Commands contributed by plugins document their own JSON in `bb <command> --help`
 and the plugin's skill.
+
+  bb login --json
+    {user: {id, name, email, role}}
+
+  bb logout --json
+    {ok: true}
+
+  bb whoami --json
+    {user: {id, name, email, role}}
+
+  bb user role <userId> <role> --json
+    {user: {id, name, email, role}}
+
+  bb user remove <userId> --json
+    {ok: true}
+
+  bb invite create --json
+    {id, token, role, email, expiresAt}
+
+  bb invite list --json
+    {invites: [{id, role, email, expiresAt, createdAt, createdByUserId}]}
+
+  bb invite revoke <id> --json
+    {ok: true}
+
+  bb invite accept <token> --email EMAIL --name NAME --json
+    {user: {id, name, email, role}}
+
+  bb token create <name> --json
+    {token, summary: {id, name, start, createdAt, lastUsedAt}}
+
+  bb token list --json
+    {tokens: [{id, name, start, createdAt, lastUsedAt}]}
+
+  bb token revoke <id> --json
+    {ok: true}
+
+Only token and invite creation return secret token values.
+
+  bb user connect-members list --json
+    {members: [{userId, email, role}]}
+
+  bb user connect-members add <email> [--role admin|member] --json
+    {member: {userId, email, role}}
+
+  bb user connect-members remove <userId> --json
+    {ok: true}
+
+  Connect member ids refer to bb accounts, not local server user ids. These
+  operations require a local admin and the gate owner's server pairing.

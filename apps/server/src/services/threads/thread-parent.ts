@@ -1,18 +1,18 @@
 import { getThread, listNonDeletedChildThreads } from "@bb/db";
-import type { Thread } from "@bb/domain";
+import type { ThreadRecord } from "@bb/domain";
 import type { AppDeps } from "../../types.js";
 import { throwParentThreadInvalid } from "../lib/lifecycle-api-errors.js";
 
 const MAX_THREAD_HIERARCHY_DEPTH = 4;
 
 export function isParentNotifiableChildThread<
-  T extends Pick<Thread, "parentThreadId" | "originKind">,
+  T extends Pick<ThreadRecord, "parentThreadId" | "originKind">,
 >(thread: T): thread is T & { parentThreadId: string } {
   return thread.parentThreadId !== null && thread.originKind === null;
 }
 
 export type ParentThread = Pick<
-  Thread,
+  ThreadRecord,
   | "archivedAt"
   | "deletedAt"
   | "environmentId"
@@ -20,7 +20,7 @@ export type ParentThread = Pick<
   | "parentThreadId"
   | "projectId"
 > &
-  Partial<Pick<Thread, "originKind">>;
+  Partial<Pick<ThreadRecord, "originKind">>;
 
 interface IsLiveParentThreadArgs {
   parentThread: ParentThread | null;
@@ -121,12 +121,12 @@ export function canThreadSpawnChild(
 export function assertValidParentThread(
   deps: Pick<AppDeps, "db">,
   args: AssertValidParentThreadArgs,
-): Thread {
+): ThreadRecord {
   const parentThread = getThread(deps.db, args.parentThreadId);
   if (parentThread === null) {
     throwParentThreadInvalid("not_found");
   }
-  const liveParentThread: Thread = parentThread;
+  const liveParentThread: ThreadRecord = parentThread;
 
   if (liveParentThread.archivedAt !== null) {
     throwParentThreadInvalid("archived");

@@ -12,6 +12,8 @@ export function jsonResponse(
   });
 }
 
-export function methodNotAllowed(allow: "GET" | "POST"): Response {
+export function methodNotAllowed(
+  allow: "GET" | "POST" | "GET, POST, DELETE",
+): Response {
   return jsonResponse({ error: "method_not_allowed" }, 405, { allow });
 }

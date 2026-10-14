@@ -20,7 +20,8 @@ host, and the command resolves the thread's host automatically.
    when you intentionally need another enrolled host; outside a thread,
    sharing defaults to the machine running the bb server.
 3. Give the returned URL to the user as a markdown link. It works for viewers
-   who have the owner's getbb.app session; it is not a public internet link.
+   signed in to the owner's getbb.app account, or a member for a server-host
+   share. Machine-host shares still require the owner. These are private links.
 4. When the server stops, run `bb connect unexpose <port>` from the same
    thread (or with the same `--host`) so the share is cleaned up. Use
    `bb connect shares [--host <name-or-id>]` to inspect that host's shares.
@@ -66,3 +67,13 @@ toggle, enabled by default. Use
 remote-access message, or `true` to restore it. This controls only the message;
 sharing still works. The message otherwise requires active or recent remote
 usage. Changes apply when session instructions are next assembled.
+
+## Share server access with bb accounts
+
+In Settings > Remote access, **Manage server access** opens the gate owner's
+membership page. Local admins can use `bb user connect-members list|add|remove`
+with `--json`; add takes an email and optional `--role admin|member`, and remove
+takes the connect account id from list. Gate roles do not change local roles.
+In multi mode, also create an email invite with `bb invite create --email EMAIL`.
+The first gate visit consumes that invite and creates a local member. Existing
+local users keep their roles. Members running agents have host shell access.

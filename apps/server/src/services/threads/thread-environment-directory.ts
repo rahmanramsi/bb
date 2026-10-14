@@ -16,7 +16,7 @@ import {
   isHostPathRoot,
   turnScope,
 } from "@bb/domain";
-import type { DynamicTool, Thread, ToolCallResponse } from "@bb/domain";
+import type { DynamicTool, ThreadRecord, ToolCallResponse } from "@bb/domain";
 import type { AppDeps } from "../../types.js";
 import { runLiveHostCommand } from "../hosts/live-command.js";
 import { appendThreadEventInTransaction } from "./thread-events.js";
@@ -63,7 +63,7 @@ export const UPDATE_ENVIRONMENT_DIRECTORY_TOOL: DynamicTool = {
 interface HandleUpdateEnvironmentDirectoryToolCallArgs {
   currentEnvironment: EnvironmentRow;
   input: unknown;
-  thread: Thread;
+  thread: ThreadRecord;
   turnId: string;
 }
 
@@ -109,7 +109,7 @@ function validateDirectoryPath(path: string): string | null {
   return null;
 }
 
-function threadWritableFailure(thread: Thread): string | null {
+function threadWritableFailure(thread: ThreadRecord): string | null {
   if (thread.deletedAt !== null) {
     return "Cannot update the environment directory for a deleted thread.";
   }
@@ -149,7 +149,7 @@ function attachReadyEnvironment(
     currentEnvironment: EnvironmentRow;
     createdEnvironment: boolean;
     targetEnvironment: ReadyEnvironment;
-    thread: Thread;
+    thread: ThreadRecord;
     turnId: string;
   },
 ): AttachEnvironmentResult {
@@ -220,7 +220,7 @@ async function provisionUnmanagedEnvironmentForPath(
   args: {
     currentEnvironment: EnvironmentRow;
     path: string;
-    thread: Thread;
+    thread: ThreadRecord;
   },
 ): Promise<ReadyEnvironment | ToolCallResponse> {
   const environment = createEnvironment(deps.db, deps.hub, {

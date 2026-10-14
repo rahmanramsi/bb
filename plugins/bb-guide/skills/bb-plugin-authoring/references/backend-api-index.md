@@ -12,6 +12,7 @@ Read the installed declarations for exact current signatures.
 - `defineCli`
 - `cliCommand`
 - `PluginCliError`
+- `experimental_assertCliAdmin`
 - `BbContext`
 - `BbNavigate`
 - `BbPluginApi`

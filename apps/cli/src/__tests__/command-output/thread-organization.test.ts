@@ -21,6 +21,7 @@ function queuedMessage(
     originPluginId: null,
     initiator: "user",
     senderThreadId: null,
+    authorUserId: null,
     threadId: "thread-1",
     content: [{ type: "text", text: "Follow up", mentions: [] }],
     model: "gpt-5",

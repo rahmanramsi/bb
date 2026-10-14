@@ -2,11 +2,13 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  authUsers,
   markThreadDeleted,
   setExperiments,
   setThreadExecutionOverride,
 } from "@bb/db";
 import {
+  LOCAL_OWNER_USER_ID,
   defaultExperiments,
   encodeClientTurnRequestIdNumber,
   normalizeProviderNativeRoots,
@@ -214,6 +216,7 @@ describe("thread runtime config", () => {
         };
 
         const startCommand = await buildThreadStartCommand(harness.deps, {
+          authorUserId: null,
           environment,
           execution,
           fork: null,
@@ -240,6 +243,7 @@ describe("thread runtime config", () => {
         const submitCommand = await prepareTurnSubmitCommandPayload(
           harness.deps,
           {
+            authorUserId: null,
             environment,
             execution,
             permissionEscalation: "ask",
@@ -340,6 +344,7 @@ describe("thread runtime config", () => {
         } as const;
 
         const startCommand = await buildThreadStartCommand(harness.deps, {
+          authorUserId: null,
           environment,
           execution,
           fork: null,
@@ -366,6 +371,7 @@ describe("thread runtime config", () => {
         const submitCommand = await prepareTurnSubmitCommandPayload(
           harness.deps,
           {
+            authorUserId: null,
             environment,
             execution,
             permissionEscalation: "ask",
@@ -814,6 +820,7 @@ describe("thread runtime config", () => {
       );
 
       const command = await buildThreadStartCommand(harness.deps, {
+        authorUserId: null,
         environment,
         execution,
         fork: null,
@@ -879,6 +886,7 @@ describe("thread runtime config", () => {
           { threadId: thread.id },
         );
         return buildThreadStartCommand(harness.deps, {
+          authorUserId: null,
           environment,
           execution,
           fork: null,
@@ -977,6 +985,7 @@ describe("thread runtime config", () => {
         providerId: "hooked",
       });
       const command = await buildThreadStartCommand(harness.deps, {
+        authorUserId: null,
         environment,
         execution: {
           model: "hook-model",
@@ -1048,6 +1057,7 @@ describe("thread runtime config", () => {
       ];
 
       const command = await buildThreadStartCommand(harness.deps, {
+        authorUserId: null,
         environment,
         execution: {
           model: "claude-sonnet-4-6",
@@ -1078,6 +1088,7 @@ describe("thread runtime config", () => {
         providerId: "pi",
       });
       const piCommand = await buildThreadStartCommand(harness.deps, {
+        authorUserId: null,
         environment,
         execution: {
           model: "pi-model",
@@ -1141,6 +1152,186 @@ describe("thread runtime config", () => {
     });
   });
 
+  it("issues the turn author's shell credential in multi mode and never falls back to a system user", async () => {
+    await withTestHarness(async (harness) => {
+      const hostId = "host-auth";
+      seedHostSession(harness.deps, { id: hostId });
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId,
+        path: "/tmp/auth-project",
+      });
+      const environment = seedEnvironment(harness.deps, {
+        hostId,
+        projectId: project.id,
+        path: "/tmp/auth-project",
+      });
+      const seeded = seedThread(harness.deps, {
+        projectId: project.id,
+        environmentId: environment.id,
+      });
+      const now = new Date();
+      for (const [id, role] of [
+        ["usr_admin_creator", "admin"],
+        ["usr_member_author", "member"],
+      ] as const) {
+        harness.deps.db
+          .insert(authUsers)
+          .values({
+            id,
+            name: id,
+            email: `${id}@example.test`,
+            emailVerified: true,
+            role,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .run();
+      }
+      const environmentInput = {
+        hostId,
+        id: environment.id,
+        path: environment.path,
+        status: environment.status,
+      };
+      const shellPrincipal = async (
+        createdByUserId: string | null,
+        authorUserId: string | null,
+      ) => {
+        const config = await resolveThreadRuntimeCommandConfig(harness.deps, {
+          authorUserId,
+          environment: environmentInput,
+          model: "test-model",
+          thread: { ...seeded, createdByUserId },
+        });
+        const credentials = config.contributedEnv.filter(
+          (entry) => entry.name === "BB_TOKEN",
+        );
+        expect(credentials.length).toBeLessThanOrEqual(1);
+        const credential = credentials[0];
+        if (credential === undefined) return null;
+        expect(credential.source).toEqual({ core: "thread-auth" });
+        if (typeof credential.value !== "string")
+          throw new Error("shell credential is not a string");
+        return harness.deps.userAuth.resolvePrincipal(
+          new Headers({ authorization: `Bearer ${credential.value}` }),
+        );
+      };
+
+      expect(await shellPrincipal("usr_admin_creator", null)).toBeNull();
+      harness.deps.config.authMode = "multi";
+      expect(await shellPrincipal("usr_admin_creator", null)).toMatchObject({
+        userId: "usr_admin_creator",
+        role: "admin",
+      });
+      expect(
+        await shellPrincipal("usr_admin_creator", "usr_member_author"),
+      ).toMatchObject({ userId: "usr_member_author", role: "member" });
+      expect(await shellPrincipal(null, null)).toBeNull();
+      expect(await shellPrincipal(LOCAL_OWNER_USER_ID, null)).toBeNull();
+      expect(
+        await shellPrincipal(LOCAL_OWNER_USER_ID, "usr_member_author"),
+      ).toMatchObject({ userId: "usr_member_author", role: "member" });
+    });
+  });
+
+  it("adds the turn author's credential only to Account Pool provider routes in multi mode", async () => {
+    await withTestHarness(async (harness) => {
+      const hostId = "host-pool-auth";
+      seedHostSession(harness.deps, { id: hostId });
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId,
+        path: "/tmp/pool-auth-project",
+      });
+      const environment = seedEnvironment(harness.deps, {
+        hostId,
+        projectId: project.id,
+        path: "/tmp/pool-auth-project",
+      });
+      const thread = seedThread(harness.deps, {
+        projectId: project.id,
+        environmentId: environment.id,
+        providerId: "claude-code",
+      });
+      const userId = "usr_pool_author";
+      const now = new Date();
+      harness.deps.db
+        .insert(authUsers)
+        .values({
+          id: userId,
+          name: userId,
+          email: `${userId}@example.test`,
+          emailVerified: true,
+          role: "member",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      let providerPluginId = "account-pool";
+      setPluginAgentContributions({
+        listSkillRootContributions: () => [],
+        listAgentTools: () => [],
+        listInstructionContributions: () => [],
+        findAgentTool: () => undefined,
+        invokeAgentTool: async () => ({
+          success: false,
+          contentItems: [{ type: "inputText", text: "unused" }],
+        }),
+        resolveMention: async () => ({ ok: false, error: "unused" }),
+        resolveProviderEnv: async () => ({
+          entries: [
+            {
+              name: "ANTHROPIC_BASE_URL",
+              value: "http://127.0.0.1/pool",
+              source: { plugin: providerPluginId },
+              reason: "Route Claude through Account Pool",
+            },
+            {
+              name: "ANTHROPIC_AUTH_TOKEN",
+              value: "machine-hub-token",
+              source: { plugin: "account-pool" },
+              reason: "Authenticate the machine to Account Pool",
+            },
+          ],
+        }),
+      });
+      harness.deps.config.authMode = "multi";
+
+      const resolve = async () =>
+        resolveThreadRuntimeCommandConfig(harness.deps, {
+          authorUserId: userId,
+          environment: {
+            hostId,
+            id: environment.id,
+            path: environment.path,
+            status: environment.status,
+          },
+          model: "test-model",
+          thread,
+        });
+      try {
+        const pooled = await resolve();
+        const shellToken = pooled.contributedEnv.find(
+          (entry) => entry.name === "BB_TOKEN",
+        );
+        const pluginToken = pooled.contributedEnv.find(
+          (entry) => entry.name === "BB_PLUGIN_USER_TOKEN",
+        );
+        expect(pluginToken?.value).toBe(shellToken?.value);
+        expect(pluginToken?.source).toEqual({ core: "thread-auth" });
+
+        providerPluginId = "another-plugin";
+        const untrusted = await resolve();
+        expect(
+          untrusted.contributedEnv.some(
+            (entry) => entry.name === "BB_PLUGIN_USER_TOKEN",
+          ),
+        ).toBe(false);
+      } finally {
+        setPluginAgentContributions(undefined);
+      }
+    });
+  });
+
   it("resolves the workspace, storage path, and environment directory dynamic tool", async () => {
     await withTestHarness(async (harness) => {
       const hostId = "host-runtime";
@@ -1185,6 +1376,7 @@ describe("thread runtime config", () => {
       const runtimeConfig = await resolveThreadRuntimeCommandConfig(
         harness.deps,
         {
+          authorUserId: null,
           thread,
           model: "test-model",
           environment: {
@@ -1268,11 +1460,7 @@ describe("thread runtime config", () => {
 
       const runtimeConfig = await resolveThreadRuntimeCommandConfig(
         harness.deps,
-        {
-          thread,
-          environment,
-          model: "test-model",
-        },
+        { authorUserId: null, thread, environment, model: "test-model" },
       );
 
       expect(runtimeConfig.instructions).toContain(
@@ -1321,7 +1509,7 @@ describe("thread runtime config", () => {
 
       const runtimeConfig = await resolveThreadRuntimeCommandConfig(
         harness.deps,
-        { thread, environment, model: "test-model" },
+        { authorUserId: null, thread, environment, model: "test-model" },
       );
 
       expect(runtimeConfig.instructions).not.toContain(
@@ -1383,7 +1571,7 @@ describe("thread runtime config", () => {
 
       const runtimeConfig = await resolveThreadRuntimeCommandConfig(
         harness.deps,
-        { thread, environment, model: "test-model" },
+        { authorUserId: null, thread, environment, model: "test-model" },
       );
 
       expect(runtimeConfig.injectedSkillSources).toContainEqual({
@@ -1455,7 +1643,7 @@ describe("thread runtime config", () => {
 
         const runtimeConfig = await resolveThreadRuntimeCommandConfig(
           harness.deps,
-          { thread, environment, model: "test-model" },
+          { authorUserId: null, thread, environment, model: "test-model" },
         );
 
         expect(runtimeConfig.injectedSkillSources).toContainEqual({
@@ -1522,6 +1710,7 @@ describe("thread runtime config", () => {
       const runtimeConfig = await resolveThreadRuntimeCommandConfig(
         harness.deps,
         {
+          authorUserId: null,
           thread,
           model: "test-model",
           environment: {
@@ -1634,6 +1823,7 @@ describe("thread runtime config", () => {
         const runtimeConfig = await resolveThreadRuntimeCommandConfig(
           harness.deps,
           {
+            authorUserId: null,
             thread,
             model: "test-model",
             environment: {
@@ -1717,6 +1907,7 @@ describe("thread runtime config", () => {
         const runtimeConfig = await resolveThreadRuntimeCommandConfig(
           harness.deps,
           {
+            authorUserId: null,
             thread,
             model: "test-model",
             environment: {

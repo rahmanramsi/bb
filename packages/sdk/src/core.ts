@@ -2,6 +2,8 @@ import {
   createDesktopBrowsersArea,
   type ExperimentalDesktopBrowsersArea,
 } from "./areas/desktop-browsers.js";
+import { createHttpTransport } from "./transport-http.js";
+import { createAuthArea, type ExperimentalAuthArea } from "./areas/auth.js";
 import type { BbSdkContext, BbSdkTransport } from "./transport.js";
 import {
   createEnvironmentsArea,
@@ -21,6 +23,7 @@ import {
   createPromptHistoryArea,
   type ExperimentalPromptHistoryArea,
 } from "./areas/prompt-history.js";
+import { createUsersArea, type ExperimentalUsersArea } from "./areas/users.js";
 import { createBbRealtimeClient } from "./realtime-client.js";
 import type { BbRealtime } from "./realtime-types.js";
 import { createStatusArea, type StatusArea } from "./areas/status.js";
@@ -47,9 +50,11 @@ export interface CreateBbSdkWithGuideArgs extends CreateBbSdkArgs {
 }
 
 export interface BbSdkAreas extends BbRealtime {
+  experimental_auth: ExperimentalAuthArea;
   experimental_desktopBrowsers: ExperimentalDesktopBrowsersArea;
   experimental_promptHistory: ExperimentalPromptHistoryArea;
   experimental_server: ExperimentalServerArea;
+  experimental_users: ExperimentalUsersArea;
   environments: EnvironmentsArea;
   files: FilesArea;
   hosts: HostsArea;
@@ -74,14 +79,28 @@ export function createBbSdk(args: CreateBbSdkArgs): BbSdkAreas;
 export function createBbSdk(
   args: CreateBbSdkArgs | CreateBbSdkWithGuideArgs,
 ): BbSdkAreas | BbSdk {
-  const sdkContext = { transport: args.transport };
+  let transport = args.transport;
+  if (args.context?.authToken !== undefined) {
+    const authenticated = createHttpTransport({
+      ...transport,
+      context: args.context,
+    });
+    transport = {
+      ...transport,
+      api: authenticated.api,
+      fetch: authenticated.fetch,
+    };
+  }
+  const sdkContext = { transport };
   const realtime = createBbRealtimeClient({
-    transport: args.transport,
+    transport,
   });
   const areas: BbSdkAreas = {
+    experimental_auth: createAuthArea(sdkContext),
     experimental_desktopBrowsers: createDesktopBrowsersArea(sdkContext),
     experimental_promptHistory: createPromptHistoryArea(sdkContext),
     experimental_server: createServerArea(sdkContext),
+    experimental_users: createUsersArea(sdkContext),
     environments: createEnvironmentsArea(sdkContext),
     files: createFilesArea(sdkContext),
     hosts: createHostsArea(sdkContext),

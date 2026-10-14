@@ -8,7 +8,7 @@ import type {
   ClientTurnRequestId,
   PromptInput,
   ResolvedThreadExecutionOptions,
-  Thread,
+  ThreadRecord,
   ThreadTurnInitiator,
   TurnRequestTarget,
 } from "@bb/domain";
@@ -53,6 +53,8 @@ import {
   resolveThreadRuntimeState,
 } from "./thread-runtime-display.js";
 import { recordAcceptedPromptHistoryEntry } from "../prompt-history.js";
+import { NotificationBuffer } from "../lib/notification-buffer.js";
+import type { DbNotifier } from "@bb/db";
 import { ensureHostSessionReadyForWork } from "../hosts/host-lifecycle.js";
 import {
   LIVE_DAEMON_COMMAND_TIMEOUT_MS,
@@ -89,6 +91,7 @@ type SendThreadMessagePayload = SendMessageRequest & {
 };
 
 interface SendThreadMessageArgs {
+  authorUserId: string | null;
   beforeAppendInTransaction?: SendThreadMessageTransactionPreflight;
   /**
    * Present only when this send re-submits a failed turn. Marks the turn event
@@ -102,13 +105,13 @@ interface SendThreadMessageArgs {
     onCommandSettled?: () => void | Promise<void>;
   };
   payload: SendThreadMessagePayload;
-  thread: Thread;
+  thread: ThreadRecord;
   trigger: SendThreadMessageTrigger;
 }
 
 interface ResolveMessageSenderArgs {
   senderThreadId?: string;
-  targetThread: Thread;
+  targetThread: ThreadRecord;
 }
 
 interface FormatAgentThreadInputArgs {
@@ -131,7 +134,7 @@ interface SendThreadMessageQueueRequestArgs {
 }
 
 interface SendThreadMessageQueueRequestResult {
-  activeThread: Thread | null;
+  activeThread: ThreadRecord | null;
 }
 
 export interface SendThreadMessageTransactionPreflight {
@@ -145,6 +148,8 @@ interface SendThreadMessageQueueRequest {
 }
 
 interface AppendAndQueueSendThreadMessageArgs {
+  hub: DbNotifier;
+  authorUserId: string | null;
   /** Retry provenance; absent for an original dispatch. */
   retryOf?: TurnRequestRetryMarker;
   beforeAppendInTransaction?: SendThreadMessageTransactionPreflight;
@@ -158,11 +163,11 @@ interface AppendAndQueueSendThreadMessageArgs {
   requestId: ClientTurnRequestId;
   senderThreadId: string | null;
   target: TurnRequestTarget;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 interface AppendAndQueueSendThreadMessageResult {
-  activeThread: Thread | null;
+  activeThread: ThreadRecord | null;
   request: AppendedClientTurnRequestWithNotification;
 }
 
@@ -184,7 +189,7 @@ export function ensureThreadIsNotAwaitingUserInteraction(
 }
 
 export function ensureThreadIsWritable(
-  thread: Thread,
+  thread: ThreadRecord,
   allowStopping = false,
 ): void {
   if (thread.archivedAt) {
@@ -208,12 +213,12 @@ export function ensureThreadIsWritable(
  * queues them on a `stopping` wait — but composing, editing, reordering and
  * asking for one to go first all stay available.
  */
-export function ensureThreadQueueIsWritable(thread: Thread): void {
+export function ensureThreadQueueIsWritable(thread: ThreadRecord): void {
   ensureThreadIsWritable(thread, true);
 }
 
 function resolveSendMode(
-  thread: Thread,
+  thread: ThreadRecord,
   requestedMode: SendThreadMessageMode,
 ): "start" | "auto" | "steer" {
   if (requestedMode === "start") {
@@ -398,6 +403,8 @@ export function captureUserMessageSentTelemetry(
 }
 
 function appendAndQueueSendThreadMessageInTransaction({
+  hub,
+  authorUserId,
   retryOf,
   beforeAppendInTransaction,
   db,
@@ -412,7 +419,8 @@ function appendAndQueueSendThreadMessageInTransaction({
   target,
   thread,
 }: AppendAndQueueSendThreadMessageArgs): AppendAndQueueSendThreadMessageResult {
-  let activeThread: Thread | null = null;
+  const notifications = new NotificationBuffer();
+  let activeThread: ThreadRecord | null = null;
   const request = db.transaction(
     (tx) => {
       assertThreadHostAcceptsWork(tx, thread);
@@ -437,8 +445,9 @@ function appendAndQueueSendThreadMessageInTransaction({
           },
         );
       recordAcceptedPromptHistoryEntry(
-        { db: tx },
+        { db: tx, hub: notifications },
         {
+          authorUserId,
           thread,
           input,
           initiator,
@@ -455,6 +464,7 @@ function appendAndQueueSendThreadMessageInTransaction({
     },
     { behavior: "immediate" },
   );
+  notifications.flushInto(hub);
   return {
     activeThread,
     request,
@@ -599,6 +609,7 @@ async function sendThreadMessageWithoutContextClear(
 
   if (
     await dispatchTurnDuringReprovision({
+      authorUserId: args.authorUserId,
       beforeRequestAppendInTransaction: beforeAppendInTransaction,
       deps,
       environment,
@@ -642,6 +653,7 @@ async function sendThreadMessageWithoutContextClear(
 
   if (mode === "start") {
     const commandArgs = {
+      authorUserId: args.authorUserId,
       thread,
       fork: null,
       input,
@@ -675,6 +687,8 @@ async function sendThreadMessageWithoutContextClear(
         }
       : await prepareReadyThreadTurnCommand(deps, commandArgs);
     const queuedRequest = appendAndQueueSendThreadMessageInTransaction({
+      hub: deps.hub,
+      authorUserId: args.authorUserId,
       ...(args.retryOf !== undefined ? { retryOf: args.retryOf } : {}),
       beforeAppendInTransaction: ({ tx }) => {
         beforeAppendInTransaction({ tx });
@@ -750,6 +764,7 @@ async function sendThreadMessageWithoutContextClear(
     hostId: readyEnvironment.hostId,
   });
   const preparedCommand = await prepareTurnSubmitCommandPayload(deps, {
+    authorUserId: args.authorUserId,
     thread,
     input,
     ...(inputGroups !== undefined ? { inputGroups } : {}),
@@ -771,6 +786,8 @@ async function sendThreadMessageWithoutContextClear(
     requestId,
   });
   const queuedRequest = appendAndQueueSendThreadMessageInTransaction({
+    hub: deps.hub,
+    authorUserId: args.authorUserId,
     ...(args.retryOf !== undefined ? { retryOf: args.retryOf } : {}),
     beforeAppendInTransaction,
     db: deps.db,

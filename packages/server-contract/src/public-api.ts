@@ -424,6 +424,34 @@ import {
   type ServerMoveStatus,
   type ServerMoveStatusResponse,
 } from "./api/server-move.js";
+import {
+  acceptUserInviteRequestSchema,
+  updateUserRoleRequestSchema,
+  type AcceptUserInviteRequest,
+  type UpdateUserRoleRequest,
+  type PathUserId,
+  type PathUserInviteId,
+  type UserInviteListResponse,
+  addConnectMemberRequestSchema,
+  type AddConnectMemberRequest,
+  type AddConnectMemberResponse,
+  type ConnectMemberListResponse,
+  authSignInRequestSchema,
+  authSignUpRequestSchema,
+  createPersonalAccessTokenRequestSchema,
+  createUserInviteRequestSchema,
+  type AuthSessionResponse,
+  type AuthSignInRequest,
+  type AuthSignUpRequest,
+  type AuthUserResponse,
+  type CreatePersonalAccessTokenRequest,
+  type CreatePersonalAccessTokenResponse,
+  type CreateUserInviteRequest,
+  type CreateUserInviteResponse,
+  type PathPersonalAccessTokenId,
+  type PersonalAccessTokenListResponse,
+  type UserListResponse,
+} from "./api/auth.js";
 import type { ApiError } from "./errors.js";
 
 type PathProjectSourceId = { param: { id: string; sourceId: string } };
@@ -433,6 +461,140 @@ type PathThreadInteractionId = {
 };
 
 export const publicApiRoutes = {
+  me: defineRoute({
+    path: "/me",
+    method: "get",
+    request: noRequest(),
+    response: jsonResponse<AuthUserResponse>(),
+  }),
+  auth: {
+    session: defineRoute({
+      path: "/auth/session",
+      method: "get",
+      request: noRequest(),
+      response: jsonResponse<AuthSessionResponse>(),
+    }),
+    signIn: defineRoute({
+      path: "/auth/sign-in",
+      method: "post",
+      request: jsonRequest<EmptyInput, AuthSignInRequest>(
+        authSignInRequestSchema,
+      ),
+      response: jsonResponse<AuthUserResponse>(),
+    }),
+    signUp: defineRoute({
+      path: "/auth/sign-up",
+      method: "post",
+      request: jsonRequest<EmptyInput, AuthSignUpRequest>(
+        authSignUpRequestSchema,
+      ),
+      response: jsonResponse<AuthUserResponse>({ status: 201 }),
+    }),
+    signOut: defineRoute({
+      path: "/auth/sign-out",
+      method: "post",
+      request: noRequest<EmptyInput>(),
+      response: jsonResponse<{ ok: true }>(),
+    }),
+    listTokens: defineRoute({
+      path: "/auth/tokens",
+      method: "get",
+      request: noRequest(),
+      response: jsonResponse<PersonalAccessTokenListResponse>(),
+    }),
+    createToken: defineRoute({
+      path: "/auth/tokens",
+      method: "post",
+      request: jsonRequest<EmptyInput, CreatePersonalAccessTokenRequest>(
+        createPersonalAccessTokenRequestSchema,
+      ),
+      response: jsonResponse<CreatePersonalAccessTokenResponse>({
+        status: 201,
+      }),
+    }),
+    revokeToken: defineRoute({
+      path: "/auth/tokens/:id",
+      method: "delete",
+      request: noRequest<PathPersonalAccessTokenId>(),
+      response: jsonResponse<{ ok: true }>(),
+    }),
+    listInvites: defineRoute({
+      path: "/auth/invites",
+      method: "get",
+      request: noRequest(),
+      response: jsonResponse<UserInviteListResponse>(),
+    }),
+    revokeInvite: defineRoute({
+      path: "/auth/invites/:id",
+      method: "delete",
+      request: noRequest<PathUserInviteId>(),
+      response: jsonResponse<{ ok: true }>(),
+    }),
+    acceptInvite: defineRoute({
+      path: "/auth/invites/accept",
+      method: "post",
+      request: jsonRequest<EmptyInput, AcceptUserInviteRequest>(
+        acceptUserInviteRequestSchema,
+      ),
+      response: jsonResponse<AuthUserResponse>({ status: 201 }),
+    }),
+    createInvite: defineRoute({
+      path: "/auth/invites",
+      method: "post",
+      request: jsonRequest<EmptyInput, CreateUserInviteRequest>(
+        createUserInviteRequestSchema,
+      ),
+      response: jsonResponse<CreateUserInviteResponse>({ status: 201 }),
+    }),
+  },
+  users: {
+    listConnectMembers: defineRoute({
+      path: "/users/connect-members",
+      method: "get",
+      request: noRequest(),
+      response: jsonResponse<ConnectMemberListResponse>(),
+    }),
+    addConnectMember: defineRoute({
+      path: "/users/connect-members",
+      method: "post",
+      request: jsonRequest<EmptyInput, AddConnectMemberRequest>(
+        addConnectMemberRequestSchema,
+      ),
+      response: jsonResponse<AddConnectMemberResponse>(),
+    }),
+    removeConnectMember: defineRoute({
+      path: "/users/connect-members/:id",
+      method: "delete",
+      request: noRequest<PathUserId>(),
+      response: jsonResponse<{ ok: true }>(),
+    }),
+    directory: defineRoute({
+      path: "/users/directory",
+      method: "get",
+      request: noRequest(),
+      response: jsonResponse<UserListResponse>(),
+    }),
+    updateRole: defineRoute({
+      path: "/users/:id/role",
+      method: "put",
+      request: jsonRequest<PathUserId, UpdateUserRoleRequest>(
+        updateUserRoleRequestSchema,
+      ),
+      response: jsonResponse<AuthUserResponse>(),
+    }),
+    remove: defineRoute({
+      path: "/users/:id",
+      method: "delete",
+      request: noRequest<PathUserId>(),
+      response: jsonResponse<{ ok: true }>(),
+    }),
+    list: defineRoute({
+      path: "/users",
+      method: "get",
+      request: noRequest(),
+      response: jsonResponse<UserListResponse>(),
+    }),
+  },
   promptHistory: {
     list: defineRoute({
       path: "/prompt-history",

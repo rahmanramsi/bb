@@ -1,10 +1,10 @@
 import { ARCHIVE_UNDO_GRACE_MS } from "../../constants.js";
-import type { Thread } from "@bb/domain";
+import type { ThreadRecord } from "@bb/domain";
 
-type ArchiveUndoGraceThread = Pick<Thread, "archivedAt" | "status">;
+type ArchiveUndoGraceThread = Pick<ThreadRecord, "archivedAt" | "status">;
 
 export function archiveUndoGraceKeepsTerminals(
-  thread: Pick<Thread, "archivedAt">,
+  thread: Pick<ThreadRecord, "archivedAt">,
   now: number,
 ): boolean {
   return (

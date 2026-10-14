@@ -1,5 +1,5 @@
 import { setExperiments } from "@bb/db";
-import { turnScope, type Thread } from "@bb/domain";
+import { turnScope, type ThreadRecord, LOCAL_OWNER_USER_ID } from "@bb/domain";
 import {
   groupHostDaemonEvents,
   type HostDaemonEventEnvelope,
@@ -27,7 +27,7 @@ afterEach(() => vi.restoreAllMocks());
 
 function seedIdleThread(harness: TestAppHarness): {
   sessionId: string;
-  thread: Thread;
+  thread: ThreadRecord;
 } {
   const { host, session } = seedHostSession(harness.deps, {
     id: "host-turn-trace",
@@ -81,10 +81,11 @@ function spyOnTurnTraceLogs(harness: TestAppHarness): () => unknown[] {
 
 async function sendFollowUp(
   harness: TestAppHarness,
-  thread: Thread,
+  thread: ThreadRecord,
 ): Promise<void> {
   await expect(
     acceptThreadSendRequest(harness.deps, {
+      authorUserId: LOCAL_OWNER_USER_ID,
       payload: {
         input: textInput("traced follow-up"),
         mode: "start",

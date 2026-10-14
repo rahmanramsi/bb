@@ -1,45 +1,85 @@
-import { eq } from "drizzle-orm";
 import {
   defaultAppTheme,
   defaultFaviconColor,
+  faviconColorPreferenceSchema,
   type FaviconColorPreference,
 } from "@bb/domain";
 import type { DbConnection } from "../connection.js";
-import { appTheme } from "../schema.js";
+import {
+  getStoredUserSetting,
+  overwriteStoredUiPreference,
+} from "./ui-preferences.js";
 
-const APP_THEME_ROW_ID = "current";
+const APPEARANCE_SETTING_KEY = "appearance";
 
-export function getStoredThemeId(db: DbConnection): string {
-  const row = db
-    .select({ themeId: appTheme.themeId })
-    .from(appTheme)
-    .where(eq(appTheme.id, APP_THEME_ROW_ID))
-    .get();
-
-  return row?.themeId ?? defaultAppTheme.themeId;
+interface StoredAppearance {
+  faviconColor: FaviconColorPreference;
+  themeId: string;
 }
 
-export function getStoredFaviconColor(db: DbConnection): FaviconColorPreference {
-  const row = db
-    .select({ faviconColor: appTheme.faviconColor })
-    .from(appTheme)
-    .where(eq(appTheme.id, APP_THEME_ROW_ID))
-    .get();
+function parseStoredAppearance(valueJson: string): StoredAppearance | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(valueJson);
+  } catch {
+    return null;
+  }
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const themeId = Reflect.get(value, "themeId");
+  const faviconColor = faviconColorPreferenceSchema.safeParse(
+    Reflect.get(value, "faviconColor"),
+  );
+  return {
+    themeId:
+      typeof themeId === "string" && themeId.length > 0
+        ? themeId
+        : defaultAppTheme.themeId,
+    faviconColor: faviconColor.success
+      ? faviconColor.data
+      : defaultFaviconColor,
+  };
+}
 
-  return row?.faviconColor ?? defaultFaviconColor;
+export function getStoredAppearance(
+  db: DbConnection,
+  userId: string,
+): StoredAppearance {
+  const stored = getStoredUserSetting(db, {
+    key: APPEARANCE_SETTING_KEY,
+    userId,
+  });
+  return (
+    (stored === null ? null : parseStoredAppearance(stored.valueJson)) ?? {
+      themeId: defaultAppTheme.themeId,
+      faviconColor: defaultFaviconColor,
+    }
+  );
+}
+
+export function getStoredThemeId(db: DbConnection, userId: string): string {
+  return getStoredAppearance(db, userId).themeId;
+}
+
+export function getStoredFaviconColor(
+  db: DbConnection,
+  userId: string,
+): FaviconColorPreference {
+  return getStoredAppearance(db, userId).faviconColor;
 }
 
 export function setStoredAppearance(
   db: DbConnection,
-  appearance: { themeId: string; faviconColor: FaviconColorPreference },
+  userId: string,
+  appearance: StoredAppearance,
 ): void {
-  const updatedAt = Date.now();
-  const { themeId, faviconColor } = appearance;
-  db.insert(appTheme)
-    .values({ id: APP_THEME_ROW_ID, themeId, faviconColor, updatedAt })
-    .onConflictDoUpdate({
-      target: appTheme.id,
-      set: { themeId, faviconColor, updatedAt },
-    })
-    .run();
+  overwriteStoredUiPreference(db, {
+    key: APPEARANCE_SETTING_KEY,
+    userId,
+    valueJson: JSON.stringify({
+      themeId: appearance.themeId,
+      faviconColor: appearance.faviconColor,
+    }),
+  });
 }

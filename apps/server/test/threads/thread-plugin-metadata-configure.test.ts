@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createThread } from "@bb/db";
-import { encodeClientTurnRequestIdNumber, type JsonObject } from "@bb/domain";
+import {
+  encodeClientTurnRequestIdNumber,
+  type JsonObject,
+  LOCAL_OWNER_USER_ID,
+} from "@bb/domain";
 import {
   buildExecutionOptions,
   buildThreadStartCommand,
@@ -164,6 +168,7 @@ describe("thread plugin metadata in agent configuration", () => {
       );
 
       const startCommand = await buildThreadStartCommand(server.deps, {
+        authorUserId: null,
         environment,
         execution,
         fork: null,
@@ -190,6 +195,7 @@ describe("thread plugin metadata in agent configuration", () => {
         threadId: thread.id,
       });
       const submitCommand = await prepareTurnSubmitCommandPayload(server.deps, {
+        authorUserId: null,
         environment,
         execution,
         permissionEscalation: "ask",
@@ -219,7 +225,10 @@ describe("thread plugin metadata in agent configuration", () => {
         projectId: project.id,
         path: workspacePath,
       });
-      server.pluginService.bindSdk({ baseUrl: server.baseUrl });
+      server.pluginService.bindSdk({
+        baseUrl: server.baseUrl,
+        serviceToken: server.deps.userAuth.serviceToken,
+      });
       const api = server.pluginService.getApi("issue-launcher");
       if (!api) throw new Error("issue-launcher is not running");
 
@@ -313,6 +322,7 @@ describe("thread plugin metadata in agent configuration", () => {
 
       await expect(
         createThreadFromRequest(harness.deps, {
+          createdByUserId: LOCAL_OWNER_USER_ID,
           environment: {
             type: "host",
             hostId: host.id,

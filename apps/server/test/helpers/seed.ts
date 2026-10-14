@@ -21,6 +21,7 @@ import {
 } from "@bb/host-daemon-contract";
 import {
   encodeClientTurnRequestIdNumber,
+  LOCAL_OWNER_USER_ID,
   parseStoredThreadEvent,
   threadScope,
   turnScope,
@@ -268,6 +269,7 @@ export function seedQueuedMessage(
     reasoningLevel?: string;
     permissionMode?: PermissionMode;
     senderThreadId?: string | null;
+    authorUserId?: string | null;
     serviceTier?: string;
     /** Defaults to a row with no wait: an ordinary queued message. */
     waitingOn?: QueuedMessageWaitingOn | null;
@@ -281,6 +283,12 @@ export function seedQueuedMessage(
     reasoningLevel: args.reasoningLevel ?? "medium",
     permissionMode: args.permissionMode ?? "full",
     senderThreadId: args.senderThreadId ?? null,
+    authorUserId:
+      args.authorUserId === undefined
+        ? args.senderThreadId
+          ? null
+          : LOCAL_OWNER_USER_ID
+        : args.authorUserId,
     serviceTier: args.serviceTier ?? "default",
     waitingOn: args.waitingOn ?? null,
     sendAt: args.sendAt ?? null,

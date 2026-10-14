@@ -4,7 +4,7 @@ import {
   threadScope,
   turnScope,
 } from "@bb/domain";
-import type { ClientTurnRequestId, Thread } from "@bb/domain";
+import type { ClientTurnRequestId, ThreadRecord } from "@bb/domain";
 import {
   createConnection,
   createProject,
@@ -29,7 +29,7 @@ const execution = {
 const requestId = (value: number): ClientTurnRequestId =>
   encodeClientTurnRequestIdNumber({ value });
 
-function setup(): { db: DbConnection; thread: Thread } {
+function setup(): { db: DbConnection; thread: ThreadRecord } {
   const db = createConnection(":memory:");
   migrate(db);
   const host = upsertHost(db, noopNotifier, {
@@ -49,7 +49,7 @@ function setup(): { db: DbConnection; thread: Thread } {
 
 function seedThreadWithEarlyHeadState(
   db: DbConnection,
-  thread: Thread,
+  thread: ThreadRecord,
   turns: number,
   itemsPerTurn: number,
   runningWorkflow: boolean,

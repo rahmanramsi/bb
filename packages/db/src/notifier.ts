@@ -20,6 +20,13 @@ export interface DbNotifier {
   ): void;
   notifyHost(hostId: string, changes: HostChangeKind[]): void;
   notifySystem(changes: SystemChangeKind[]): void;
+  notifyUserThread(
+    userId: string,
+    threadId: string,
+    changes: ThreadChangeKind[],
+    metadata?: ThreadChangeMetadata,
+  ): void;
+  notifyUserSystem(userId: string, changes: SystemChangeKind[]): void;
 }
 
 export const noopNotifier: DbNotifier = {
@@ -28,4 +35,6 @@ export const noopNotifier: DbNotifier = {
   notifyEnvironment() {},
   notifyHost() {},
   notifySystem() {},
+  notifyUserThread() {},
+  notifyUserSystem() {},
 };

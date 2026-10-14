@@ -121,6 +121,26 @@ export const server = sqliteTable(
   ],
 );
 
+export const serverMembers = sqliteTable(
+  "server_members",
+  {
+    serverId: text("server_id")
+      .notNull()
+      .references(() => server.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    role: text("role", { enum: ["admin", "member"] })
+      .notNull()
+      .default("member"),
+    createdAt: timestampMs("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.serverId, table.userId] }),
+    index("server_members_user_id_idx").on(table.userId),
+  ],
+);
+
 export const connectCode = sqliteTable(
   "connect_code",
   {
@@ -306,6 +326,7 @@ export const schema = {
   profile,
   labelClaim,
   server,
+  serverMembers,
   machine,
   connectCode,
   auditLog,

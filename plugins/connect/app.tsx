@@ -1397,6 +1397,13 @@ function ConnectedContent({
 
       {status.url !== null ? <UrlHero url={status.url} showOpen /> : null}
 
+      {status.url !== null ? (
+        <UrlLink
+          href={`${status.url.replace(/\/$/u, "")}/api/connect/server-members`}
+        >
+          Manage server access
+        </UrlLink>
+      ) : null}
       <SharedPortsSection shares={status.shares} dimmed={false} />
 
       <TurnOffControls

@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { environments, getThread } from "@bb/db";
 import type { ThreadStatus } from "@bb/domain";
 import { eq } from "drizzle-orm";
@@ -47,6 +48,7 @@ function seedPointerlessThread(
   const thread = seedThread(deps, { projectId: project.id, status });
   if (status === "starting") {
     requestThreadProvision(deps, {
+      authorUserId: LOCAL_OWNER_USER_ID,
       thread,
       environmentIntent: {
         type: "provider",

@@ -13,7 +13,7 @@ import type {
   ResolvedThreadExecutionOptions,
   SystemMessageKind,
   SystemMessageSubject,
-  Thread,
+  ThreadRecord,
 } from "@bb/domain";
 import type { HostDaemonCommand } from "@bb/host-daemon-contract";
 import type { LoggedPendingInteractionWorkSessionDeps } from "../../types.js";
@@ -116,7 +116,7 @@ interface QueueReadyParentSystemMessageArgs extends ParentSystemMessageTaxonomy 
   environment: ReadyThreadEnvironment;
   execution: ResolvedThreadExecutionOptions;
   input: PromptInput[];
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 interface QueueActiveParentSystemMessageInTransactionArgs extends QueueReadyParentSystemMessageArgs {
@@ -268,6 +268,7 @@ async function queueActiveParentSystemMessage(
         execution: args.execution,
         payload: { kind: "inline" },
         senderThreadId: null,
+        authorUserId: null,
         origin: null,
         originPluginId: null,
         requestedBy: null,
@@ -303,6 +304,7 @@ async function queueActiveParentSystemMessage(
     hostId: args.environment.hostId,
   });
   const preparedCommand = await prepareTurnSubmitCommandPayload(deps, {
+    authorUserId: null,
     thread: args.thread,
     input: args.input,
     execution: args.execution,
@@ -365,6 +367,7 @@ async function queueReadyParentSystemMessage(
   const requestId = createClientTurnRequestId();
 
   const command = await prepareReadyThreadTurnCommand(deps, {
+    authorUserId: null,
     thread: args.thread,
     fork: null,
     input: args.input,
@@ -381,7 +384,7 @@ async function queueReadyParentSystemMessage(
     providerId: args.thread.providerId,
     syncGeneratedTitle: false,
   });
-  const activeThread: Thread | null = deps.db.transaction(
+  const activeThread: ThreadRecord | null = deps.db.transaction(
     (tx) => {
       ensureThreadCanStartRequest(args.thread);
       appendPreparedClientTurnRequestedEventWithNotificationInTransaction(tx, {
@@ -512,7 +515,7 @@ export async function queueParentSystemMessage(
 
 interface DeliverParentSystemMessageArgs extends ParentSystemMessageTaxonomy {
   input: PromptInput[];
-  parentThread: Thread;
+  parentThread: ThreadRecord;
 }
 
 /**
@@ -547,6 +550,7 @@ async function deliverParentSystemMessageWithContextGuard(
   );
   if (
     await dispatchTurnDuringReprovision({
+      authorUserId: null,
       deps,
       environment,
       execution,

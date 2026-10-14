@@ -13,6 +13,7 @@ import type { PluginInstallJobs } from "../services/plugins/plugin-install-jobs.
 import { errorMessage } from "../services/lib/error-log-fields.js";
 import { hashedAssetCacheControl } from "./plugin-image-response.js";
 import { respondWithInstallJob } from "./plugin-install-jobs.js";
+import { assertAdmin } from "../request-context.js";
 
 function entrySelector(
   entryId: string | undefined,
@@ -81,6 +82,7 @@ export function registerPluginCatalogRoutes(
   });
 
   app.post("/plugin-catalog/install", async (context) => {
+    assertAdmin(context);
     const json: unknown = await context.req.json().catch(() => null);
     const body = pluginCatalogInstallRequestSchema.safeParse(json);
     if (!body.success) {
@@ -118,6 +120,7 @@ export function registerPluginCatalogRoutes(
   );
 
   app.post("/marketplaces", async (context) => {
+    assertAdmin(context);
     const json: unknown = await context.req.json().catch(() => null);
     const body = pluginMarketplaceAddRequestSchema.safeParse(json);
     if (!body.success) {
@@ -140,6 +143,7 @@ export function registerPluginCatalogRoutes(
   });
 
   app.post("/marketplaces/refresh", async (context) => {
+    assertAdmin(context);
     const json: unknown = await context.req.json().catch(() => null);
     const body = pluginMarketplaceRefreshRequestSchema.safeParse(json ?? {});
     if (!body.success) {
@@ -155,6 +159,7 @@ export function registerPluginCatalogRoutes(
   });
 
   app.delete("/marketplaces/:name", async (context) => {
+    assertAdmin(context);
     const parsedName = pluginMarketplaceNameSchema.safeParse(
       context.req.param("name"),
     );

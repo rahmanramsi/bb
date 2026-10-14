@@ -81,6 +81,10 @@ vi.mock("@/components/ui/bottom-anchored-scroll-body", () => ({
         },
 }));
 
+vi.mock("@/hooks/queries/user-queries", () => ({
+  useUserAttribution: () => ({ nameFor: () => null }),
+}));
+
 const noop = () => {};
 
 function TypeaheadLayoutFixture({
@@ -591,7 +595,11 @@ describe("QueuedMessagesList", () => {
     };
     const draftMessage = {
       ...makeQueuedMessage("q_draft", "Release notes outline"),
-      waitingOn: { kind: "plugin" as const, pluginId: "drafts", reason: "Draft" },
+      waitingOn: {
+        kind: "plugin" as const,
+        pluginId: "drafts",
+        reason: "Draft",
+      },
       createdAt: 3,
     };
     const { container, rerender } = render(
@@ -601,9 +609,7 @@ describe("QueuedMessagesList", () => {
       />,
     );
     const headerWait = () =>
-      container.querySelector<HTMLElement>(
-        "header [data-queued-message-wait]",
-      );
+      container.querySelector<HTMLElement>("header [data-queued-message-wait]");
 
     expect(headerWait()?.textContent).toBe("Provider unavailable");
     expect(headerWait()?.hasAttribute("data-queued-message-failed")).toBe(true);

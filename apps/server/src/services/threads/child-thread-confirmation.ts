@@ -1,5 +1,5 @@
 import { countNonDeletedAssignedChildThreads } from "@bb/db";
-import type { Thread } from "@bb/domain";
+import type { ThreadRecord } from "@bb/domain";
 import type { AppDeps } from "../../types.js";
 import { ApiError } from "../../errors.js";
 
@@ -9,7 +9,7 @@ interface RequireChildThreadsConfirmationRequest {
   action: ChildThreadsDestructiveAction;
   confirmed: boolean;
   deps: AppDeps;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 function childThreadsConfirmationMessage(

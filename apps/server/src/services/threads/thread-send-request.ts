@@ -1,4 +1,4 @@
-import { isStandaloneBuiltinClearCommand, type Thread } from "@bb/domain";
+import { isStandaloneBuiltinClearCommand, type ThreadRecord } from "@bb/domain";
 import type {
   SendMessageRequest,
   SendMessageResponse,
@@ -11,8 +11,9 @@ import { assertThreadHostAcceptsWork } from "./thread-host-admission.js";
 import { runWithTurnTrace } from "../system/turn-trace.js";
 
 interface AcceptThreadSendRequestArgs {
+  authorUserId: string | null;
   payload: SendMessageRequest;
-  thread: Thread;
+  thread: ThreadRecord;
 }
 
 export async function acceptThreadSendRequest(
@@ -25,6 +26,7 @@ export async function acceptThreadSendRequest(
       thread: args.thread,
     });
     await sendThreadMessage(deps, {
+      authorUserId: args.authorUserId,
       environment,
       payload: args.payload,
       thread: args.thread,
@@ -39,6 +41,7 @@ export async function acceptThreadSendRequest(
     () =>
       attemptDispatch(deps, {
         thread: args.thread,
+        authorUserId: args.authorUserId,
         payload: args.payload,
         source: { kind: "inline" },
         queuePayload: { kind: "inline" },

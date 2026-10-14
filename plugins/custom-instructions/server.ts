@@ -69,6 +69,7 @@ export default async function plugin(bb: BbPluginApi) {
           }),
         }),
         set: cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Replace the custom instructions",
           positionals: [
             {
@@ -102,6 +103,7 @@ export default async function plugin(bb: BbPluginApi) {
           },
         }),
         clear: cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Clear the custom instructions",
           options: { json: JSON_OPTION },
           async run(input) {

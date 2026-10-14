@@ -13,7 +13,24 @@ export const JSON_SHAPE_BY_COMMAND_PATH: Readonly<Record<string, string>> = {
   "thread wait": "{threadId, matched: true, target}",
   "thread search": "{active: {total, results}, archived: {total, results}}",
   "prompt-history list":
-    "{entries: [{id, createdAt, input, projectId, threadId, scope}], nextCursor: string | null}",
+    "{entries: [{id, createdAt, input, projectId, threadId, scope}], nextCursor: string | null}    (only the caller's prompts)",
+  login: "{user: {id, name, email, role}}",
+  logout: "{ok: true}",
+  whoami: "{user: {id, name, email, role}}",
+  "user connect-members list": "{members: [{userId, email, role}]}",
+  "user connect-members add": "{member: {userId, email, role}}",
+  "user connect-members remove": "{ok: true}",
+  "user role": "{user: {id, name, email, role}}",
+  "user remove": "{ok: true}",
+  "invite create": "{id, token, role, email, expiresAt}",
+  "invite list":
+    "{invites: [{id, role, email, expiresAt, createdAt, createdByUserId}]}",
+  "invite revoke": "{ok: true}",
+  "invite accept": "{user: {id, name, email, role}}",
+  "token create": "{token, summary: {id, name, start, createdAt, lastUsedAt}}",
+  "token list": "{tokens: [{id, name, start, createdAt, lastUsedAt}]}",
+  "token revoke": "{ok: true}",
+  "user list": "{users: [{id, name, email, role}]}    (wrapped in .users)",
   "project list":
     "[{id, kind, name, gitRemoteUrl, sources: [{id, hostId, path, isDefault}]}]    (bare array)",
   "machine list":

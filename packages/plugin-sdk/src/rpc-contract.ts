@@ -14,7 +14,8 @@ export type PluginRpcErrorCode =
   | "handler_error"
   | "invalid_output"
   | "non_json_result"
-  | "unknown_method";
+  | "unknown_method"
+  | "forbidden";
 
 /** Structured RPC failure returned as `{ ok: false, error }`. */
 export interface PluginRpcError {
@@ -70,6 +71,13 @@ export interface PluginRpcMethodContract<
   OutputSchema extends StandardSchemaV1 = StandardSchemaV1,
 > {
   readonly experimental_description?: string;
+  /**
+   * `"admin"` limits the method to server admins. In multi-user mode the host
+   * answers other callers with HTTP 403 and error code `forbidden` before the
+   * handler runs. Mark methods that change server-wide configuration,
+   * credentials, or other admin-only state.
+   */
+  readonly experimental_requiredRole?: "admin";
   readonly input: InputSchema;
   readonly output: OutputSchema;
 }

@@ -6,6 +6,7 @@ import {
   threadScope,
   turnScope,
   type PromptInput,
+  LOCAL_OWNER_USER_ID,
 } from "@bb/domain";
 import { createConnection } from "../../src/connection.js";
 import { noopNotifier } from "../../src/notifier.js";
@@ -174,15 +175,17 @@ describe("thread search data", () => {
         "legacybackfill",
       ]) {
         const results = searchThreadsWithPendingInteractionState(db, {
+          viewerUserId: LOCAL_OWNER_USER_ID,
           query,
           limitPerGroup: 20,
         });
-        expect(results.active.results.map((result) => result.thread.id)).toEqual(
-          [thread.id],
-        );
+        expect(
+          results.active.results.map((result) => result.thread.id),
+        ).toEqual([thread.id]);
       }
 
       const secretResults = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "secretbackfill",
         limitPerGroup: 20,
       });
@@ -193,6 +196,7 @@ describe("thread search data", () => {
         title: "titleupdatebackfill",
       });
       const titleUpdateResults = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "titleupdatebackfill",
         limitPerGroup: 20,
       });
@@ -268,15 +272,17 @@ describe("thread search data", () => {
       archiveThread(db, noopNotifier, hiddenArchivedThread.id);
 
       const activeResults = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "livewriterneedle",
         limitPerGroup: 20,
       });
-      expect(activeResults.active.results.map((result) => result.thread.id)).toEqual(
-        [activeThread.id],
-      );
+      expect(
+        activeResults.active.results.map((result) => result.thread.id),
+      ).toEqual([activeThread.id]);
       expect(activeResults.archived.total).toBe(0);
 
       const assistantResults = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "assistantwriterneedle",
         limitPerGroup: 20,
       });
@@ -287,6 +293,7 @@ describe("thread search data", () => {
       });
 
       const archivedResults = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "archivewriterneedle",
         limitPerGroup: 20,
       });
@@ -296,6 +303,7 @@ describe("thread search data", () => {
       ).toEqual([archivedThread.id]);
 
       const hiddenResults = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "hiddenwriterneedle",
         limitPerGroup: 20,
       });
@@ -305,6 +313,7 @@ describe("thread search data", () => {
       const hiddenArchivedResults = searchThreadsWithPendingInteractionState(
         db,
         {
+          viewerUserId: LOCAL_OWNER_USER_ID,
           query: "hiddenarchivedwriterneedle",
           limitPerGroup: 20,
         },
@@ -314,6 +323,7 @@ describe("thread search data", () => {
 
       for (const query of ["secretwriterneedle", "deletedwriterneedle"]) {
         const results = searchThreadsWithPendingInteractionState(db, {
+          viewerUserId: LOCAL_OWNER_USER_ID,
           query,
           limitPerGroup: 20,
         });
@@ -348,6 +358,7 @@ describe("thread search data", () => {
       }
 
       const results = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "broadmatchneedle",
         limitPerGroup: 3,
       });
@@ -401,6 +412,7 @@ describe("thread search data", () => {
       setUpdatedAt.run(3, newer.id);
 
       const results = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "moss plugins",
         limitPerGroup: 20,
       });
@@ -447,6 +459,7 @@ describe("thread search data", () => {
       setUpdatedAt.run(2, newerMessage.id);
 
       const results = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "fallbackneedle",
         limitPerGroup: 20,
       });
@@ -491,6 +504,7 @@ describe("thread search data", () => {
       setUpdatedAt.run(2, partialTitle.id);
 
       const results = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "moss plugins",
         limitPerGroup: 20,
       });
@@ -535,6 +549,7 @@ describe("thread search data", () => {
       setUpdatedAt.run(2, newerMessage.id);
 
       const results = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "thread_search",
         limitPerGroup: 20,
       });
@@ -543,9 +558,7 @@ describe("thread search data", () => {
         titled.id,
         newerMessage.id,
       ]);
-      expect(
-        results.active.results[1]?.matches[0]?.highlightRanges,
-      ).toEqual([
+      expect(results.active.results[1]?.matches[0]?.highlightRanges).toEqual([
         { start: 7, end: 13 },
         { start: 14, end: 20 },
       ]);
@@ -582,6 +595,7 @@ describe("thread search data", () => {
       });
 
       const results = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "moss plugins",
         limitPerGroup: 20,
       });
@@ -626,6 +640,7 @@ describe("thread search data", () => {
       });
 
       const results = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "pairedneedle",
         limitPerGroup: 20,
       });
@@ -638,7 +653,9 @@ describe("thread search data", () => {
           .map((match) => match.sourceKind)
           .sort(),
       ).toEqual(["title", "title_fallback"]);
-      expect(matches.filter((match) => match.sourceSeq !== null)).toHaveLength(1);
+      expect(matches.filter((match) => match.sourceSeq !== null)).toHaveLength(
+        1,
+      );
     } finally {
       closeConnection(db);
     }
@@ -666,6 +683,7 @@ describe("thread search data", () => {
       }
 
       const results = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "partitionneedle",
         limitPerGroup: 2,
       });
@@ -713,6 +731,7 @@ describe("thread search data", () => {
       });
 
       const results = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "SnippetNeedle",
         limitPerGroup: 20,
       });
@@ -767,6 +786,7 @@ describe("thread search data", () => {
       });
 
       const wholeResults = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "wholeneedle",
         limitPerGroup: 20,
       });
@@ -776,6 +796,7 @@ describe("thread search data", () => {
       });
 
       const leadResults = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "leadneedle",
         limitPerGroup: 20,
       });
@@ -811,6 +832,7 @@ describe("thread search data", () => {
       });
 
       const results = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "surrogateneedle",
         limitPerGroup: 20,
       });
@@ -837,9 +859,10 @@ describe("thread search data", () => {
     const { db } = setup();
     try {
       const row = db.$client
-        .prepare<[], { sql: string }>(
-          "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'thread_search_segments_fts'",
-        )
+        .prepare<
+          [],
+          { sql: string }
+        >("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'thread_search_segments_fts'")
         .get();
       expect(row?.sql).toContain("prefix = '2 3'");
     } finally {
@@ -863,6 +886,7 @@ describe("thread search data", () => {
       });
 
       const results = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "alpha beta",
         limitPerGroup: 20,
       });
@@ -870,10 +894,9 @@ describe("thread search data", () => {
       expect(results.active.results.map((result) => result.thread.id)).toEqual([
         thread.id,
       ]);
-      expect(results.active.results[0]?.matches.map((match) => match.text)).toEqual([
-        "alpha split title",
-        "beta split message",
-      ]);
+      expect(
+        results.active.results[0]?.matches.map((match) => match.text),
+      ).toEqual(["alpha split title", "beta split message"]);
     } finally {
       closeConnection(db);
     }
@@ -889,6 +912,7 @@ describe("thread search data", () => {
       });
 
       const results = searchThreadsWithPendingInteractionState(db, {
+        viewerUserId: LOCAL_OWNER_USER_ID,
         query: "cafe",
         limitPerGroup: 20,
       });

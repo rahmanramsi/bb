@@ -1,3 +1,10 @@
+import { createHmac } from "node:crypto";
+import { eq } from "drizzle-orm";
+import Database from "better-sqlite3";
+import { drizzle as sqliteDrizzle } from "drizzle-orm/better-sqlite3";
+import { connectDbMigrationStatements } from "@bb/connect-db/testing";
+import { schema, user, server, serverMembers } from "@bb/connect-db";
+import { GATE_IDENTITY_HEADER, verifyGateIdentity } from "@bb/tunnel-contract";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { decodeFrame, encodeFrame, type Frame } from "@bb/tunnel-contract";
 import {
@@ -25,9 +32,39 @@ import {
   TUNNEL_TARGET_HEADER,
 } from "./protocol-headers";
 
+let gateSqlite: Database.Database;
+let gateDb: ReturnType<typeof sqliteDrizzle<typeof schema>>;
 beforeEach(() => {
   vi.resetAllMocks();
+  gateSqlite = new Database(":memory:");
+  gateSqlite.pragma("foreign_keys = ON");
+  for (const statement of connectDbMigrationStatements())
+    gateSqlite.exec(statement);
+  gateDb = sqliteDrizzle(gateSqlite, { schema });
+  for (const id of [OWNER, OTHER])
+    gateDb
+      .insert(user)
+      .values({
+        id,
+        email: `${id}@example.com`,
+        name: id,
+        emailVerified: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .run();
+  gateDb
+    .insert(server)
+    .values({
+      id: "srv1",
+      userId: OWNER,
+      subdomain: "sawyer",
+      createdAt: new Date(),
+    })
+    .run();
+  vi.mocked(drizzle).mockReturnValue(gateDb as never);
 });
+afterEach(() => gateSqlite.close());
 
 describe("connect sign-in page", () => {
   it("points unauthenticated visitors at the dashboard auth flow with returnTo", () => {
@@ -76,11 +113,13 @@ describe("requestForTunnelDo", () => {
       headers: {
         [GATE_AUTH_HEADER]: "machine",
         [GATE_MACHINE_ID_HEADER]: "forged-machine",
+        [GATE_IDENTITY_HEADER]: "forged-identity",
       },
     });
     const out = requestForTunnelDo(req, null, "session");
     expect(out.headers.get(GATE_AUTH_HEADER)).toBe("session");
     expect(out.headers.get(GATE_MACHINE_ID_HEADER)).toBeNull();
+    expect(out.headers.get(GATE_IDENTITY_HEADER)).toBeNull();
   });
 
   it("replaces forged gate headers with the verified machine identity", () => {
@@ -1827,7 +1866,7 @@ describe("gate worker share hosts", () => {
     );
     expect(response.status).toBe(200);
     expect(captured).toHaveLength(1);
-    expect(captured[0].headers.get(GATE_AUTH_HEADER)).toBe("session");
+    expect(captured[0].headers.get(GATE_AUTH_HEADER)).toBe("user");
   });
 
   it("forwards a share host on a non-primary label (single-dash subdomain)", async () => {
@@ -3909,7 +3948,7 @@ describe("gate worker MCP routing", () => {
     );
     expect(response.status).toBe(200);
     expect(captured).toHaveLength(1);
-    expect(captured[0].headers.get(GATE_AUTH_HEADER)).toBe("session");
+    expect(captured[0].headers.get(GATE_AUTH_HEADER)).toBe("user");
     expect(captured[0].headers.get(GATE_OAUTH_SCOPE_HEADER)).toBeNull();
     expect(captured[0].headers.get(GATE_OAUTH_GRANT_HEADER)).toBeNull();
     expect(captured[0].headers.get(GATE_OAUTH_CLIENT_HEADER)).toBeNull();
@@ -3989,4 +4028,138 @@ describe("gate worker MCP routing", () => {
     expect(anonymous.headers.get("www-authenticate")).toBeNull();
     expect(anonymous.headers.get("content-type")).toContain("text/html");
   });
+});
+
+describe("shared server gate access", () => {
+  it("admits members, refreshes their sessions, and rejects them after removal", async () => {
+    mockResolveLabel.mockResolvedValue(resolvedServer());
+    mockParseCookie.mockImplementation((_headers, name) =>
+      name.includes("desktop") ? null : "member-cookie",
+    );
+    mockVerifySessionDetails.mockResolvedValue(sessionDetails(OTHER, true));
+    mockRefreshAccountSession.mockResolvedValue([]);
+    gateDb
+      .insert(serverMembers)
+      .values({
+        serverId: "srv1",
+        userId: OTHER,
+        role: "admin",
+        createdAt: new Date(),
+      })
+      .run();
+    const { env, ctx, captured } = makeEnv(() => new Response("origin"));
+    const request = visitorRequest("sawyer.getbb.app", "/api/v1/projects", {
+      headers: { [GATE_IDENTITY_HEADER]: "forged" },
+    });
+    expect((await worker.fetch(request, env as never, ctx)).status).toBe(200);
+    expect(captured[0].headers.get(GATE_AUTH_HEADER)).toBe("user");
+    expect(
+      JSON.parse(captured[0].headers.get(GATE_IDENTITY_HEADER)!),
+    ).toMatchObject({
+      userId: OTHER,
+      email: `${OTHER}@example.com`,
+      serverId: "srv1",
+    });
+    expect(mockRefreshAccountSession).toHaveBeenCalled();
+    gateDb.delete(serverMembers).run();
+    expect((await worker.fetch(request, env as never, ctx)).status).toBe(403);
+    expect(captured).toHaveLength(1);
+  });
+
+  it("does not forward server identity credentials to port shares", async () => {
+    mockResolveLabel.mockResolvedValue(resolvedServer());
+    mockParseCookie.mockReturnValue("owner-cookie");
+    mockVerifySessionDetails.mockResolvedValue(sessionDetails());
+    const { env, ctx, captured } = makeEnv(() => new Response("origin"));
+    expect(
+      (
+        await worker.fetch(
+          visitorRequest("sawyer--3000.getbb.app", "/", {
+            headers: { [GATE_IDENTITY_HEADER]: "forged" },
+          }),
+          env as never,
+          ctx,
+        )
+      ).status,
+    ).toBe(200);
+    expect(captured[0].headers.get(GATE_IDENTITY_HEADER)).toBeNull();
+  });
+});
+
+it("signs gate identity with the active tunnel credential after object restoration", async () => {
+  const sent: Uint8Array[] = [];
+  const state = mockDoState({ protocolVersion: 1, serverId: "srv1" });
+  const secret = "bbcred_active-tunnel-secret";
+  const tunnel = fakeTunnelSocket(captureSent(sent));
+  tunnel.deserializeAttachment = () => ({ credential: secret });
+  state.addSocket(tunnel, ["tunnel"]);
+  const dob = new TunnelDO(state.api, makeDoEnv());
+  await state.restore;
+  const identity = {
+    userId: OTHER,
+    email: `${OTHER}@example.com`,
+    serverId: "srv1",
+    expiresAt: Date.now() + 60000,
+  };
+  const pending = dob.fetch(
+    new Request("https://do.internal/api/v1/projects", {
+      headers: {
+        [GATE_AUTH_HEADER]: "user",
+        [GATE_IDENTITY_HEADER]: JSON.stringify(identity),
+        [GATE_OWNER_HEADER]: "server:srv1",
+      },
+    }),
+  );
+  await vi.waitFor(() => expect(sent).toHaveLength(1));
+  const frame = decodeFrame(sent[0]);
+  if (frame.type !== "open-http") throw new Error("expected HTTP frame");
+  const token = frame.headers.find(
+    ([name]) => name === GATE_IDENTITY_HEADER,
+  )?.[1];
+  expect(token).toBeDefined();
+  const [payload, signature] = token!.split(".");
+  expect(signature).toBe(
+    createHmac("sha256", secret)
+      .update(`bb-connect-identity.v1.${payload}`)
+      .digest("base64url"),
+  );
+  expect(await verifyGateIdentity(token!, secret, "srv1")).toEqual(identity);
+  expect(await verifyGateIdentity(token!, "other-tunnel", "srv1")).toBeNull();
+  dob.webSocketMessage(
+    tunnel,
+    frameBuffer({
+      type: "resp-head",
+      streamId: frame.streamId,
+      status: 200,
+      headers: [],
+    }),
+  );
+  dob.webSocketMessage(
+    tunnel,
+    frameBuffer({ type: "body-end", streamId: frame.streamId }),
+  );
+  expect((await pending).status).toBe(200);
+});
+
+it("keeps legacy owner access without forwarding an unverified email", async () => {
+  gateDb
+    .update(user)
+    .set({ emailVerified: false })
+    .where(eq(user.id, OWNER))
+    .run();
+  mockResolveLabel.mockResolvedValue(resolvedServer());
+  mockParseCookie.mockReturnValue("owner-cookie");
+  mockVerifySessionDetails.mockResolvedValue(sessionDetails());
+  const { env, ctx, captured } = makeEnv(() => new Response("origin"));
+  expect(
+    (
+      await worker.fetch(
+        visitorRequest("sawyer.getbb.app", "/"),
+        env as never,
+        ctx,
+      )
+    ).status,
+  ).toBe(200);
+  expect(captured[0].headers.get(GATE_AUTH_HEADER)).toBe("session");
+  expect(captured[0].headers.get(GATE_IDENTITY_HEADER)).toBeNull();
 });

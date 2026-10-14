@@ -1,5 +1,5 @@
 import { ensurePersonalProject, listEnvironments } from "@bb/db";
-import { PERSONAL_PROJECT_ID } from "@bb/domain";
+import { PERSONAL_PROJECT_ID, LOCAL_OWNER_USER_ID } from "@bb/domain";
 import type { PluginEnvironmentProviderValidateContext } from "@get-bb/plugin-sdk/environment-provider";
 import { describe, expect, it } from "vitest";
 import { createThreadFromRequest } from "../../src/services/threads/thread-create.js";
@@ -42,6 +42,7 @@ describe("thread creation on a path another project already uses", () => {
       });
 
       const thread = await createThreadFromRequest(harness.deps, {
+        createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
           type: "host",
           hostId: host.id,
@@ -122,6 +123,7 @@ describe("thread creation on a path another project already uses", () => {
 
       await expect(
         createThreadFromRequest(harness.deps, {
+          createdByUserId: LOCAL_OWNER_USER_ID,
           environment: {
             type: "host",
             hostId: host.id,
@@ -180,6 +182,7 @@ describe("thread creation on a path another project already uses", () => {
 
       await expect(
         createThreadFromRequest(harness.deps, {
+          createdByUserId: LOCAL_OWNER_USER_ID,
           environment: {
             type: "host",
             hostId: host.id,
@@ -225,6 +228,7 @@ describe("thread creation on a path another project already uses", () => {
 
       await expect(
         createThreadFromRequest(harness.deps, {
+          createdByUserId: LOCAL_OWNER_USER_ID,
           environment: {
             type: "host",
             hostId: host.id,
@@ -272,6 +276,7 @@ describe("thread creation on a path another project already uses", () => {
       });
 
       const thread = await createThreadFromRequest(harness.deps, {
+        createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
           type: "host",
           hostId: host.id,
@@ -344,6 +349,7 @@ describe("attaching to a path that already has an environment", () => {
       });
 
       const thread = await createThreadFromRequest(harness.deps, {
+        createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
           type: "provider",
           environmentProviderId: DEFAULT_ENVIRONMENT_PROVIDER_ID.gitWorktree,

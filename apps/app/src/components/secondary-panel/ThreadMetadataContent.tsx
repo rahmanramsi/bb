@@ -9,12 +9,16 @@ import {
 } from "react";
 import { UncommittedChangesSection } from "./info/ChangesSection";
 import { CommitsSection } from "./info/CommitsSection";
-import { ForksSection, ChildThreadsSection } from "./info/RelatedThreadsSection";
+import {
+  ForksSection,
+  ChildThreadsSection,
+} from "./info/RelatedThreadsSection";
 import {
   ThreadStorageSection,
   type ThreadStorageSectionProps,
 } from "./info/ThreadStorageSection";
 import { Link } from "react-router-dom";
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import type {
   Environment,
   GitBranchRefClassification,
@@ -37,6 +41,7 @@ import { useSystemEnvironmentProviders } from "@/hooks/queries/environment-provi
 import { useSystemMachineProviders } from "@/hooks/queries/machine-provider-queries";
 import { useHosts } from "@/hooks/queries/host-queries";
 import { useProjectDisplayName } from "@/hooks/queries/sidebar-navigation-query";
+import { useUserAttribution } from "@/hooks/queries/user-queries";
 import { MachineIcon } from "@/components/machines/MachineLabel";
 import { formatWorkspaceCheckoutDisplay } from "@/lib/workspace-checkout-display";
 import { Button } from "@bb/shared-ui/button";
@@ -336,6 +341,24 @@ export function ProjectRow({ projectId }: { projectId: string }) {
     >
       <span className="block min-w-0 truncate" title={projectName}>
         {projectName}
+      </span>
+    </DetailRow>
+  );
+}
+
+export function CreatedByRow({ thread }: { thread: Thread }) {
+  const creatorName = useUserAttribution().nameFor(thread.createdByUserId);
+  if (creatorName === null) return null;
+
+  return (
+    <DetailRow
+      label={
+        <DetailRowIconLabel icon="UserRound">Created by</DetailRowIconLabel>
+      }
+      valueClassName="min-w-0"
+    >
+      <span className="block min-w-0 truncate" title={creatorName}>
+        {creatorName}
       </span>
     </DetailRow>
   );
@@ -827,6 +850,8 @@ export function hasAnyThreadMetadata(
 
   return Boolean(
     parentThreadId ||
+    (thread.createdByUserId !== null &&
+      thread.createdByUserId !== LOCAL_OWNER_USER_ID) ||
     environment ||
     environmentProvisioningFailure ||
     branchName ||
@@ -940,6 +965,7 @@ export function ThreadMetadataContent(props: ThreadMetadataContentProps) {
             onRetryParentThreads={onRetryParentThreads}
           />
           <ProjectRow projectId={projectId} />
+          <CreatedByRow thread={thread} />
           <EnvironmentRow
             thread={thread}
             environment={environment}

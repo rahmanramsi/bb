@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   environments,
@@ -81,6 +82,7 @@ function startThread(
   args: { projectId: string; hostId: string; prompt: string },
 ) {
   return createThreadFromRequest(harness.deps, {
+    createdByUserId: LOCAL_OWNER_USER_ID,
     environment: {
       type: "provider",
       environmentProviderId: PROVIDER_ID,
@@ -290,6 +292,7 @@ describe("environment path claim release", () => {
           message: "unused",
         }));
         const request = createThreadFromRequest(harness.deps, {
+          createdByUserId: LOCAL_OWNER_USER_ID,
           environment: { type: "reuse", environmentId: shared.id },
           input: textInput("reuse the workspace"),
           origin: "app",

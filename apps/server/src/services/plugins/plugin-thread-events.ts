@@ -1,6 +1,6 @@
 import type { EnvironmentRemoval } from "@bb/domain";
 import type { ApplyThreadLifecycleEventOutcome, HostRow } from "@bb/db";
-import type { PendingInteraction, Thread } from "@bb/domain";
+import type { PendingInteraction, ThreadRecord } from "@bb/domain";
 import type { ThreadQueuedMessage } from "@bb/domain";
 import type { PluginThreadEventEmitter } from "./plugin-service.js";
 
@@ -16,7 +16,7 @@ export function setPluginThreadEventEmitter(
   emitter = next;
 }
 
-export function emitPluginThreadCreated(thread: Thread): void {
+export function emitPluginThreadCreated(thread: ThreadRecord): void {
   emitter?.emitThreadCreated(thread);
 }
 
@@ -24,11 +24,11 @@ export function emitPluginThreadCreated(thread: Thread): void {
  * Called after a thread is archived (archiveThreadWithLifecycleEffects),
  * including cascade archives.
  */
-export function emitPluginThreadArchived(thread: Thread): void {
+export function emitPluginThreadArchived(thread: ThreadRecord): void {
   emitter?.emitThreadArchived(thread);
 }
 
-export function emitPluginThreadUnarchived(thread: Thread): void {
+export function emitPluginThreadUnarchived(thread: ThreadRecord): void {
   emitter?.emitThreadUnarchived(thread);
 }
 
@@ -37,18 +37,18 @@ export function emitPluginThreadUnarchived(thread: Thread): void {
  * `threads.update` and the release of an archived thread's children.
  */
 export function emitPluginThreadParentChanged(
-  thread: Thread,
+  thread: ThreadRecord,
   previousParentThreadId: string | null,
 ): void {
   emitter?.emitThreadParentChanged(thread, previousParentThreadId);
 }
 
-export function emitPluginThreadDeleted(thread: Thread): void {
+export function emitPluginThreadDeleted(thread: ThreadRecord): void {
   emitter?.emitThreadDeleted(thread);
 }
 
 export function emitPluginInteractionPending(
-  thread: Thread,
+  thread: ThreadRecord,
   interaction: PendingInteraction,
 ): void {
   emitter?.emitInteractionPending(thread, interaction);
