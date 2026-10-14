@@ -128,7 +128,8 @@ export const bbAiRpcContract = defineRpcContract({
   overview: { input: z.null(), output: overviewSchema },
   setEnabled: {
     experimental_description:
-      "Turn bb cloud on or off. While off, bb cloud reports not ready and sends nothing to getbb.app.",
+      "Turn bb cloud on or off for this bb server. Admin only. While off, bb cloud reports not ready and sends nothing to getbb.app.",
+    experimental_requiredRole: "admin",
     input: z.object({ enabled: z.boolean() }).strict(),
     output: overviewSchema,
   },
@@ -373,7 +374,7 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
     setEnabled: ({ enabled: next }, context) => {
       if (context.experimental_caller.kind !== "client") {
         throw new Error(
-          "only you can turn bb cloud on or off, with `bb ai on|off`",
+          "other plugins can't turn bb cloud on or off; a server admin can, with `bb ai on|off`",
         );
       }
       return setEnabled(next);
@@ -419,6 +420,7 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
           },
         }),
         on: cliCommand({
+          experimental_requiredRole: "admin",
           summary:
             "Turn bb cloud on for thread titles, commit messages, and voice input",
           options: { json: JSON_OPTION },
@@ -436,6 +438,7 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
           },
         }),
         off: cliCommand({
+          experimental_requiredRole: "admin",
           summary: "Turn bb cloud off; bb sends nothing to getbb.app",
           options: { json: JSON_OPTION },
           async run(input) {

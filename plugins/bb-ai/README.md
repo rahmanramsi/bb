@@ -15,7 +15,9 @@ any account state other than `signed-in` counts as signed out.
 - bb cloud is on by default. The choice is stored in this plugin's kv under
   `enabled`; with nothing stored it is on, and a stored `false` (from
   `bb ai off` or the `setEnabled` RPC) keeps it off across reloads. Only a
-  client call may change it; another plugin's `setEnabled` is refused.
+  server admin's client call may change it: `setEnabled` answers `forbidden`
+  and `bb ai on|off` fail with `admin_required` for members, and another
+  plugin's `setEnabled` is refused.
 - `complete(prompt)` posts `{ prompt }` with `timeoutMs: 5000` and returns
   `text`. `transcribe(audio, { hint })` posts `{ audio, format, hint }` (base64
   audio, a format derived from the MIME type or file extension) with
