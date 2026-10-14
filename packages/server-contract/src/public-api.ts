@@ -443,6 +443,7 @@ import {
   type AuthSessionResponse,
   type AuthSignInRequest,
   type AuthSignUpRequest,
+  type AuthMeResponse,
   type AuthUserResponse,
   type CreatePersonalAccessTokenRequest,
   type CreatePersonalAccessTokenResponse,
@@ -465,7 +466,7 @@ export const publicApiRoutes = {
     path: "/me",
     method: "get",
     request: noRequest(),
-    response: jsonResponse<AuthUserResponse>(),
+    response: jsonResponse<AuthMeResponse>(),
   }),
   auth: {
     session: defineRoute({

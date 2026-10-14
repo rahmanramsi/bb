@@ -131,7 +131,7 @@ and the plugin's skill.
     {ok: true}
 
   bb whoami --json
-    {user: {id, name, email, role}}
+    {user: {id, name, email, role}, effectiveRole, roleCeiling: "member"|null}
 
   bb user role <userId> <role> --json
     {user: {id, name, email, role}}

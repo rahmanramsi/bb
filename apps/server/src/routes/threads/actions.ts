@@ -142,6 +142,7 @@ function toQueuedMessageOrderResponse(
 async function compactThreadContext(
   deps: AppDeps,
   thread: ThreadRecord,
+  author: ReturnType<typeof requireTurnAuthor>,
 ): Promise<void> {
   ensureThreadIsWritable(thread);
   if (!deps.providerRegistry.supportsManualCompaction(thread.providerId)) {
@@ -161,8 +162,7 @@ async function compactThreadContext(
 
   const environment = await requireThreadCommandEnvironment(deps, { thread });
   await sendThreadMessage(deps, {
-    authorRoleCeiling: null,
-    authorUserId: null,
+    ...author,
     environment,
     payload: {
       input: createStandaloneBuiltinCompactCommandInput(),
@@ -449,7 +449,7 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
 
   post(routes.compact, async (context) => {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
-    await compactThreadContext(deps, thread);
+    await compactThreadContext(deps, thread, requireTurnAuthor(context));
     return context.json({ ok: true });
   });
 

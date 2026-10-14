@@ -4186,7 +4186,9 @@ and pagination for larger teams. Core attribution uses `directory`.
 
 ## Account authentication (`bb.sdk.experimental_auth`)
 
-`me` returns the current user; `session` returns authentication mode, bootstrap
+`me` returns the current user, the role the calling credential acts with
+(`effectiveRole`), and its `roleCeiling` (`"member"` for a capped `BB_TOKEN`,
+otherwise null); `session` returns authentication mode, bootstrap
 status, and the optional current user. `signIn`, `signUp`, and `signOut` use
 server-owned account authentication. `createToken({ name })`, `listTokens`,
 and `revokeToken({ id })` manage the caller's PATs. `createInvite({ email?,

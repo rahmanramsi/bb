@@ -1,4 +1,4 @@
-import { userRoleSchema } from "@bb/domain";
+import { userRoleSchema, type RoleCeiling, type UserRole } from "@bb/domain";
 import { z } from "zod";
 
 export const authModeSchema = z.enum(["local", "multi"]);
@@ -47,6 +47,12 @@ export type AuthSignUpRequest = z.infer<typeof authSignUpRequestSchema>;
 
 export interface AuthUserResponse {
   user: AuthUser;
+}
+
+export interface AuthMeResponse {
+  user: AuthUser;
+  effectiveRole: UserRole;
+  roleCeiling: RoleCeiling | null;
 }
 
 export interface UserListResponse {

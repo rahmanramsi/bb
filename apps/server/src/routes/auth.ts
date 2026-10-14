@@ -161,7 +161,11 @@ export function registerAuthRoutes(app: Hono, deps: AuthRouteDeps): void {
     const principal = requirePrincipal(context);
     const user = deps.userAuth.getUser(principal.userId);
     if (user === null) throw new ApiError(401, "unauthorized", "Unauthorized");
-    return context.json({ user });
+    return context.json({
+      user,
+      effectiveRole: principal.role,
+      roleCeiling: principal.roleCeiling,
+    });
   });
 
   get(publicApiRoutes.users.directory, (context) => {
