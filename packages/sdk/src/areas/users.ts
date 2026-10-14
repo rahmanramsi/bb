@@ -1,4 +1,7 @@
 import type {
+  AddConnectMemberRequest,
+  AddConnectMemberResponse,
+  ConnectMemberListResponse,
   AuthUserResponse,
   UpdateUserRoleRequest,
   UserListResponse,
@@ -12,6 +15,16 @@ export interface ExperimentalUsersListArgs {
 export type ExperimentalUsersListResult = UserListResponse;
 
 export interface ExperimentalUsersArea {
+  listConnectMembers(
+    input?: ExperimentalUsersListArgs,
+  ): Promise<ConnectMemberListResponse>;
+  addConnectMember(
+    input: AddConnectMemberRequest & { signal?: AbortSignal },
+  ): Promise<AddConnectMemberResponse>;
+  removeConnectMember(input: {
+    userId: string;
+    signal?: AbortSignal;
+  }): Promise<{ ok: true }>;
   directory(
     args?: ExperimentalUsersListArgs,
   ): Promise<ExperimentalUsersListResult>;
@@ -29,6 +42,30 @@ export function createUsersArea({
   transport,
 }: CreateSdkAreaArgs): ExperimentalUsersArea {
   return {
+    async listConnectMembers(input = {}) {
+      return transport.readJson(
+        transport.api.v1.users["connect-members"].$get(
+          {},
+          ...signalRequestArgs(input.signal),
+        ),
+      );
+    },
+    async addConnectMember(input) {
+      return transport.readJson(
+        transport.api.v1.users["connect-members"].$post(
+          { json: { email: input.email, role: input.role ?? "member" } },
+          ...signalRequestArgs(input.signal),
+        ),
+      );
+    },
+    async removeConnectMember(input) {
+      return transport.readJson(
+        transport.api.v1.users["connect-members"][":id"].$delete(
+          { param: { id: input.userId } },
+          ...signalRequestArgs(input.signal),
+        ),
+      );
+    },
     async directory(input = {}) {
       return transport.readJson(
         transport.api.v1.users.directory.$get(

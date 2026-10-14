@@ -70,4 +70,53 @@ export function registerUserCommands(
         if (!outputJson(opts, result)) console.log(`Removed ${userId}`);
       }),
     );
+  const connect = user
+    .command("connect-members")
+    .description(
+      "Manage bb accounts allowed through this server's connect gate (owner)",
+    );
+  connect
+    .command("list")
+    .option("--json", "Print machine-readable JSON output")
+    .action(
+      action(async (opts: UserListOptions) => {
+        const result =
+          await createCliBbSdk(
+            getUrl(),
+          ).experimental_users.listConnectMembers();
+        if (!outputJson(opts, result))
+          for (const member of result.members)
+            console.log(`${member.userId} ${member.email} ${member.role}`);
+      }),
+    );
+  connect
+    .command("add <email>")
+    .option("--role <role>", "Gate role: admin or member", "member")
+    .option("--json", "Print machine-readable JSON output")
+    .action(
+      action(
+        async (email: string, opts: UserListOptions & { role: string }) => {
+          const result = await createCliBbSdk(
+            getUrl(),
+          ).experimental_users.addConnectMember({
+            email,
+            role: userRoleSchema.parse(opts.role),
+          });
+          if (!outputJson(opts, result))
+            console.log(`Added ${result.member.email} (${result.member.role})`);
+        },
+      ),
+    );
+  connect
+    .command("remove <userId>")
+    .option("--json", "Print machine-readable JSON output")
+    .action(
+      action(async (userId: string, opts: UserListOptions) => {
+        const result = await createCliBbSdk(
+          getUrl(),
+        ).experimental_users.removeConnectMember({ userId });
+        if (!outputJson(opts, result))
+          console.log(`Removed connect access for ${userId}`);
+      }),
+    );
 }

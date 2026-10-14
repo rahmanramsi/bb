@@ -1,14 +1,17 @@
+import { GATE_IDENTITY_HEADER, verifyGateIdentity } from "@bb/tunnel-contract";
 import {
   createHash,
   createHmac,
+  randomUUID,
   randomBytes,
   timingSafeEqual,
 } from "node:crypto";
-import { and, asc, desc, eq, gt, like, lt, ne } from "drizzle-orm";
+import { and, asc, desc, eq, gt, like, lt, ne, sql } from "drizzle-orm";
 import { betterAuth } from "better-auth";
 import { apiKey } from "@better-auth/api-key";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import {
+  getPluginKvValue,
   authAccounts,
   authApiKeys,
   authSessions,
@@ -67,6 +70,11 @@ const inviteValueSchema = z
     createdByUserId: z.string().min(1),
   })
   .strict();
+
+const connectCredentialSchema = z.object({
+  credential: z.string().min(1),
+  serverId: z.string().min(1),
+});
 
 const shellTokenPayloadSchema = z
   .object({ userId: z.string().min(1), expiresAt: z.number().int().positive() })
@@ -456,6 +464,86 @@ export async function createUserAuthService(
   async function resolvePrincipal(
     headers: Headers,
   ): Promise<RequestPrincipal | null> {
+    const gateToken = headers.get(GATE_IDENTITY_HEADER);
+    headers.delete(GATE_IDENTITY_HEADER);
+    if (gateToken !== null) {
+      const stored = getPluginKvValue(args.db, "bb-account", "credential");
+      let value: unknown;
+      try {
+        value = stored === undefined ? null : JSON.parse(stored);
+      } catch {
+        return null;
+      }
+      const parsed = connectCredentialSchema.safeParse(value);
+      if (!parsed.success) return null;
+      const identity = await verifyGateIdentity(
+        gateToken,
+        parsed.data.credential,
+        parsed.data.serverId,
+      );
+      if (identity === null) return null;
+      return args.db.transaction(() => {
+        const email = normalizeEmail(identity.email);
+        const existing = args.db
+          .select({ id: authUsers.id })
+          .from(authUsers)
+          .where(eq(authUsers.email, email))
+          .get();
+        if (existing !== undefined) {
+          if (
+            existing.id === LOCAL_OWNER_USER_ID ||
+            existing.id === MACHINE_AUTH_SYSTEM_USER_ID
+          )
+            return null;
+          return principalForUser(existing.id, "user");
+        }
+        const row = args.db
+          .select()
+          .from(authVerifications)
+          .where(
+            and(
+              like(
+                authVerifications.identifier,
+                `${INVITE_IDENTIFIER_PREFIX}%`,
+              ),
+              gt(authVerifications.expiresAt, new Date()),
+              sql`json_extract(CASE WHEN json_valid(${authVerifications.value}) THEN ${authVerifications.value} ELSE '{}' END, '$.email') = ${email}`,
+            ),
+          )
+          .orderBy(asc(authVerifications.createdAt))
+          .limit(1)
+          .get();
+        const invite =
+          row === undefined
+            ? null
+            : inviteValueSchema.safeParse(JSON.parse(row.value));
+        if (row === undefined || invite === null || !invite.success)
+          throw new UserAuthError(
+            403,
+            "invite_required",
+            "Connect access requires an invite for this email on this server",
+          );
+        const userId = `usr_${randomUUID()}`;
+        const now = new Date();
+        args.db
+          .insert(authUsers)
+          .values({
+            id: userId,
+            email,
+            name: email,
+            emailVerified: true,
+            role: "member",
+            createdAt: now,
+            updatedAt: now,
+          })
+          .run();
+        args.db
+          .delete(authVerifications)
+          .where(eq(authVerifications.id, row.id))
+          .run();
+        return principalForUser(userId, "user");
+      });
+    }
     const token = bearerToken(headers);
     if (token !== null) {
       if (timingSafeEqualStrings(token, serviceToken)) {

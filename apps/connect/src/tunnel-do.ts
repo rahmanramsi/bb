@@ -1,3 +1,8 @@
+import {
+  GATE_IDENTITY_HEADER,
+  parseGateIdentity,
+  signGateIdentity,
+} from "@bb/tunnel-contract";
 import { and, eq, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import {
@@ -82,6 +87,7 @@ interface SocketAttachment {
   streamId?: number;
   relay?: boolean;
   done?: boolean;
+  credential?: string;
 }
 
 function readTunnelTarget(headers: Headers): string | undefined {
@@ -230,6 +236,66 @@ export class TunnelDO {
       });
     }
 
+    const rawIdentity = request.headers.get(GATE_IDENTITY_HEADER);
+    if (rawIdentity !== null && target === undefined) {
+      return this.signVisitorRequest(request, tunnel, rawIdentity).then(
+        (signed) =>
+          signed === null
+            ? new Response("invalid gate identity", { status: 403 })
+            : this.forwardRequest(signed, url, tunnel, target),
+      );
+    }
+    const headers = new Headers(request.headers);
+    headers.delete(GATE_IDENTITY_HEADER);
+    return this.forwardRequest(
+      new Request(request, { headers }),
+      url,
+      tunnel,
+      target,
+    );
+  }
+
+  private async signVisitorRequest(
+    request: Request,
+    tunnel: WebSocket,
+    rawIdentity: string,
+  ): Promise<Request | null> {
+    let value: unknown;
+    try {
+      value = JSON.parse(rawIdentity);
+    } catch {
+      return null;
+    }
+    const identity = parseGateIdentity(value);
+    if (
+      identity === null ||
+      this.tunnelOwner !== tunnelOwnerKey("server", identity.serverId)
+    )
+      return null;
+    const attachment: unknown = tunnel.deserializeAttachment();
+    const credential: unknown =
+      typeof attachment === "object" && attachment !== null
+        ? Reflect.get(attachment, "credential")
+        : null;
+    const headers = new Headers(request.headers);
+    headers.delete(GATE_IDENTITY_HEADER);
+    if (typeof credential === "string" && credential.length > 0) {
+      headers.set(
+        GATE_IDENTITY_HEADER,
+        await signGateIdentity(identity, credential),
+      );
+    } else {
+      headers.set("x-bb-gate-auth", "session");
+    }
+    return new Request(request, { headers });
+  }
+
+  private forwardRequest(
+    request: Request,
+    url: URL,
+    tunnel: WebSocket,
+    target: string | undefined,
+  ): Response | Promise<Response> {
     if (request.headers.get(RELAY_HEADER) === "1") {
       return this.openRelay(request, url, tunnel, target);
     }
@@ -404,6 +470,9 @@ export class TunnelDO {
     void this.state.storage.delete(TUNNEL_VANISHED_KEY);
     void this.state.storage.delete(TUNNEL_LOST_AT_KEY);
     const pair = new WebSocketPair();
+    const authorization = request.headers.get("authorization");
+    if (authorization?.startsWith("Bearer "))
+      pair[1].serializeAttachment({ credential: authorization.slice(7) });
     this.state.acceptWebSocket(pair[1], [TUNNEL_TAG]);
     setTimeout(() => this.wakeTunnelWaiters(), 0);
     return new Response(null, { status: 101, webSocket: pair[0] });

@@ -122,3 +122,29 @@ export const acceptUserInviteRequestSchema = authSignUpRequestSchema.extend({
 export type AcceptUserInviteRequest = z.infer<
   typeof acceptUserInviteRequestSchema
 >;
+
+export const connectMemberSchema = z
+  .object({
+    userId: z.string().min(1),
+    email: z.string().email(),
+    role: userRoleSchema,
+  })
+  .strict();
+export const connectMemberListResponseSchema = z
+  .object({ members: z.array(connectMemberSchema) })
+  .strict();
+export type ConnectMemberListResponse = z.infer<
+  typeof connectMemberListResponseSchema
+>;
+export const addConnectMemberRequestSchema = z
+  .object({
+    email: z.string().trim().email(),
+    role: userRoleSchema.default("member"),
+  })
+  .strict();
+export type AddConnectMemberRequest = z.input<
+  typeof addConnectMemberRequestSchema
+>;
+export interface AddConnectMemberResponse {
+  member: z.infer<typeof connectMemberSchema>;
+}

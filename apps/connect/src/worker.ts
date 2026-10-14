@@ -1,3 +1,5 @@
+import { GATE_IDENTITY_HEADER, type GateIdentity } from "@bb/tunnel-contract";
+import { gateIdentityForUser, handleServerMembers } from "./server-members.js";
 import { drizzle } from "drizzle-orm/d1";
 import { escapeHtmlText } from "@bb/text-utils";
 import {
@@ -353,9 +355,10 @@ async function fetchTunnelDo(
 export function requestForTunnelDo(
   request: Request,
   target: string | null,
-  authKind?: "machine" | "session" | typeof GATE_OAUTH_AUTH_KIND,
+  authKind?: "machine" | "session" | "user" | typeof GATE_OAUTH_AUTH_KIND,
   machineId?: string,
   oauth?: McpForwardAuth,
+  identity?: GateIdentity,
 ): Request {
   const headers = new Headers(request.headers);
   stripPlatformCookies(headers);
@@ -364,6 +367,7 @@ export function requestForTunnelDo(
   headers.delete(GATE_OAUTH_CLIENT_HEADER);
   headers.delete(TUNNEL_TARGET_HEADER);
   headers.delete(MACHINE_CREDENTIAL_HEADER);
+  headers.delete(GATE_IDENTITY_HEADER);
   headers.delete(GATE_AUTH_HEADER);
   headers.delete(GATE_MACHINE_ID_HEADER);
   headers.delete(GATE_OWNER_HEADER);
@@ -381,6 +385,8 @@ export function requestForTunnelDo(
   if (machineId !== undefined) {
     headers.set(GATE_MACHINE_ID_HEADER, machineId);
   }
+  if (identity !== undefined)
+    headers.set(GATE_IDENTITY_HEADER, JSON.stringify(identity));
   if (oauth !== undefined) {
     headers.delete("authorization");
     headers.delete("cookie");
@@ -463,6 +469,9 @@ const gate = {
     const host = resolveConnectRequestHost(request.headers, runtime);
     const parsed = parseVisitorHost(host, env.BASE_DOMAIN);
     if (parsed === null || parsed.target === null) {
+      if (url.pathname === "/api/connect/server-members") {
+        return handleServerMembers(request, env);
+      }
       if (url.pathname === "/api/connect/servers") {
         return handleListAccountServers(request, env);
       }
@@ -676,14 +685,39 @@ const gate = {
     if (!sessionUserId && !desktopUserId) {
       return signInPage(label, appUrl, url.toString());
     }
-    if (
-      sessionUserId !== resolved.userId &&
-      desktopUserId !== resolved.userId
-    ) {
+    const authenticatedUserId =
+      sessionUserId === resolved.userId
+        ? sessionUserId
+        : desktopUserId === resolved.userId
+          ? desktopUserId
+          : (sessionUserId ?? desktopUserId);
+    if (authenticatedUserId === null)
+      return signInPage(label, appUrl, url.toString());
+    let identity: GateIdentity | undefined;
+    if (resolved.kind === "server") {
+      if (resolved.server.revokedAt !== null)
+        return text("bb connect: not found\n", 404);
+      const allowed = await gateIdentityForUser(
+        db,
+        authenticatedUserId,
+        resolved.userId,
+        resolved.server.id,
+      );
+      if (allowed === null && authenticatedUserId !== resolved.userId)
+        return text("bb connect: not your server\n", 403);
+      if (target === null && allowed !== null) identity = allowed;
+    } else if (authenticatedUserId !== resolved.userId) {
       return text("bb connect: not your server\n", 403);
     }
 
-    const doRequest = requestForTunnelDo(request, target, "session");
+    const doRequest = requestForTunnelDo(
+      request,
+      target,
+      identity === undefined ? "session" : "user",
+      undefined,
+      undefined,
+      identity,
+    );
     if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
       return responseForVisitor(await tunnelDo(doRequest), null, []);
     }
@@ -716,7 +750,7 @@ const gate = {
 
     const setCookies: string[] = [];
     const desktopRefreshGrant = verifiedDesktop?.refreshGrant ?? null;
-    if (desktopUserId === resolved.userId && desktopRefreshGrant !== null) {
+    if (desktopUserId === authenticatedUserId && desktopRefreshGrant !== null) {
       const renewed = await issueDesktopSessionCookie(
         { userId: desktopUserId, grant: desktopRefreshGrant },
         {
@@ -731,7 +765,7 @@ const gate = {
     }
     if (
       cookie !== null &&
-      sessionUserId === resolved.userId &&
+      sessionUserId === authenticatedUserId &&
       verifiedSession?.needsRefresh === true
     ) {
       invalidateSessionCookie(cookie);

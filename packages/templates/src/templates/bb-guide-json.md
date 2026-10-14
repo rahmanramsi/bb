@@ -161,3 +161,15 @@ and the plugin's skill.
     {ok: true}
 
 Only token and invite creation return secret token values.
+
+  bb user connect-members list --json
+    {members: [{userId, email, role}]}
+
+  bb user connect-members add <email> [--role admin|member] --json
+    {member: {userId, email, role}}
+
+  bb user connect-members remove <userId> --json
+    {ok: true}
+
+  Connect member ids refer to bb accounts, not local server user ids. These
+  operations require a local admin and the gate owner's server pairing.

@@ -25,7 +25,7 @@ import type { ConnectStatus } from "./types.js";
 
 const DESCRIPTION = [
   "Remote access via getbb.app — this bb becomes reachable at https://<handle>.getbb.app.",
-  "Share HTTP ports from any enrolled host (owner session only).",
+  "Share HTTP ports from any enrolled host (bb account sign-in required).",
   "",
   "  1. Sign this bb in to your bb account:",
   "       bb account login",

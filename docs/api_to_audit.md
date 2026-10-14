@@ -4127,6 +4127,16 @@ returns `{ user }`; `remove({ userId, signal? })` revokes the user's credentials
 and removes the account. Both require admin. System users and the last account
 admin are protected. The CLI uses these paths for `bb user list|role|remove`.
 
+`listConnectMembers({ signal? })` returns `{ members: [{ userId, email, role }] }`;
+`addConnectMember({ email, role?, signal? })` returns `{ member }`;
+`removeConnectMember({ userId, signal? })` returns `{ ok: true }`. Local admins
+manage the paired owner's gate membership through the same owner API as the
+gate's Server access page. Core callers are `bb user connect-members
+list|add|remove`. Connect ids differ from local user ids. Roles apply to gate
+membership and do not promote local users. Stabilization requires auditing
+membership revocation and reconnect behavior, ownership changes, and role
+semantics across the gate and local server.
+
 Before stabilization, audit directory email visibility, deleted-user attribution,
 and pagination for larger teams. Core attribution uses `directory`.
 

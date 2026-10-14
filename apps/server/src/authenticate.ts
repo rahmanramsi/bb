@@ -1,8 +1,10 @@
+import { GATE_IDENTITY_HEADER } from "@bb/tunnel-contract";
 import type { MiddlewareHandler } from "hono";
 import { ApiError } from "./errors.js";
 import { setRequestPrincipal } from "./request-context.js";
 import {
   LOCAL_OWNER_PRINCIPAL,
+  UserAuthError,
   type RequestPrincipal,
 } from "./services/user-auth.js";
 import type { ServerAppDeps } from "./types.js";
@@ -30,9 +32,16 @@ export async function resolveRequestPrincipal(
   headers: Headers,
 ): Promise<RequestPrincipal | null> {
   if (deps.config.authMode === "local") {
+    headers.delete(GATE_IDENTITY_HEADER);
     return LOCAL_OWNER_PRINCIPAL;
   }
-  return deps.userAuth.resolvePrincipal(headers);
+  try {
+    return await deps.userAuth.resolvePrincipal(headers);
+  } catch (error) {
+    if (error instanceof UserAuthError)
+      throw new ApiError(error.status, error.code, error.message);
+    throw error;
+  }
 }
 
 export function authenticateApiRequests(

@@ -1,3 +1,8 @@
+import {
+  listConnectMembers,
+  addConnectMember,
+  removeConnectMember,
+} from "../services/connect-members.js";
 import type { Hono } from "hono";
 import {
   publicApiRoutes,
@@ -13,7 +18,7 @@ import {
 import { UserAuthError } from "../services/user-auth.js";
 import type { ServerAppDeps } from "../types.js";
 
-type AuthRouteDeps = Pick<ServerAppDeps, "config" | "userAuth">;
+type AuthRouteDeps = Pick<ServerAppDeps, "config" | "userAuth" | "db">;
 
 interface ResponseHeaderWriter {
   header(name: string, value: string, options: { append: boolean }): void;
@@ -123,6 +128,21 @@ export function registerAuthRoutes(app: Hono, deps: AuthRouteDeps): void {
       throw new ApiError(404, "token_not_found", "Token not found");
     }
     return context.json({ ok: true as const });
+  });
+
+  get(publicApiRoutes.users.listConnectMembers, async (context) => {
+    assertAdmin(context);
+    return context.json(await listConnectMembers(deps.db));
+  });
+  post(publicApiRoutes.users.addConnectMember, async (context, payload) => {
+    assertAdmin(context);
+    return context.json(await addConnectMember(deps.db, payload));
+  });
+  del(publicApiRoutes.users.removeConnectMember, async (context) => {
+    assertAdmin(context);
+    return context.json(
+      await removeConnectMember(deps.db, context.req.param("id")),
+    );
   });
 
   get(publicApiRoutes.users.list, (context) => {

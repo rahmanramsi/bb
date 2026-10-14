@@ -1842,7 +1842,7 @@ environment, then restart.
   requests from loopback, because BB Connect tunnel traffic also arrives from
   loopback. Requests without a valid credential get `401`.
 
-`multi` accepts two credentials:
+`multi` accepts these credentials:
 
 - A session cookie from `POST /api/v1/auth/sign-in` (email and password). The
   app uses this. `POST /api/v1/auth/sign-out` ends the session.
@@ -1850,6 +1850,9 @@ environment, then restart.
   SDK, and scripts. Create one with `POST /api/v1/auth/tokens` (`{"name": …}`);
   the token is shown once. `GET /api/v1/auth/tokens` lists your tokens and
   `DELETE /api/v1/auth/tokens/:id` revokes one.
+
+- A signed identity from the bb connect gate, verified with the active tunnel
+  credential. See [Share access through bb connect](#share-access-through-bb-connect).
 
 `GET /api/v1/auth/session` needs no credential and reports the auth mode,
 whether the server still needs its first account (`needsBootstrap`), and the
@@ -2369,3 +2372,45 @@ an approved app can run any `bb` command; `bb mcp clients` lists them and
 sign-in and has the same trust as the `bb` CLI on that machine. See the
 [MCP skill](../plugins/mcp/skills/mcp/SKILL.md) for the tools and the few
 commands that cannot run over MCP.
+
+
+### Share access through bb connect
+
+In Settings > Remote access, choose **Manage server access** to add or remove
+existing bb accounts. Only the gate's server owner can manage membership.
+Admins can use the same gate API through this server:
+
+```sh
+bb user connect-members list --json
+bb user connect-members add EMAIL --role member --json
+bb user connect-members remove CONNECT_USER_ID --json
+```
+
+The SDK methods are `experimental_users.listConnectMembers`,
+`experimental_users.addConnectMember({ email, role? })`, and
+`experimental_users.removeConnectMember({ userId })`. These use
+`GET /api/v1/users/connect-members`, `POST /api/v1/users/connect-members`, and
+`DELETE /api/v1/users/connect-members/:id`. The id belongs to the bb account,
+not the local server user. All three require a local admin and a server pairing
+owned by the gate account. Gate membership roles do not change local roles or
+allow members to manage sharing.
+
+In `multi` mode, also create a local invite restricted to the account's email:
+`bb invite create --email EMAIL`. The gate forwards a signed identity with
+its account id, verified email, server id, and a one-minute expiry. The server
+verifies HMAC-SHA256 using the active tunnel credential, then resolves the local
+user by email. An existing user keeps their local role. On first access, an
+unexpired email invite creates a local member and consumes the invite, even if
+the invite requested admin. Generic invites do not authorize gate registration.
+Without an email invite or an existing account, access returns `403`.
+
+Gate membership also allows access to this server's shared ports. Machine
+shares keep their existing owner-only access. Signed server identities never
+reach shared ports. Removing membership rejects new gate requests; it does
+not delete the local account, revoke its PATs, or close existing sockets.
+In `local` mode, everyone admitted by the gate acts as the local owner.
+Members running agents effectively have host shell access, including secrets.
+
+Tunnels opened before signed identity support keep local owner access. Reconnect
+the tunnel to use gate identities in `multi` mode. Daemon machine keys and MCP
+OAuth credentials retain their existing behavior.

@@ -1,3 +1,7 @@
+import { createServer } from "node:http";
+import { GATE_IDENTITY_HEADER, signGateIdentity } from "@bb/tunnel-contract";
+import { setPluginKvValue, authUsers } from "@bb/db";
+import { eq } from "drizzle-orm";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -51,6 +55,13 @@ const ROUTE_FAMILY_PROBES: Probe[] = [
   { method: "GET", path: "/api/v1/terminals" },
   { method: "GET", path: "/api/v1/queues" },
   { method: "GET", path: "/api/v1/desktop-browsers" },
+  { method: "GET", path: "/api/v1/users/connect-members" },
+  {
+    method: "POST",
+    path: "/api/v1/users/connect-members",
+    body: { email: "member@example.test" },
+  },
+  { method: "DELETE", path: "/api/v1/users/connect-members/missing" },
   { method: "GET", path: "/api/v1/users" },
   { method: "GET", path: "/api/v1/marketplaces" },
   { method: "POST", path: "/internal/hosts/enroll-key", body: {} },
@@ -62,6 +73,13 @@ const ROUTE_FAMILY_PROBES: Probe[] = [
 ];
 
 const ADMIN_ONLY_PROBES: Probe[] = [
+  { method: "GET", path: "/api/v1/users/connect-members" },
+  {
+    method: "POST",
+    path: "/api/v1/users/connect-members",
+    body: { email: "member@example.test" },
+  },
+  { method: "DELETE", path: "/api/v1/users/connect-members/missing" },
   { method: "GET", path: "/api/v1/users" },
   {
     method: "PUT",
@@ -99,6 +117,7 @@ const ADMIN_ONLY_PROBES: Probe[] = [
 
 const WIRE_PLUGIN_SOURCE = `
   export default function plugin(bb: any) {
+    bb.http.route("GET", "/identity-header", (c: any) => c.json({ identity: c.req.header("x-bb-gate-identity") ?? null }));
     bb.http.route("GET", "/local", (c: any) => c.json({ local: true }));
     bb.http.route("GET", "/guarded", (c: any) => c.json({ guarded: true }), {
       auth: "token",
@@ -839,4 +858,328 @@ describe("user administration", () => {
       admin.experimental_auth.revokeInvite({ id: revoked.id }),
     ).rejects.toMatchObject({ status: 404 });
   });
+});
+
+describe("signed connect gate credentials", () => {
+  const secret = "bbcred_tunnel-secret";
+  const serverId = "srv_gate";
+  function pair() {
+    if (server === null) throw new Error("server not started");
+    setPluginKvValue(
+      server.db,
+      "bb-account",
+      "credential",
+      JSON.stringify({
+        credential: secret,
+        serverId,
+        baseUrl: "https://getbb.app",
+        serverUrl: "https://team.getbb.app",
+      }),
+    );
+  }
+  async function gateToken(
+    email: string,
+    overrides: Partial<{ expiresAt: number; serverId: string }> = {},
+    key = secret,
+  ) {
+    return signGateIdentity(
+      {
+        userId: "connect-account-id",
+        email,
+        serverId,
+        expiresAt: Date.now() + 60_000,
+        ...overrides,
+      },
+      key,
+    );
+  }
+
+  it("maps existing users by email and preserves their local role on HTTP and WebSockets", async () => {
+    server = await startTestServer({ authMode: "multi" });
+    await bootstrapTeam();
+    await installWirePlugin(server);
+    pair();
+    for (const [email, role] of [
+      ["admin@example.test", "admin"],
+      ["member@example.test", "member"],
+    ]) {
+      const token = await gateToken(email);
+      const headers = { [GATE_IDENTITY_HEADER]: token };
+      const response = await send(
+        { method: "GET", path: "/api/v1/auth/session" },
+        headers,
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        principalKind: "user",
+        user: { email, role },
+      });
+      expect(await websocketStatus("/ws", headers)).toBe(101);
+      const echo = await send(
+        { method: "GET", path: "/api/v1/plugins/wire/http/identity-header" },
+        headers,
+      );
+      expect(echo.status).toBe(200);
+      expect(await echo.json()).toEqual({ identity: null });
+      expect(
+        (await send({ method: "GET", path: "/api/v1/users" }, headers)).status,
+      ).toBe(role === "admin" ? 200 : 403);
+    }
+  });
+
+  it("consumes an email invite once and creates a member even for an admin invite", async () => {
+    server = await startTestServer({ authMode: "multi" });
+    const team = await bootstrapTeam();
+    pair();
+    const headers = {
+      [GATE_IDENTITY_HEADER]: await gateToken("new@example.test"),
+    };
+    expect(
+      (await send({ method: "GET", path: "/api/v1/projects" }, headers)).status,
+    ).toBe(403);
+    const invite = await send(
+      {
+        method: "POST",
+        path: "/api/v1/auth/invites",
+        body: { email: "new@example.test", role: "admin" },
+      },
+      { cookie: team.adminCookie },
+    );
+    const invited = await invite.json();
+    const responses = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        send({ method: "GET", path: "/api/v1/auth/session" }, headers),
+      ),
+    );
+    for (const response of responses)
+      expect(await response.json()).toMatchObject({
+        user: { email: "new@example.test", role: "member" },
+      });
+    const users = server.db
+      .select()
+      .from(authUsers)
+      .where(eq(authUsers.email, "new@example.test"))
+      .all();
+    expect(users).toHaveLength(1);
+    expect(users[0].id).not.toBe("connect-account-id");
+    expect(
+      server.db
+        .select()
+        .from(authVerifications)
+        .where(eq(authVerifications.id, invited.id))
+        .get(),
+    ).toBeUndefined();
+    server.db.delete(authUsers).where(eq(authUsers.id, users[0].id)).run();
+    expect(
+      (await send({ method: "GET", path: "/api/v1/projects" }, headers)).status,
+    ).toBe(403);
+  });
+
+  it("rejects forgery, expiry, wrong audience, and old credentials after rotation", async () => {
+    server = await startTestServer({ authMode: "multi" });
+    await bootstrapTeam();
+    pair();
+    const valid = await gateToken("admin@example.test");
+    const tokens = [
+      "forged",
+      `${valid.slice(0, -2)}aa`,
+      await gateToken("admin@example.test", {}, "wrong-key"),
+      await gateToken("admin@example.test", { expiresAt: Date.now() - 1 }),
+      await gateToken("admin@example.test", { serverId: "other-server" }),
+      await gateToken("admin@example.test", {
+        expiresAt: Date.now() + 3600_000,
+      }),
+    ];
+    for (const token of tokens) {
+      const headers = { [GATE_IDENTITY_HEADER]: token };
+      expect(
+        (await send({ method: "GET", path: "/api/v1/projects" }, headers))
+          .status,
+      ).toBe(401);
+      expect(await websocketStatus("/ws", headers)).toBe(401);
+    }
+    setPluginKvValue(
+      server.db,
+      "bb-account",
+      "credential",
+      JSON.stringify({ credential: "rotated", serverId }),
+    );
+    expect(
+      (
+        await send(
+          { method: "GET", path: "/api/v1/projects" },
+          { [GATE_IDENTITY_HEADER]: valid },
+        )
+      ).status,
+    ).toBe(401);
+  });
+
+  it("does not admit new users through expired, revoked, generic, or mismatched invites", async () => {
+    server = await startTestServer({ authMode: "multi" });
+    const team = await bootstrapTeam();
+    pair();
+    const generic = await send(
+      { method: "POST", path: "/api/v1/auth/invites", body: {} },
+      { cookie: team.adminCookie },
+    );
+    expect(generic.status).toBe(201);
+    const invite = await send(
+      {
+        method: "POST",
+        path: "/api/v1/auth/invites",
+        body: { email: "expired@example.test" },
+      },
+      { cookie: team.adminCookie },
+    );
+    const invited = await invite.json();
+    server.db
+      .update(authVerifications)
+      .set({ expiresAt: new Date(0) })
+      .where(eq(authVerifications.id, invited.id))
+      .run();
+    for (const email of ["expired@example.test", "mismatched@example.test"])
+      expect(
+        (
+          await send(
+            { method: "GET", path: "/api/v1/projects" },
+            { [GATE_IDENTITY_HEADER]: await gateToken(email) },
+          )
+        ).status,
+      ).toBe(403);
+  });
+
+  it("keeps local mode credentialless and strips the identity header", async () => {
+    server = await startTestServer();
+    expect(
+      (
+        await send(
+          { method: "GET", path: "/api/v1/projects" },
+          { [GATE_IDENTITY_HEADER]: "client-forgery" },
+        )
+      ).status,
+    ).toBe(200);
+  });
+});
+
+it("manages connect members through authenticated SDK routes and validates the gate response", async () => {
+  server = await startTestServer({ authMode: "multi" });
+  const team = await bootstrapTeam();
+  const captured: {
+    method: string;
+    url: string;
+    credential: string | string[] | undefined;
+    body: string;
+  }[] = [];
+  let reply: "ok" | "invalid" | "forbidden" = "ok";
+  const member = {
+    userId: "connect-member",
+    email: "remote@example.test",
+    role: "member",
+  };
+  const gate = createServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk.toString();
+    captured.push({
+      method: request.method ?? "",
+      url: request.url ?? "",
+      credential: request.headers["x-bb-connect-machine"],
+      body,
+    });
+    response.setHeader("content-type", "application/json");
+    if (reply === "forbidden") {
+      response.statusCode = 403;
+      response.end(JSON.stringify({ error: "owner_required" }));
+      return;
+    }
+    if (reply === "invalid") {
+      response.end(JSON.stringify({ members: [{ email: "missing-fields" }] }));
+      return;
+    }
+    response.end(
+      JSON.stringify(
+        request.method === "GET"
+          ? { members: [member] }
+          : request.method === "POST"
+            ? { member }
+            : { ok: true },
+      ),
+    );
+  });
+  await new Promise<void>((resolve) => gate.listen(0, "127.0.0.1", resolve));
+  const gateAddress = gate.address();
+  if (gateAddress === null || typeof gateAddress === "string")
+    throw new Error("gate listener unavailable");
+  try {
+    setPluginKvValue(
+      server.db,
+      "bb-account",
+      "credential",
+      JSON.stringify({
+        credential: "bbcred_owner",
+        serverId: "connect-server",
+        serverUrl: `http://127.0.0.1:${gateAddress.port}`,
+      }),
+    );
+    const sdk = createNodeBbSdk({
+      baseUrl: server.baseUrl,
+      context: { authToken: team.adminToken },
+    });
+    expect(await sdk.experimental_users.listConnectMembers()).toEqual({
+      members: [member],
+    });
+    expect(
+      await sdk.experimental_users.addConnectMember({ email: member.email }),
+    ).toEqual({ member });
+    expect(
+      await sdk.experimental_users.removeConnectMember({
+        userId: member.userId,
+      }),
+    ).toEqual({ ok: true });
+    expect(captured).toEqual([
+      {
+        method: "GET",
+        url: "/api/connect/server-members?serverId=connect-server",
+        credential: "bbcred_owner",
+        body: "",
+      },
+      {
+        method: "POST",
+        url: "/api/connect/server-members?serverId=connect-server",
+        credential: "bbcred_owner",
+        body: JSON.stringify({ email: member.email, role: "member" }),
+      },
+      {
+        method: "DELETE",
+        url: "/api/connect/server-members?serverId=connect-server&userId=connect-member",
+        credential: "bbcred_owner",
+        body: "",
+      },
+    ]);
+    const denied = await send(
+      { method: "GET", path: "/api/v1/users/connect-members" },
+      { authorization: `Bearer ${team.memberToken}` },
+    );
+    expect(denied.status).toBe(403);
+    expect(captured).toHaveLength(3);
+    reply = "invalid";
+    expect(
+      (
+        await send(
+          { method: "GET", path: "/api/v1/users/connect-members" },
+          { authorization: `Bearer ${team.adminToken}` },
+        )
+      ).status,
+    ).toBe(502);
+    reply = "forbidden";
+    const forbidden = await send(
+      { method: "GET", path: "/api/v1/users/connect-members" },
+      { authorization: `Bearer ${team.adminToken}` },
+    );
+    expect(forbidden.status).toBe(403);
+    expect(await forbidden.json()).toMatchObject({ code: "owner_required" });
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      gate.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
 });

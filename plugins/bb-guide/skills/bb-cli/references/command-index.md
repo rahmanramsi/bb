@@ -93,6 +93,10 @@ creates an account without prior sign-in. See [configuration](configuration.md).
 ## user
 
 - `bb user`
+- `bb user connect-members`
+- `bb user connect-members list`
+- `bb user connect-members add`
+- `bb user connect-members remove`
 - `bb user list`
 - `bb user role`
 - `bb user remove`

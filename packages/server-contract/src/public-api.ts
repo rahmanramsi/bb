@@ -432,6 +432,10 @@ import {
   type PathUserId,
   type PathUserInviteId,
   type UserInviteListResponse,
+  addConnectMemberRequestSchema,
+  type AddConnectMemberRequest,
+  type AddConnectMemberResponse,
+  type ConnectMemberListResponse,
   authSignInRequestSchema,
   authSignUpRequestSchema,
   createPersonalAccessTokenRequestSchema,
@@ -544,6 +548,26 @@ export const publicApiRoutes = {
     }),
   },
   users: {
+    listConnectMembers: defineRoute({
+      path: "/users/connect-members",
+      method: "get",
+      request: noRequest(),
+      response: jsonResponse<ConnectMemberListResponse>(),
+    }),
+    addConnectMember: defineRoute({
+      path: "/users/connect-members",
+      method: "post",
+      request: jsonRequest<EmptyInput, AddConnectMemberRequest>(
+        addConnectMemberRequestSchema,
+      ),
+      response: jsonResponse<AddConnectMemberResponse>(),
+    }),
+    removeConnectMember: defineRoute({
+      path: "/users/connect-members/:id",
+      method: "delete",
+      request: noRequest<PathUserId>(),
+      response: jsonResponse<{ ok: true }>(),
+    }),
     directory: defineRoute({
       path: "/users/directory",
       method: "get",
