@@ -58,7 +58,7 @@ registered on a `multi` server becomes an admin; later sign-ups need an admin's
 invite. Admin-only actions return `403` to members.
 
 Read and unread state, pins and pin order, UI preferences, appearance, and
-prompt history are kept per user; projects and threads are shared. Threads,
+prompt history are kept per user; public projects and their threads are shared. Threads,
 queued messages, and resolved interactions record who created, wrote, or
 answered them (`createdByUserId`, `authorUserId`, `resolvedByUserId`);
 `bb user list` maps those ids to names for admins.
@@ -73,6 +73,19 @@ selects the server; `BB_TOKEN` overrides its saved token for CLI requests,
 including plugin commands. `bb whoami [--json]` shows the current user.
 `bb logout [--json]` removes only that profile's saved login. It does not
 revoke the PAT or unset `BB_TOKEN`.
+
+In multi mode, a project created by a signed-in user is owned by that user;
+older projects, Personal, and projects created by the local machine are team
+projects with a null `ownerUserId`. Projects are `public` (default) or
+`private`. A private project and everything in it is visible only to its
+owner, its members, and admins; for anyone else it returns `404`. Only the
+owner and admins can rename, delete, change visibility, or manage members
+(`403` otherwise). Personal is always public. Use
+`bb project create --visibility private [--member USER]...`,
+`bb project list --visibility public|private`,
+`bb project visibility PROJECT public|private`, and
+`bb project member list|add|remove PROJECT [USER]`, where USER is a user id
+or email. Local mode ignores visibility.
 
 Admins use `bb user list`, `bb user role USER_ID admin|member`, and
 `bb user remove USER_ID`. System users and the last account admin cannot be

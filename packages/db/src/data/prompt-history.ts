@@ -9,6 +9,10 @@ import {
 import type { DbQueryConnection } from "../connection.js";
 import { promptHistoryEntries, threads } from "../schema.js";
 import { createPromptHistoryEntryId } from "../ids.js";
+import {
+  accessibleProjectIdCondition,
+  type ProjectAccessScope,
+} from "./project-access.js";
 
 export interface StoredPromptHistoryEntryRow {
   createdAt: number;
@@ -62,6 +66,7 @@ export interface PromptHistoryPosition {
 export interface ListPromptHistoryPageArgs {
   before: PromptHistoryPosition | null;
   limit: number;
+  projectAccess?: ProjectAccessScope;
   userId: string;
 }
 
@@ -162,6 +167,12 @@ export function listPromptHistoryPage(
     .where(
       and(
         eq(promptHistoryEntries.userId, args.userId),
+        args.projectAccess === undefined
+          ? undefined
+          : accessibleProjectIdCondition(
+              promptHistoryEntries.projectId,
+              args.projectAccess,
+            ),
         before === null
           ? undefined
           : sql`(${promptHistoryEntries.createdAt}, ${promptHistoryEntries.requestSequence}, ${promptHistoryEntries.id}) < (${before.createdAt}, ${before.requestSequence}, ${before.id})`,

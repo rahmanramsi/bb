@@ -30,6 +30,11 @@ import {
   WORKSPACE_DIFF_MAX_FILE_LIST_BYTES,
 } from "../constants.js";
 import { ApiError } from "../errors.js";
+import { requirePrincipal } from "../request-context.js";
+import {
+  canViewProjectId,
+  projectAccessScopeFor,
+} from "../services/projects/project-access.js";
 import { requestEnvironmentRemoval } from "../services/environments/environment-engine.js";
 import {
   toEnvironmentResponse,
@@ -327,6 +332,7 @@ export function registerEnvironmentRoutes(app: Hono, deps: AppDeps): void {
           statuses: query?.status
             ? [query.status]
             : LISTED_ENVIRONMENT_STATUSES,
+          projectAccess: projectAccessScopeFor(requirePrincipal(context)),
         }),
       ),
     );
@@ -385,7 +391,12 @@ export function registerEnvironmentRoutes(app: Hono, deps: AppDeps): void {
 
   post(routes.archiveThreads, (context) => {
     const environment = requireEnvironment(deps.db, context.req.param("id"));
-    const archivedThreadIds = archiveEnvironmentThreads(deps, { environment });
+    const principal = requirePrincipal(context);
+    const archivedThreadIds = archiveEnvironmentThreads(deps, {
+      canViewProjectId: (projectId) =>
+        canViewProjectId(deps.db, projectId, principal),
+      environment,
+    });
     return context.json({
       ok: true,
       archivedThreadIds,

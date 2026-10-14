@@ -8,6 +8,7 @@ import {
   projectSchema,
   projectSourceCheckoutSchema,
   projectSourceSchema,
+  projectVisibilitySchema,
   promptHistoryEntrySchema,
   threadListEntrySchema,
 } from "@bb/domain";
@@ -60,9 +61,16 @@ export type CreateProjectSourceRequest = z.infer<
   typeof createProjectSourceRequestSchema
 >;
 
+export const PROJECT_MEMBER_USER_IDS_MAX = 200;
+
 export const createProjectRequestSchema = z.object({
   name: z.string().min(1),
   source: createLocalPathProjectSourceRequestSchema,
+  visibility: projectVisibilitySchema.optional(),
+  memberUserIds: z
+    .array(z.string().min(1))
+    .max(PROJECT_MEMBER_USER_IDS_MAX)
+    .optional(),
 });
 export type CreateProjectRequest = z.infer<typeof createProjectRequestSchema>;
 
@@ -140,8 +148,16 @@ export const projectListQuerySchema = z.object({
     )
     .optional(),
   includePersonal: z.enum(["true", "false"]).optional(),
+  visibility: projectVisibilitySchema.optional(),
 });
 export type ProjectListQuery = z.infer<typeof projectListQuerySchema>;
+
+export const sidebarBootstrapQuerySchema = z
+  .object({
+    visibility: projectVisibilitySchema.optional(),
+  })
+  .strict();
+export type SidebarBootstrapQuery = z.infer<typeof sidebarBootstrapQuerySchema>;
 
 const projectWorkspaceRoutingFields = {
   hostId: z.string().min(1),
@@ -230,10 +246,11 @@ export type ProjectAttachmentUploadForm = Record<"file", Blob>;
 export const updateProjectRequestSchema = z
   .object({
     name: z.string().min(1),
+    visibility: projectVisibilitySchema,
   })
   .partial()
   .refine(
-    (value) => value.name !== undefined,
+    (value) => value.name !== undefined || value.visibility !== undefined,
     "At least one field must be provided",
   );
 export type UpdateProjectRequest = z.infer<typeof updateProjectRequestSchema>;
@@ -420,8 +437,31 @@ export type UpdateSkillRequest = z.infer<typeof updateSkillRequestSchema>;
 
 export const projectResponseSchema = projectSchema.extend({
   sources: z.array(projectSourceSchema),
+  visibility: projectVisibilitySchema,
+  ownerUserId: z.string().nullable(),
+  viewerCanManage: z.boolean(),
 });
 export type ProjectResponse = z.infer<typeof projectResponseSchema>;
+
+export const projectMemberSchema = z
+  .object({
+    userId: z.string(),
+    name: z.string(),
+    email: z.string(),
+    addedAt: z.number(),
+  })
+  .strict();
+export type ProjectMember = z.infer<typeof projectMemberSchema>;
+
+export const projectMembersResponseSchema = z
+  .object({
+    owner: projectMemberSchema.nullable(),
+    members: z.array(projectMemberSchema),
+  })
+  .strict();
+export type ProjectMembersResponse = z.infer<
+  typeof projectMembersResponseSchema
+>;
 
 export const projectWithThreadsResponseSchema = projectResponseSchema.extend({
   threads: z.array(threadListEntrySchema),

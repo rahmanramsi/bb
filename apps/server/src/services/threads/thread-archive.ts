@@ -17,6 +17,7 @@ import {
 import type { EnvironmentRow } from "@bb/db";
 import type { ThreadRecord } from "@bb/domain";
 import type { AppDeps } from "../../types.js";
+import { ApiError } from "../../errors.js";
 import {
   pruneThreadEventHistoryBestEffort,
   resetActiveThreadEventPruningState,
@@ -44,10 +45,12 @@ interface ArchiveThreadWithLifecycleEffectsArgs {
 }
 
 interface ArchiveEnvironmentThreadsArgs {
+  canViewProjectId: (projectId: string) => boolean;
   environment: EnvironmentRow;
 }
 
 interface ArchiveThreadAndChildrenArgs {
+  canViewProjectId: (projectId: string) => boolean;
   parentThread: ThreadRecord;
 }
 
@@ -107,7 +110,7 @@ export function archiveEnvironmentThreads(
   const roots = listLiveThreadsInEnvironment(deps.db, {
     environmentId: args.environment.id,
   });
-  return archiveThreadTrees(deps, roots, (thread) =>
+  return archiveThreadTrees(deps, roots, args.canViewProjectId, (thread) =>
     thread.environmentId === null
       ? null
       : getEnvironment(deps.db, thread.environmentId),
@@ -122,23 +125,36 @@ export function archiveThreadAndChildren(
     db: deps.db,
     thread: args.parentThread,
   });
-  return archiveThreadTrees(deps, [args.parentThread], (thread) =>
-    thread.id === args.parentThread.id
-      ? environment
-      : thread.environmentId === null
-        ? null
-        : getEnvironment(deps.db, thread.environmentId),
+  return archiveThreadTrees(
+    deps,
+    [args.parentThread],
+    args.canViewProjectId,
+    (thread) =>
+      thread.id === args.parentThread.id
+        ? environment
+        : thread.environmentId === null
+          ? null
+          : getEnvironment(deps.db, thread.environmentId),
   );
 }
 
 function archiveThreadTrees(
   deps: AppDeps,
   roots: ThreadRecord[],
+  canViewProjectId: (projectId: string) => boolean,
   resolveEnvironment: (
     thread: ArchiveThreadWithLifecycleEffectsArgs["thread"],
   ) => ArchiveThreadEnvironment | null,
 ): string[] {
   const threads = listArchiveCandidates(deps.db, roots);
+  const projectIds = new Set(threads.map((thread) => thread.projectId));
+  if ([...projectIds].some((projectId) => !canViewProjectId(projectId))) {
+    throw new ApiError(
+      409,
+      "invalid_request",
+      "Some threads in this tree belong to projects you cannot access",
+    );
+  }
   for (const root of roots) archiveThread(deps.db, deps.hub, root.id);
   const archivedThreadIds: string[] = [];
 
@@ -184,6 +200,7 @@ function listArchiveCandidates(db: AppDeps["db"], roots: ThreadRecord[]) {
   type ArchiveCandidate = Pick<
     ThreadRecord,
     | "id"
+    | "projectId"
     | "environmentId"
     | "status"
     | "archivedAt"

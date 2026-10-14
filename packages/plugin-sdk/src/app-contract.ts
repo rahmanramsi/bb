@@ -160,11 +160,10 @@ export interface ExperimentalQuestionFormHost {
  * the host adds room for its microphone controls when voice input is
  * available.
  */
-export interface ExperimentalVoiceInputTextareaProps
-  extends Omit<
-    ComponentPropsWithRef<"textarea">,
-    "value" | "defaultValue" | "onChange" | "children"
-  > {
+export interface ExperimentalVoiceInputTextareaProps extends Omit<
+  ComponentPropsWithRef<"textarea">,
+  "value" | "defaultValue" | "onChange" | "children"
+> {
   value: string;
   /**
    * Receives typed edits and finished transcripts, which the host appends to
@@ -1120,6 +1119,18 @@ export interface PluginSidebarProject {
   href: string;
   /** The app-relative URL of the project's settings page. */
   settingsHref: string;
+  /**
+   * Who can see the project on a multi-user server: everyone (`public`) or
+   * only its owner, members, and admins (`private`). Absent when the server
+   * runs in single-user mode, where every project is visible.
+   */
+  experimental_visibility?: "public" | "private";
+  /**
+   * Whether the current user can rename, remove, or change access to the
+   * project. `false` for the personal project and for projects the user can
+   * see but does not own on a multi-user server. Older hosts omit it.
+   */
+  experimental_viewerCanManage?: boolean;
 }
 
 /**
@@ -1235,7 +1246,9 @@ export interface ExperimentalClipboardContent {
  */
 export type PluginBoundThreadsArea = Omit<
   BbSdkAreas["threads"],
-  "getPluginMetadata" | "updatePluginMetadata" | "experimental_listPluginMetadata"
+  | "getPluginMetadata"
+  | "updatePluginMetadata"
+  | "experimental_listPluginMetadata"
 > & {
   getPluginMetadata(
     args: Omit<ThreadPluginMetadataArgs, "pluginId"> & { pluginId?: string },

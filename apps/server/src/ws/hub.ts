@@ -12,7 +12,7 @@ import {
   type ThreadChangeMetadata,
   type ThreadEventType,
 } from "@bb/domain";
-import type { DbNotifier } from "@bb/db";
+import type { DbNotifier, ProjectAccessScope } from "@bb/db";
 import type {
   HostPlatform,
   HostDaemonOnlineRpcRequestMessage,
@@ -49,6 +49,30 @@ interface TerminalSocketSendQueue {
   bytes: number;
   payloads: string[];
   timeout: ReturnType<typeof setTimeout> | null;
+}
+
+export type RealtimeAccessTarget =
+  | { kind: "project"; id: string }
+  | { kind: "thread"; id: string }
+  | { kind: "environment"; id: string };
+
+export interface RealtimeProjectAccessResolver {
+  projectIdFor(target: RealtimeAccessTarget): string | null;
+  canView(projectId: string, scope: ProjectAccessScope): boolean;
+}
+
+function accessTargetForMessage(
+  message: ServerChangedMessage,
+): RealtimeAccessTarget | null {
+  switch (message.entity) {
+    case "thread":
+    case "project":
+    case "environment":
+      return { kind: message.entity, id: message.id };
+    case "host":
+    case "system":
+      return null;
+  }
 }
 
 export type ServerChangedMessage =
@@ -222,6 +246,11 @@ export class NotificationHub implements DbNotifier {
   private readonly clientKeysBySocket = new Map<HubSocket, Set<string>>();
   private readonly clientSocketsByKey = new Map<string, Set<HubSocket>>();
   private readonly clientUserIdsBySocket = new Map<HubSocket, string>();
+  private readonly clientProjectAccessBySocket = new Map<
+    HubSocket,
+    ProjectAccessScope
+  >();
+  private projectAccessResolver: RealtimeProjectAccessResolver | null = null;
   private readonly daemonSessions = new Map<
     string,
     {
@@ -256,6 +285,7 @@ export class NotificationHub implements DbNotifier {
   >();
   private readonly hostProtocolUpdateRetryRequests = new Set<string>();
   private readonly changedMessageListeners = new Set<ChangedMessageListener>();
+  private readonly projectAccessChangeListeners = new Set<() => void>();
   private readonly pendingDaemonDisconnects = new Map<
     string,
     ReturnType<typeof setTimeout>
@@ -282,9 +312,50 @@ export class NotificationHub implements DbNotifier {
     PendingThreadListEventsAppended
   >();
 
-  registerClient(socket: HubSocket, userId: string): void {
+  registerClient(
+    socket: HubSocket,
+    userId: string,
+    projectAccess: ProjectAccessScope = { kind: "unrestricted" },
+  ): void {
     this.ensureClientKeys(socket);
     this.clientUserIdsBySocket.set(socket, userId);
+    this.clientProjectAccessBySocket.set(socket, projectAccess);
+  }
+
+  setProjectAccessResolver(
+    resolver: RealtimeProjectAccessResolver | null,
+  ): void {
+    this.projectAccessResolver = resolver;
+  }
+
+  private createSocketAccessCheck(
+    target: RealtimeAccessTarget | null,
+  ): (socket: HubSocket) => boolean {
+    const resolver = this.projectAccessResolver;
+    if (target === null || resolver === null) {
+      return () => true;
+    }
+    let projectId: string | null | undefined;
+    const viewByUserId = new Map<string, boolean>();
+    return (socket) => {
+      const scope = this.clientProjectAccessBySocket.get(socket);
+      if (scope === undefined || scope.kind === "unrestricted") {
+        return true;
+      }
+      if (projectId === undefined) {
+        projectId = resolver.projectIdFor(target);
+      }
+      if (projectId === null) {
+        return true;
+      }
+      const cached = viewByUserId.get(scope.userId);
+      if (cached !== undefined) {
+        return cached;
+      }
+      const allowed = resolver.canView(projectId, scope);
+      viewByUserId.set(scope.userId, allowed);
+      return allowed;
+    };
   }
 
   private ensureClientKeys(socket: HubSocket): void {
@@ -296,6 +367,7 @@ export class NotificationHub implements DbNotifier {
   unregisterClient(socket: HubSocket): void {
     this.unregisterTerminalClientSocket(socket);
     this.clientUserIdsBySocket.delete(socket);
+    this.clientProjectAccessBySocket.delete(socket);
     const keys = this.clientKeysBySocket.get(socket);
     if (!keys) {
       return;
@@ -313,6 +385,13 @@ export class NotificationHub implements DbNotifier {
     }
 
     this.clientKeysBySocket.delete(socket);
+  }
+
+  onProjectAccessChanged(listener: () => void): () => void {
+    this.projectAccessChangeListeners.add(listener);
+    return () => {
+      this.projectAccessChangeListeners.delete(listener);
+    };
   }
 
   onChangedMessage(listener: ChangedMessageListener): () => void {
@@ -874,6 +953,7 @@ export class NotificationHub implements DbNotifier {
     request: { split: ThreadOpenSplit; file: ThreadOpenFile | null },
   ): number {
     return this.broadcastToAllClients(
+      { kind: "project", id: thread.projectId },
       JSON.stringify(
         threadOpenSignalSchema.parse({
           type: "thread-open",
@@ -891,6 +971,7 @@ export class NotificationHub implements DbNotifier {
     action: ThreadPaneAction,
   ): number {
     return this.broadcastToAllClients(
+      { kind: "project", id: thread.projectId },
       JSON.stringify(
         threadPaneActionSignalSchema.parse({
           type: "thread-pane-action",
@@ -908,6 +989,7 @@ export class NotificationHub implements DbNotifier {
     payload: unknown,
   ): number {
     return this.broadcastToAllClients(
+      null,
       JSON.stringify(
         pluginSignalSchema.parse({
           type: "plugin-signal",
@@ -919,9 +1001,16 @@ export class NotificationHub implements DbNotifier {
     );
   }
 
-  private broadcastToAllClients(payload: string): number {
+  private broadcastToAllClients(
+    target: RealtimeAccessTarget | null,
+    payload: string,
+  ): number {
+    const canReceive = this.createSocketAccessCheck(target);
     let delivered = 0;
     for (const socket of this.clientKeysBySocket.keys()) {
+      if (!canReceive(socket)) {
+        continue;
+      }
       socket.send(payload);
       delivered += 1;
     }
@@ -935,6 +1024,48 @@ export class NotificationHub implements DbNotifier {
       id: projectId,
       changes,
     });
+  }
+
+  notifyProjectAccessChanged(
+    projectId: string,
+    previousViewers: "everyone" | readonly string[] = [],
+  ): void {
+    const message: ServerChangedMessage = {
+      type: "changed",
+      entity: "project",
+      id: projectId,
+      changes: ["project-updated"],
+    };
+    const payload = serializeServerMessage(message);
+    if (payload !== null) {
+      const canViewNow = this.createSocketAccessCheck({
+        kind: "project",
+        id: projectId,
+      });
+      const previousViewerIds = new Set(
+        previousViewers === "everyone" ? [] : previousViewers,
+      );
+      const canReceive = (socket: HubSocket): boolean =>
+        previousViewers === "everyone" ||
+        previousViewerIds.has(this.clientUserIdsBySocket.get(socket) ?? "") ||
+        canViewNow(socket);
+      const sockets = new Set<HubSocket>();
+      for (const key of [
+        ...subscriptionKeysForMessage(message),
+        subscriptionKey({ kind: "thread-list" }),
+      ]) {
+        for (const socket of this.clientSocketsByKey.get(key) ?? []) {
+          if (canReceive(socket)) {
+            sockets.add(socket);
+          }
+        }
+      }
+      this.notifyClientsByKeySet(sockets, payload);
+      this.notifyChangedMessageListeners(message);
+    }
+    for (const listener of this.projectAccessChangeListeners) {
+      listener();
+    }
   }
 
   notifyEnvironment(
@@ -1009,10 +1140,16 @@ export class NotificationHub implements DbNotifier {
     if (payload === null) {
       return;
     }
+    const canReceive = this.createSocketAccessCheck(
+      accessTargetForMessage(message),
+    );
     const sockets = new Set<HubSocket>();
     for (const key of subscriptionKeysForMessage(message)) {
       for (const socket of this.clientSocketsByKey.get(key) ?? []) {
-        if (this.clientUserIdsBySocket.get(socket) === userId) {
+        if (
+          this.clientUserIdsBySocket.get(socket) === userId &&
+          canReceive(socket)
+        ) {
           sockets.add(socket);
         }
       }
@@ -1094,7 +1231,14 @@ export class NotificationHub implements DbNotifier {
       subscriptionKey({ kind: "thread-detail", threadId }),
     );
     if (detailSockets) {
-      this.notifyClientsByKeySet(detailSockets, payload);
+      const canReceive = this.createSocketAccessCheck({
+        kind: "thread",
+        id: threadId,
+      });
+      this.notifyClientsByKeySet(
+        [...detailSockets].filter(canReceive),
+        payload,
+      );
     }
     this.notifyChangedMessageListeners(message);
     return payload;
@@ -1180,8 +1324,15 @@ export class NotificationHub implements DbNotifier {
       return;
     }
     const detailKey = subscriptionKey({ kind: "thread-detail", threadId });
+    const canReceive = this.createSocketAccessCheck({
+      kind: "thread",
+      id: threadId,
+    });
     for (const socket of listSockets) {
       if (this.clientKeysBySocket.get(socket)?.has(detailKey)) {
+        continue;
+      }
+      if (!canReceive(socket)) {
         continue;
       }
       socket.send(payload);
@@ -1189,6 +1340,9 @@ export class NotificationHub implements DbNotifier {
   }
 
   private notifyClients(message: ServerChangedMessage): void {
+    const canReceive = this.createSocketAccessCheck(
+      accessTargetForMessage(message),
+    );
     const sockets = new Set<HubSocket>();
     for (const key of subscriptionKeysForMessage(message)) {
       const specificSockets = this.clientSocketsByKey.get(key);
@@ -1196,7 +1350,9 @@ export class NotificationHub implements DbNotifier {
         continue;
       }
       for (const socket of specificSockets) {
-        sockets.add(socket);
+        if (canReceive(socket)) {
+          sockets.add(socket);
+        }
       }
     }
 

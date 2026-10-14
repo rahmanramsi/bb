@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { isPromptDraftEmpty } from "@bb/client-core";
+import type { ProjectVisibility } from "@bb/domain";
 import { useCreateProject } from "@/hooks/mutations/project-mutations";
 import { usePromptDraftController } from "@/hooks/usePromptDraftStorage";
 import { useImportedProjectDefault } from "@/lib/root-compose-selection";
@@ -43,6 +44,7 @@ export function useOnboardingProjectImport({
   const importProjects = async (
     hostId: string,
     repos: readonly { name: string; path: string }[],
+    visibility: ProjectVisibility | null,
   ) => {
     const lifetime = lifetimeRef.current;
     if (importing || !lifetime?.active) return;
@@ -54,6 +56,7 @@ export function useOnboardingProjectImport({
         const project = await createProject.mutateAsync({
           name: repo.name,
           source: { type: "local_path", hostId, path: repo.path },
+          ...(visibility === null ? {} : { visibility }),
         });
         lastImportedProjectId = project.id;
       }

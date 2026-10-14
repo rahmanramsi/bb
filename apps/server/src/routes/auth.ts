@@ -15,10 +15,11 @@ import {
   getRequestPrincipal,
   requirePrincipal,
 } from "../request-context.js";
+import { listProjectIdsOwnedByUser, listProjectIdsWithMember } from "@bb/db";
 import { UserAuthError } from "../services/user-auth.js";
 import type { ServerAppDeps } from "../types.js";
 
-type AuthRouteDeps = Pick<ServerAppDeps, "config" | "userAuth" | "db">;
+type AuthRouteDeps = Pick<ServerAppDeps, "config" | "userAuth" | "db" | "hub">;
 
 interface ResponseHeaderWriter {
   header(name: string, value: string, options: { append: boolean }): void;
@@ -178,10 +179,18 @@ export function registerAuthRoutes(app: Hono, deps: AuthRouteDeps): void {
 
   del(publicApiRoutes.users.remove, (context) => {
     assertAdmin(context);
+    const userId = context.req.param("id");
+    const affectedProjectIds = new Set([
+      ...listProjectIdsOwnedByUser(deps.db, userId),
+      ...listProjectIdsWithMember(deps.db, userId),
+    ]);
     try {
-      deps.userAuth.removeUser(context.req.param("id"));
+      deps.userAuth.removeUser(userId);
     } catch (error) {
       throw toApiError(error);
+    }
+    for (const projectId of affectedProjectIds) {
+      deps.hub.notifyProjectAccessChanged(projectId);
     }
     return context.json({ ok: true as const });
   });

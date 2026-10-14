@@ -143,7 +143,20 @@ function restoreLegacyThreadPerUserColumns(db: DbConnection): void {
   );
 }
 
+export function rewindProjectVisibility(db: DbConnection): void {
+  db.$client.exec(`
+    DROP TABLE IF EXISTS project_members;
+    DROP INDEX IF EXISTS projects_owner_idx;
+  `);
+  for (const column of ["owner_user_id", "visibility"]) {
+    if (columnNames(db, "projects").includes(column)) {
+      db.$client.exec(`ALTER TABLE projects DROP COLUMN ${column}`);
+    }
+  }
+}
+
 export function rewindMultiUser(db: DbConnection): void {
+  rewindProjectVisibility(db);
   restoreLegacyThreadPerUserColumns(db);
   db.$client.exec(`
     DROP TABLE IF EXISTS thread_user_state;

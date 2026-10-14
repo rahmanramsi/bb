@@ -1,17 +1,21 @@
 import { prepareCachedQuery } from "../connection.js";
 import { hostPathEquals } from "./host-path-sql.js";
 import { and, asc, desc, eq, isNull, placeholder } from "drizzle-orm";
-import { PERSONAL_PROJECT_ID } from "@bb/domain";
+import { PERSONAL_PROJECT_ID, type ProjectVisibility } from "@bb/domain";
 import type {
   DbConnection,
   DbQueryConnection,
   DbTransaction,
 } from "../connection.js";
 import type { DbNotifier } from "../notifier.js";
-import { projects, projectSources } from "../schema.js";
+import { projectMembers, projects, projectSources } from "../schema.js";
 import { createProjectId, createProjectSourceId } from "../ids.js";
 import { toProjectSource } from "./project-sources.js";
 import { createOrderKeyAfter, createOrderKeyBetween } from "./order-keys.js";
+import {
+  projectVisibleToScopeCondition,
+  type ProjectAccessScope,
+} from "./project-access.js";
 
 export interface CreateProjectLocalPathSourceInput {
   type: "local_path";
@@ -21,14 +25,33 @@ export interface CreateProjectLocalPathSourceInput {
 
 export type CreateProjectSourceInput = CreateProjectLocalPathSourceInput;
 
+export interface CreateProjectAccessInput {
+  memberUserIds: string[];
+  ownerUserId: string | null;
+  visibility: ProjectVisibility;
+}
+
+const TEAM_PROJECT_ACCESS: CreateProjectAccessInput = {
+  memberUserIds: [],
+  ownerUserId: null,
+  visibility: "public",
+};
+
 export interface CreateProjectInput {
+  access?: CreateProjectAccessInput;
   name: string;
   source: CreateProjectSourceInput;
+}
+
+export interface ProjectListFilter {
+  access: ProjectAccessScope;
+  visibility: ProjectVisibility | null;
 }
 
 export type ProjectRow = typeof projects.$inferSelect;
 
 export interface ReorderProjectArgs {
+  access: ProjectAccessScope;
   db: DbConnection;
   nextProjectId: string | null;
   notifier: DbNotifier;
@@ -37,6 +60,7 @@ export interface ReorderProjectArgs {
 }
 
 interface ResolveProjectNeighborArgs {
+  access: ProjectAccessScope;
   movedProjectId: string;
   neighborProjectId: string | null;
 }
@@ -74,11 +98,22 @@ function publicProjectFilter() {
   return and(eq(projects.kind, "standard"), isNull(projects.deletedAt));
 }
 
-export function listPublicProjects(db: DbQueryConnection): ProjectRow[] {
+export function listActiveProjects(
+  db: DbQueryConnection,
+  filter: ProjectListFilter,
+): ProjectRow[] {
   return db
     .select()
     .from(projects)
-    .where(publicProjectFilter())
+    .where(
+      and(
+        publicProjectFilter(),
+        projectVisibleToScopeCondition(filter.access),
+        filter.visibility === null
+          ? undefined
+          : eq(projects.visibility, filter.visibility),
+      ),
+    )
     .orderBy(asc(projects.sortKey), asc(projects.id))
     .all();
 }
@@ -98,12 +133,19 @@ function getLastPublicProject(db: DbQueryConnection): ProjectRow | null {
 function getPublicProjectForMutation(
   db: DbQueryConnection,
   id: string,
+  access: ProjectAccessScope,
 ): ProjectRow | null {
   return (
     db
       .select()
       .from(projects)
-      .where(and(eq(projects.id, id), publicProjectFilter()))
+      .where(
+        and(
+          eq(projects.id, id),
+          publicProjectFilter(),
+          projectVisibleToScopeCondition(access),
+        ),
+      )
       .get() ?? null
   );
 }
@@ -111,6 +153,7 @@ function getPublicProjectForMutation(
 function getPublicProjectWithLocalPathSource(
   db: DbQueryConnection,
   source: CreateProjectLocalPathSourceInput,
+  access: ProjectAccessScope,
 ) {
   return (
     db
@@ -120,6 +163,7 @@ function getPublicProjectWithLocalPathSource(
       .where(
         and(
           publicProjectFilter(),
+          projectVisibleToScopeCondition(access),
           eq(projectSources.type, source.type),
           eq(projectSources.hostId, source.hostId),
           hostPathEquals(projectSources.path, source.path),
@@ -134,11 +178,15 @@ function getPublicProjectWithLocalPathSource(
 export function getPublicProjectByLocalPathSource(
   db: DbQueryConnection,
   source: CreateProjectLocalPathSourceInput,
+  access: ProjectAccessScope,
 ): ProjectRow | null {
-  return getPublicProjectWithLocalPathSource(db, source)?.project ?? null;
+  return (
+    getPublicProjectWithLocalPathSource(db, source, access)?.project ?? null
+  );
 }
 
 function insertProject(tx: DbTransaction, input: CreateProjectInput) {
+  const access = input.access ?? TEAM_PROJECT_ACCESS;
   const now = Date.now();
   const projectId = createProjectId();
   const sourceId = createProjectSourceId();
@@ -152,11 +200,29 @@ function insertProject(tx: DbTransaction, input: CreateProjectInput) {
       id: projectId,
       name: input.name,
       sortKey,
+      ownerUserId: access.ownerUserId,
+      visibility: access.visibility,
       createdAt: now,
       updatedAt: now,
     })
     .returning()
     .get();
+  const memberUserIds = [...new Set(access.memberUserIds)].filter(
+    (userId) => userId !== access.ownerUserId,
+  );
+  if (memberUserIds.length > 0) {
+    tx.insert(projectMembers)
+      .values(
+        memberUserIds.map((userId) => ({
+          projectId,
+          userId,
+          addedByUserId: access.ownerUserId,
+          createdAt: now,
+        })),
+      )
+      .onConflictDoNothing()
+      .run();
+  }
   const source = tx
     .insert(projectSources)
     .values({
@@ -190,7 +256,10 @@ function resolveProjectNeighbor(
     return false;
   }
 
-  return getPublicProjectForMutation(db, args.neighborProjectId) ?? false;
+  return (
+    getPublicProjectForMutation(db, args.neighborProjectId, args.access) ??
+    false
+  );
 }
 
 export function createProject(
@@ -207,10 +276,15 @@ export function findOrCreateProjectByLocalPathSource(
   db: DbConnection,
   notifier: DbNotifier,
   input: CreateProjectInput,
+  lookupAccess: ProjectAccessScope,
 ) {
   const { created, project, source } = db.transaction(
     (tx) => {
-      const existing = getPublicProjectWithLocalPathSource(tx, input.source);
+      const existing = getPublicProjectWithLocalPathSource(
+        tx,
+        input.source,
+        lookupAccess,
+      );
       if (existing) {
         return { created: false, ...existing };
       }
@@ -270,6 +344,7 @@ export function ensurePersonalProject(db: DbConnection) {
 
 export interface UpdateProjectInput {
   name?: string;
+  visibility?: ProjectVisibility;
 }
 
 export function setProjectGitRemoteUrlIfMissing(
@@ -339,6 +414,7 @@ export function markProjectDeleted(
 }
 
 export function reorderProject({
+  access,
   db,
   nextProjectId,
   notifier,
@@ -347,16 +423,18 @@ export function reorderProject({
 }: ReorderProjectArgs): ReorderProjectResult {
   const result = db.transaction(
     (tx): ReorderProjectResult => {
-      const movedProject = getPublicProjectForMutation(tx, projectId);
+      const movedProject = getPublicProjectForMutation(tx, projectId, access);
       if (!movedProject) {
         return { kind: "not_found" };
       }
 
       const previousProject = resolveProjectNeighbor(tx, {
+        access,
         movedProjectId: projectId,
         neighborProjectId: previousProjectId,
       });
       const nextProject = resolveProjectNeighbor(tx, {
+        access,
         movedProjectId: projectId,
         neighborProjectId: nextProjectId,
       });
@@ -371,7 +449,8 @@ export function reorderProject({
         return { kind: "invalid_neighbor_order" };
       }
 
-      const currentProjects = listPublicProjects(tx);
+      const listFilter: ProjectListFilter = { access, visibility: null };
+      const currentProjects = listActiveProjects(tx, listFilter);
       const currentIndex = currentProjects.findIndex(
         (project) => project.id === projectId,
       );
@@ -404,7 +483,7 @@ export function reorderProject({
 
       return {
         kind: "reordered",
-        projects: listPublicProjects(tx),
+        projects: listActiveProjects(tx, listFilter),
       };
     },
     { behavior: "immediate" },

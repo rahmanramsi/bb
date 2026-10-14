@@ -16,6 +16,7 @@ import { threadCreateOriginValues } from "@bb/domain/thread-create-origin";
 import { threadOriginKindValues } from "@bb/domain/thread-origin-kind";
 import { threadVisibilityValues } from "@bb/domain/thread-visibility";
 import { userRoleValues } from "@bb/domain/user-role";
+import { projectVisibilityValues } from "@bb/domain/project-visibility";
 import type {
   EnvironmentProviderSelection,
   JsonValue,
@@ -231,17 +232,44 @@ export const projects = sqliteTable(
     name: text("name").notNull(),
     gitRemoteUrl: text("git_remote_url"),
     sortKey: text("sort_key").notNull().default("V"),
+    ownerUserId: text("owner_user_id").references(() => authUsers.id, {
+      onDelete: "set null",
+    }),
+    visibility: text("visibility", { enum: projectVisibilityValues })
+      .notNull()
+      .default("public"),
     deletedAt: integer("deleted_at"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
   (table) => [
     index("projects_updated_idx").on(table.updatedAt),
+    index("projects_owner_idx").on(table.ownerUserId),
     index("projects_deleted_idx").on(table.deletedAt),
     index("projects_sort_idx").on(table.sortKey, table.id),
     uniqueIndex("projects_personal_singleton_idx")
       .on(table.kind)
       .where(sql`${table.kind} = 'personal'`),
+  ],
+);
+
+export const projectMembers = sqliteTable(
+  "project_members",
+  {
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    addedByUserId: text("added_by_user_id").references(() => authUsers.id, {
+      onDelete: "set null",
+    }),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.userId] }),
+    index("project_members_user_idx").on(table.userId),
   ],
 );
 

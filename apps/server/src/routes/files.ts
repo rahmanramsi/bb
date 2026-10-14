@@ -32,6 +32,12 @@ import {
 } from "../services/lib/entity-lookup.js";
 import { resolveProjectWorkspaceTarget } from "../services/projects/project-workspace.js";
 import {
+  assertHostPathsVisible,
+  filterVisibleHostPaths,
+  resolveHostTargetPath,
+} from "../services/projects/project-access.js";
+import { requirePrincipal, type PrincipalReader } from "../request-context.js";
+import {
   requireThreadEnvironmentHostId,
   requireThreadStorageTarget,
 } from "../services/threads/thread-storage.js";
@@ -238,8 +244,21 @@ export function registerFileRoutes(app: Hono, deps: AppDeps): void {
     }
   };
 
+  const assertVisible = (
+    context: PrincipalReader,
+    hostId: string,
+    rootPath: string | undefined,
+    targetPaths: readonly string[],
+  ): void => {
+    assertHostPathsVisible(deps.db, requirePrincipal(context), hostId, [
+      ...(rootPath === undefined ? [] : [rootPath]),
+      ...targetPaths.map((target) => resolveHostTargetPath(rootPath, target)),
+    ]);
+  };
+
   post(fileRoutes.read, (context, payload) =>
     withHostFileRoute(payload.hostId, async (hostId) => {
+      assertVisible(context, hostId, payload.rootPath, [payload.path]);
       const result = await callHostRetryableOnlineRpc(deps, {
         hostId,
         timeoutMs: COMMAND_TIMEOUT_MS,
@@ -257,6 +276,7 @@ export function registerFileRoutes(app: Hono, deps: AppDeps): void {
 
   post(fileRoutes.write, (context, payload) =>
     withHostFileRoute(payload.hostId, async (hostId) => {
+      assertVisible(context, hostId, payload.rootPath, [payload.path]);
       const result = await runHostFileMutationCommand(hostId, {
         type: "host.write_file",
         path: payload.path,
@@ -277,6 +297,7 @@ export function registerFileRoutes(app: Hono, deps: AppDeps): void {
 
   post(fileRoutes.list, (context, payload) =>
     withHostFileRoute(payload.hostId, async (hostId) => {
+      assertVisible(context, hostId, undefined, [payload.path]);
       const result = await callHostRetryableOnlineRpc(deps, {
         hostId,
         timeoutMs: COMMAND_TIMEOUT_MS,
@@ -293,12 +314,22 @@ export function registerFileRoutes(app: Hono, deps: AppDeps): void {
           ...(payload.query !== undefined ? { query: payload.query } : {}),
         },
       });
-      return context.json(result);
+      return context.json({
+        ...result,
+        files: filterVisibleHostPaths(
+          deps.db,
+          requirePrincipal(context),
+          hostId,
+          result.files,
+          (entry) => resolveHostTargetPath(payload.path, entry.path),
+        ),
+      });
     }),
   );
 
   post(fileRoutes.listPaths, (context, payload) =>
     withHostFileRoute(payload.hostId, async (hostId) => {
+      assertVisible(context, hostId, undefined, [payload.path]);
       const result = await callHostRetryableOnlineRpc(deps, {
         hostId,
         timeoutMs: COMMAND_TIMEOUT_MS,
@@ -317,12 +348,22 @@ export function registerFileRoutes(app: Hono, deps: AppDeps): void {
           ...(payload.query !== undefined ? { query: payload.query } : {}),
         },
       });
-      return context.json(result);
+      return context.json({
+        ...result,
+        paths: filterVisibleHostPaths(
+          deps.db,
+          requirePrincipal(context),
+          hostId,
+          result.paths,
+          (entry) => resolveHostTargetPath(payload.path, entry.path),
+        ),
+      });
     }),
   );
 
   post(fileRoutes.mkdir, (context, payload) =>
     withHostFileRoute(payload.hostId, async (hostId) => {
+      assertVisible(context, hostId, payload.rootPath, [payload.path]);
       const result = await runHostFileMutationCommand(hostId, {
         type: "host.mkdir",
         path: payload.path,
@@ -337,6 +378,10 @@ export function registerFileRoutes(app: Hono, deps: AppDeps): void {
 
   post(fileRoutes.move, (context, payload) =>
     withHostFileRoute(payload.hostId, async (hostId) => {
+      assertVisible(context, hostId, payload.rootPath, [
+        payload.sourcePath,
+        payload.destinationPath,
+      ]);
       const result = await runHostFileMutationCommand(hostId, {
         type: "host.move_path",
         sourcePath: payload.sourcePath,
@@ -351,6 +396,7 @@ export function registerFileRoutes(app: Hono, deps: AppDeps): void {
 
   post(fileRoutes.remove, (context, payload) =>
     withHostFileRoute(payload.hostId, async (hostId) => {
+      assertVisible(context, hostId, payload.rootPath, [payload.path]);
       const result = await runHostFileMutationCommand(hostId, {
         type: "host.remove_path",
         path: payload.path,
@@ -366,6 +412,7 @@ export function registerFileRoutes(app: Hono, deps: AppDeps): void {
   post(fileRoutes.createPreview, (context, payload) => {
     const hostId = resolveHostId(payload.hostId);
     const rootPath = requireAbsoluteHostRoot(payload.rootPath);
+    assertVisible(context, hostId, undefined, [rootPath]);
     const now = Date.now();
     for (const [id, lease] of previewLeases) {
       if (lease.expiresAtMs <= now) previewLeases.delete(id);
@@ -413,6 +460,9 @@ export function registerFileRoutes(app: Hono, deps: AppDeps): void {
       context.req.param("id"),
     );
     const file = parseAbsoluteHostFile(context.req.param("filePath"));
+    assertVisible(context, hostId, undefined, [
+      joinHostPath(file.rootPath, file.segments),
+    ]);
     return serveRootedFile(
       deps,
       context.req.raw,
@@ -425,6 +475,9 @@ export function registerFileRoutes(app: Hono, deps: AppDeps): void {
     const hostId = context.req.param("id");
     assertUsableHostId(deps, { hostId });
     const file = parseAbsoluteHostFile(context.req.param("filePath"));
+    assertVisible(context, hostId, undefined, [
+      joinHostPath(file.rootPath, file.segments),
+    ]);
     return serveRootedFile(
       deps,
       context.req.raw,

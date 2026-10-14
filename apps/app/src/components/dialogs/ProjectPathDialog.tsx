@@ -5,12 +5,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@bb/shared-ui/dropdown-menu";
+import "@bb/shared-ui/icon-extended";
 import { Icon } from "@bb/shared-ui/icon";
 import {
+  DEFAULT_PROJECT_VISIBILITY,
   deriveProjectNameFromPath,
   getProjectPathValidationMessage,
   normalizeProjectPathInput,
   type Host,
+  type ProjectVisibility,
 } from "@bb/domain";
 import type { HostPlatform } from "@bb/host-daemon-contract";
 import { Button } from "@bb/shared-ui/button";
@@ -26,12 +29,15 @@ import { Input } from "@bb/shared-ui/input";
 import { cn } from "@bb/shared-ui/lib/utils";
 import { RemotePathBrowser } from "@/components/dialogs/RemotePathBrowser";
 import { MachineStatusDot } from "@/components/machines/MachineStatusDot";
+import { ProjectVisibilityChoice } from "@/components/project/ProjectVisibilityChoice";
 import { usePointerCoarse } from "@bb/shared-ui/hooks/use-pointer-coarse";
 import { selectHosts } from "@/hooks/queries/host-queries";
+import { useAuth } from "@/hooks/useAuth";
 
 export type ProjectPathDialogTarget =
   | {
       kind: "create";
+      visibility?: ProjectVisibility;
     }
   | {
       kind: "update";
@@ -164,6 +170,14 @@ export function ProjectPathDialogContent({
 }: ProjectPathDialogContentProps) {
   const inputId = useId();
   const isPointerCoarse = usePointerCoarse();
+  const auth = useAuth();
+  const showVisibilityChoice =
+    target.kind === "create" && auth?.authMode === "multi";
+  const [visibility, setVisibility] = useState<ProjectVisibility>(
+    target.kind === "create"
+      ? (target.visibility ?? DEFAULT_PROJECT_VISIBILITY)
+      : DEFAULT_PROJECT_VISIBILITY,
+  );
   const machineOptions =
     target.kind === "create" ? selectHosts(hosts, "all") : undefined;
   const firstConnectedHostId = machineOptions?.find(
@@ -239,7 +253,11 @@ export function ProjectPathDialogContent({
       return;
     }
 
-    void onSubmit(target, normalizedPath, selectedHostId);
+    void onSubmit(
+      showVisibilityChoice ? { kind: "create", visibility } : target,
+      normalizedPath,
+      selectedHostId,
+    );
   };
 
   return (
@@ -347,6 +365,13 @@ export function ProjectPathDialogContent({
             }}
           />
         )}
+        {showVisibilityChoice ? (
+          <ProjectVisibilityChoice
+            value={visibility}
+            disabled={pending}
+            onChange={setVisibility}
+          />
+        ) : null}
         {(derivedProjectName && target.kind === "create") ||
         validationMessage ? (
           <div className="space-y-1">

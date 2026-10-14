@@ -1,9 +1,13 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { Command } from "commander";
+import { projectVisibilitySchema, type ProjectVisibility } from "@bb/domain";
+import type { BbSdk } from "@bb/sdk";
 import type {
+  AuthUser,
   CreateProjectSourceRequest,
   HostDiscoveredRepo,
+  ProjectMembersResponse,
   ProjectResponse,
   UpdateProjectSourceRequest,
 } from "@bb/server-contract";
@@ -21,6 +25,7 @@ import {
 interface ProjectListCommandOptions {
   includePersonal?: boolean;
   json?: boolean;
+  visibility?: string;
 }
 
 interface ProjectDiscoverCommandOptions {
@@ -32,9 +37,11 @@ interface ProjectDiscoverCommandOptions {
 interface ProjectCreateCommandOptions {
   host?: string;
   machine?: string;
+  member?: string[];
   name: string;
   root?: string;
   json?: boolean;
+  visibility?: string;
 }
 
 interface ProjectShowCommandOptions {
@@ -74,6 +81,10 @@ function addProjectWorkspaceRoutingOptions(command: Command): Command {
 
 interface ProjectUpdateCommandOptions {
   name?: string;
+  json?: boolean;
+}
+
+interface ProjectJsonCommandOptions {
   json?: boolean;
 }
 
@@ -121,6 +132,115 @@ interface ProjectSourceInputOptions {
 }
 
 type ProjectSource = ProjectResponse["sources"][number];
+
+function parseProjectVisibility(value: string): ProjectVisibility {
+  const parsed = projectVisibilitySchema.safeParse(value);
+  if (!parsed.success) {
+    throw new Error(
+      `Invalid visibility '${value}'. Use "public" or "private".`,
+    );
+  }
+  return parsed.data;
+}
+
+function collectRepeatedOption(value: string, previous: string[] = []) {
+  return [...previous, value];
+}
+
+async function listDirectoryUsers(sdk: BbSdk): Promise<AuthUser[]> {
+  const result = await sdk.experimental_users.directory();
+  return result.users;
+}
+
+function findDirectoryUser(
+  users: AuthUser[],
+  idOrEmail: string,
+): AuthUser | undefined {
+  const normalized = idOrEmail.trim().toLowerCase();
+  return users.find(
+    (user) => user.id === idOrEmail || user.email.toLowerCase() === normalized,
+  );
+}
+
+async function resolveUserIds(
+  sdk: BbSdk,
+  idsOrEmails: string[],
+): Promise<string[]> {
+  if (idsOrEmails.length === 0) return [];
+  const users = await listDirectoryUsers(sdk);
+  return idsOrEmails.map((idOrEmail) => {
+    const user = findDirectoryUser(users, idOrEmail);
+    if (!user) {
+      throw new Error(
+        `User '${idOrEmail}' not found. Run \`bb user list\` or pass a user ID or email.`,
+      );
+    }
+    return user.id;
+  });
+}
+
+async function resolveUserId(sdk: BbSdk, idOrEmail: string) {
+  const [userId] = await resolveUserIds(sdk, [idOrEmail]);
+  if (userId === undefined) {
+    throw new Error(`User '${idOrEmail}' not found.`);
+  }
+  return userId;
+}
+
+async function ownerLabels(
+  sdk: BbSdk,
+  projects: ProjectResponse[],
+): Promise<Map<string, string>> {
+  const labels = new Map<string, string>();
+  if (!projects.some((project) => project.ownerUserId !== null)) {
+    return labels;
+  }
+  for (const user of await listDirectoryUsers(sdk)) {
+    labels.set(user.id, user.email);
+  }
+  return labels;
+}
+
+function ownerLabel(
+  project: ProjectResponse,
+  labels: Map<string, string>,
+): string {
+  if (project.ownerUserId === null) return "team";
+  return labels.get(project.ownerUserId) ?? project.ownerUserId;
+}
+
+function printProjectMembers(members: ProjectMembersResponse): void {
+  const rows = [
+    ...(members.owner
+      ? [
+          [
+            members.owner.userId,
+            members.owner.name,
+            members.owner.email,
+            "owner",
+          ],
+        ]
+      : []),
+    ...members.members.map((member) => [
+      member.userId,
+      member.name,
+      member.email,
+      "member",
+    ]),
+  ];
+  if (rows.length === 0) {
+    console.log("No owner or members");
+    return;
+  }
+  printBorderlessTable(
+    {
+      head: ["ID", "Name", "Email", "Access"],
+      colWidths: columnWidths(rows, [2, 4, 5, 6]),
+      trimTrailingWhitespace: true,
+    },
+    rows,
+  );
+}
 
 function validateProjectSourceAddOptions(
   args: ProjectSourceAddCommandOptions,
@@ -332,19 +452,25 @@ export function registerProjectCommands(
     .command("list")
     .description("List projects")
     .option("--include-personal", "Include the personal project")
+    .option("--visibility <visibility>", "Only list public or private projects")
     .option("--json", "Print machine-readable JSON output")
     .action(
       action(async (opts: ProjectListCommandOptions) => {
+        const visibility =
+          opts.visibility === undefined
+            ? undefined
+            : parseProjectVisibility(opts.visibility);
         const sdk = createCliBbSdk(getUrl());
         const projects = await sdk.projects.list({
           includePersonal: opts.includePersonal,
+          ...(visibility === undefined ? {} : { visibility }),
         });
         if (outputJson(opts, projects)) return;
         if (projects.length === 0) {
           console.log("No projects found");
           return;
         }
-        printProjectTable(projects);
+        printProjectTable(projects, await ownerLabels(sdk, projects));
       }),
     );
 
@@ -518,11 +644,25 @@ export function registerProjectCommands(
       "Execution machine ID or unambiguous name",
     )
     .option("--host <id-or-name>", "Alias for --machine")
+    .option(
+      "--visibility <visibility>",
+      "public (default) or private; private projects are visible to their owner, members, and admins",
+    )
+    .option(
+      "--member <id-or-email>",
+      "Give a user access to the project (repeatable)",
+      collectRepeatedOption,
+    )
     .option("--json", "Print machine-readable JSON output")
     .action(
       action(async (opts: ProjectCreateCommandOptions) => {
+        const visibility =
+          opts.visibility === undefined
+            ? undefined
+            : parseProjectVisibility(opts.visibility);
         const serverUrl = getUrl();
         const sdk = createCliBbSdk(serverUrl);
+        const memberUserIds = await resolveUserIds(sdk, opts.member ?? []);
         const hostId = await resolveProjectSourceHostId(opts, serverUrl);
         const source = buildProjectSourceFromOptions({
           hostId,
@@ -531,6 +671,8 @@ export function registerProjectCommands(
         const created = await sdk.projects.create({
           name: opts.name,
           source,
+          ...(visibility === undefined ? {} : { visibility }),
+          ...(memberUserIds.length === 0 ? {} : { memberUserIds }),
         });
         if (outputJson(opts, created)) return;
         console.log(`Project created: ${created.id}`);
@@ -570,6 +712,88 @@ export function registerProjectCommands(
         console.log(`Project ${updated.id} updated`);
         printProject(updated);
       }),
+    );
+
+  project
+    .command("visibility <id> <visibility>")
+    .description("Make a project public or private")
+    .option("--json", "Print machine-readable JSON output")
+    .action(
+      action(
+        async (id: string, value: string, opts: ProjectJsonCommandOptions) => {
+          const visibility = parseProjectVisibility(value);
+          const updated = await createCliBbSdk(getUrl()).projects.update({
+            projectId: id,
+            visibility,
+          });
+          if (outputJson(opts, updated)) return;
+          console.log(`Project ${updated.id} is now ${updated.visibility}`);
+        },
+      ),
+    );
+
+  const member = project
+    .command("member")
+    .description("Manage who can access a private project");
+
+  member
+    .command("list <projectId>")
+    .description("List a project's owner and members")
+    .option("--json", "Print machine-readable JSON output")
+    .action(
+      action(async (projectId: string, opts: ProjectJsonCommandOptions) => {
+        const result = await createCliBbSdk(
+          getUrl(),
+        ).projects.experimental_members.list({ projectId });
+        if (outputJson(opts, result)) return;
+        printProjectMembers(result);
+      }),
+    );
+
+  member
+    .command("add <projectId> <user>")
+    .description("Give a user access to a project (user ID or email)")
+    .option("--json", "Print machine-readable JSON output")
+    .action(
+      action(
+        async (
+          projectId: string,
+          user: string,
+          opts: ProjectJsonCommandOptions,
+        ) => {
+          const sdk = createCliBbSdk(getUrl());
+          const userId = await resolveUserId(sdk, user);
+          const result = await sdk.projects.experimental_members.add({
+            projectId,
+            userId,
+          });
+          if (outputJson(opts, result)) return;
+          console.log(`Added ${user} to project ${projectId}`);
+        },
+      ),
+    );
+
+  member
+    .command("remove <projectId> <user>")
+    .description("Remove a user's project access (user ID or email)")
+    .option("--json", "Print machine-readable JSON output")
+    .action(
+      action(
+        async (
+          projectId: string,
+          user: string,
+          opts: ProjectJsonCommandOptions,
+        ) => {
+          const sdk = createCliBbSdk(getUrl());
+          const userId = await resolveUserId(sdk, user);
+          const result = await sdk.projects.experimental_members.remove({
+            projectId,
+            userId,
+          });
+          if (outputJson(opts, result)) return;
+          console.log(`Removed ${user} from project ${projectId}`);
+        },
+      ),
     );
 
   project
@@ -710,6 +934,8 @@ function printProject(project: ProjectResponse): void {
   console.log("");
   console.log(`  ID:       ${project.id}`);
   console.log(`  Name:     ${project.name}`);
+  console.log(`  Access:   ${project.visibility}`);
+  console.log(`  Owner:    ${project.ownerUserId ?? "team"}`);
   console.log(`  Created:  ${new Date(project.createdAt).toLocaleString()}`);
   console.log(`  Updated:  ${new Date(project.updatedAt).toLocaleString()}`);
   if (project.sources.length > 0) {
@@ -742,15 +968,24 @@ function printDiscoveredRepoTable(repos: HostDiscoveredRepo[]): void {
   );
 }
 
-function printProjectTable(projects: ProjectResponse[]): void {
+function printProjectTable(
+  projects: ProjectResponse[],
+  owners: Map<string, string>,
+): void {
   const rows = projects.map((project) => {
     const source = getProjectDisplaySource(project);
-    return [project.id, project.name, source?.path ?? "-"];
+    return [
+      project.id,
+      project.name,
+      project.visibility,
+      ownerLabel(project, owners),
+      source?.path ?? "-",
+    ];
   });
   printBorderlessTable(
     {
-      head: ["ID", "Name", "Path"],
-      colWidths: columnWidths(rows, [4, 4, 4]),
+      head: ["ID", "Name", "Access", "Owner", "Path"],
+      colWidths: columnWidths(rows, [4, 4, 6, 5, 4]),
       trimTrailingWhitespace: true,
     },
     rows,

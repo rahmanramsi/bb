@@ -87,6 +87,11 @@ import {
 } from "../../services/threads/thread-provisioning.js";
 import { archiveThreadAndChildren } from "../../services/threads/thread-archive.js";
 import {
+  canViewProjectId,
+  projectAccessScopeFor,
+} from "../../services/projects/project-access.js";
+import type { RequestPrincipal } from "../../services/user-auth.js";
+import {
   requireThreadCommandEnvironment,
   requireThreadHostCommandEnvironment,
   resolveThreadHostCommandEnvironment,
@@ -209,12 +214,13 @@ function toQueuedMessageGroupBoundaryResponse(
 
 function buildActivePinnedThreadRootListResponse(
   deps: AppDeps,
-  userId: string,
+  principal: RequestPrincipal,
 ): ThreadListResponse {
   return toThreadListEntryResponses(deps, {
     threads: listActiveVisiblePinnedThreadRootsWithPendingInteractionState(
       deps.db,
-      userId,
+      principal.userId,
+      projectAccessScopeFor(principal),
     ),
   });
 }
@@ -608,7 +614,8 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
 
   patch(routes.pinOrder, (context, payload) => {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
-    const userId = requirePrincipal(context).userId;
+    const principal = requirePrincipal(context);
+    const userId = principal.userId;
     assertPinnedThreadOrderResult(
       reorderPinnedThread({
         db: deps.db,
@@ -619,12 +626,17 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
         nextThreadId: payload.nextThreadId,
       }),
     );
-    return context.json(buildActivePinnedThreadRootListResponse(deps, userId));
+    return context.json(
+      buildActivePinnedThreadRootListResponse(deps, principal),
+    );
   });
 
   post(routes.archiveAll, (context) => {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
+    const principal = requirePrincipal(context);
     const archivedThreadIds = archiveThreadAndChildren(deps, {
+      canViewProjectId: (projectId) =>
+        canViewProjectId(deps.db, projectId, principal),
       parentThread: thread,
     });
     return context.json({

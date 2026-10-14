@@ -1016,6 +1016,13 @@
       "when": 1791948352440,
       "tag": "0144_drop_legacy_per_user_state",
       "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "6",
+      "when": 1791973461830,
+      "tag": "0145_project_visibility",
+      "breakpoints": true
     }
   ]
 }

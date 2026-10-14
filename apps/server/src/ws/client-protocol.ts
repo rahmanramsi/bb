@@ -1,4 +1,5 @@
 import { clientMessageSchema, type PongMessage } from "@bb/domain";
+import type { ProjectAccessScope } from "@bb/db";
 import { parseSocketMessage } from "./decode-payload.js";
 import type { NotificationHub } from "./hub.js";
 import type { WatchInterestCoordinator } from "./watch-interests.js";
@@ -14,8 +15,9 @@ export function onClientSocketOpen(
   hub: NotificationHub,
   socket: ClientSocket,
   userId: string,
+  projectAccess?: ProjectAccessScope,
 ): void {
-  hub.registerClient(socket, userId);
+  hub.registerClient(socket, userId, projectAccess);
 }
 
 export function onClientSocketMessage(

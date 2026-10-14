@@ -61,6 +61,11 @@ This index lists every command path that the core CLI registers, including alias
 - `bb project create`
 - `bb project show`
 - `bb project update`
+- `bb project visibility`
+- `bb project member`
+- `bb project member list`
+- `bb project member add`
+- `bb project member remove`
 - `bb project delete`
 
 `bb project show <id>` accepts `proj_personal` to inspect Personal.

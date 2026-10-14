@@ -1,6 +1,10 @@
 import { useMemo } from "react";
 import { useAtomValue } from "jotai";
-import { sidebarThreadLifecyclesAtom } from "../preferences/atoms.js";
+import {
+  sidebarProjectVisibilityAtom,
+  sidebarThreadLifecyclesAtom,
+} from "../preferences/atoms.js";
+import type { ProjectVisibilityFilter } from "../../shared/preferences.js";
 import {
   experimental_useSidebarThreads,
   type PluginSidebarProject,
@@ -16,6 +20,8 @@ export interface SidebarProject {
   href: string;
   settingsHref: string;
   isPersonal: boolean;
+  visibility: "public" | "private" | null;
+  canManage: boolean;
   threads: SidebarThread[];
 }
 
@@ -61,12 +67,26 @@ function sameProjectShape(
     previous.name === project.name &&
     previous.href === project.href &&
     previous.settingsHref === project.settingsHref &&
-    previous.isPersonal === project.isPersonal
+    previous.isPersonal === project.isPersonal &&
+    previous.visibility === (project.experimental_visibility ?? null) &&
+    previous.canManage === (project.experimental_viewerCanManage ?? true)
   );
 }
 
 const EMPTY_THREADS: SidebarThread[] = [];
 const EMPTY_HOSTS: readonly SidebarHost[] = [];
+
+export function filterProjectsByVisibility(
+  projects: readonly PluginSidebarProject[],
+  filter: ProjectVisibilityFilter,
+): readonly PluginSidebarProject[] {
+  if (filter === "all") return projects;
+  return projects.filter(
+    (project) =>
+      project.experimental_visibility === undefined ||
+      project.experimental_visibility === filter,
+  );
+}
 
 export function buildSidebarData(
   status: PluginSidebarThreadsState["status"],
@@ -108,6 +128,8 @@ export function buildSidebarData(
       href: project.href,
       settingsHref: project.settingsHref,
       isPersonal: project.isPersonal,
+      visibility: project.experimental_visibility ?? null,
+      canManage: project.experimental_viewerCanManage ?? true,
       threads:
         before !== undefined && sameElements(before.threads, bucket)
           ? before.threads
@@ -132,6 +154,7 @@ export function buildSidebarData(
 }
 
 interface SidebarDataCacheEntry {
+  visibilityFilter: ProjectVisibilityFilter;
   status: PluginSidebarThreadsState["status"];
   threads: readonly PluginSidebarThread[];
   projects: readonly PluginSidebarProject[];
@@ -142,11 +165,15 @@ interface SidebarDataCacheEntry {
 
 let sidebarDataCache: SidebarDataCacheEntry | null = null;
 
-export function getSidebarData(state: PluginSidebarThreadsState): SidebarData {
+export function getSidebarData(
+  state: PluginSidebarThreadsState,
+  visibilityFilter: ProjectVisibilityFilter = "all",
+): SidebarData {
   const cached = sidebarDataCache;
   const hosts = state.experimental_hosts ?? EMPTY_HOSTS;
   if (
     cached !== null &&
+    cached.visibilityFilter === visibilityFilter &&
     cached.status === state.status &&
     cached.threads === state.threads &&
     cached.projects === state.projects &&
@@ -158,12 +185,13 @@ export function getSidebarData(state: PluginSidebarThreadsState): SidebarData {
   const data = buildSidebarData(
     state.status,
     state.threads,
-    state.projects,
+    filterProjectsByVisibility(state.projects, visibilityFilter),
     state.sections,
     hosts,
     cached?.data ?? null,
   );
   sidebarDataCache = {
+    visibilityFilter,
     status: state.status,
     threads: state.threads,
     projects: state.projects,
@@ -187,14 +215,25 @@ export function useSidebarProjectName(
     : projects.find((project) => project.id === projectId)?.name;
 }
 
+export function useProjectVisibilityAvailable(): boolean {
+  const { projects } = experimental_useSidebarThreads();
+  return projects.some(
+    (project) => project.experimental_visibility !== undefined,
+  );
+}
+
 export function useSidebarData() {
   const lifecycles = useAtomValue(sidebarThreadLifecyclesAtom);
+  const visibilityFilter = useAtomValue(sidebarProjectVisibilityAtom);
   const state = experimental_useSidebarThreads({
     experimental_lifecycles: lifecycles,
   });
   return useMemo(
-    () => ({ ...getSidebarData(state), archived: state.experimental_archived }),
-    [state],
+    () => ({
+      ...getSidebarData(state, visibilityFilter),
+      archived: state.experimental_archived,
+    }),
+    [state, visibilityFilter],
   );
 }
 

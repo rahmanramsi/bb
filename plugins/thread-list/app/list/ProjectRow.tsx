@@ -2235,7 +2235,25 @@ function ProjectRowComponent({
             label={project.name}
             dropParentKey={buildSidebarEntitySectionId("project", project.id)}
             labelEditor={rename.editor}
-            onRename={rename.startEditingFromDoubleClick}
+            labelAdornment={
+              project.visibility === "private" ? (
+                <span
+                  role="img"
+                  aria-label="Private project"
+                  title="Private project"
+                  className="inline-flex shrink-0 items-center"
+                >
+                  <Icon
+                    name="Lock"
+                    className="size-3 text-subtle-foreground"
+                    aria-hidden="true"
+                  />
+                </span>
+              ) : null
+            }
+            onRename={
+              project.canManage ? rename.startEditingFromDoubleClick : undefined
+            }
             actions={projectActions}
             actionsMobileAlways
             actionsOpen={isActionsOpen}

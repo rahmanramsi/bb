@@ -71,6 +71,7 @@ const SYSTEM_VERSION_QUERY_KEY = "systemVersion";
 const SYSTEM_APP_UPDATE_QUERY_KEY = "systemAppUpdate";
 const SERVER_MOVE_STATUS_QUERY_KEY = "serverMoveStatus";
 const USER_DIRECTORY_QUERY_KEY = "userDirectory";
+const PROJECT_MEMBERS_QUERY_KEY = "projectMembers";
 const HOST_PROVIDER_CLI_STATUS_QUERY_KEY = "hostProviderCliStatus";
 const SYSTEM_PROVIDER_STATES_QUERY_KEY = "systemProviderStates";
 const HOST_PATH_EXISTENCE_QUERY_KEY = "hostPathExistence";
@@ -491,6 +492,10 @@ type SystemVersionQueryKey = readonly [typeof SYSTEM_VERSION_QUERY_KEY];
 type SystemAppUpdateQueryKey = readonly [typeof SYSTEM_APP_UPDATE_QUERY_KEY];
 type ServerMoveStatusQueryKey = readonly [typeof SERVER_MOVE_STATUS_QUERY_KEY];
 type UserDirectoryQueryKey = readonly [typeof USER_DIRECTORY_QUERY_KEY];
+type ProjectMembersQueryKey = readonly [
+  typeof PROJECT_MEMBERS_QUERY_KEY,
+  string,
+];
 type HostProviderCliStatusQueryKey = readonly [
   typeof HOST_PROVIDER_CLI_STATUS_QUERY_KEY,
   string | null,
@@ -1206,6 +1211,12 @@ export function serverMoveStatusQueryKey(): ServerMoveStatusQueryKey {
 
 export function userDirectoryQueryKey(): UserDirectoryQueryKey {
   return [USER_DIRECTORY_QUERY_KEY];
+}
+
+export function projectMembersQueryKey(
+  projectId: string,
+): ProjectMembersQueryKey {
+  return [PROJECT_MEMBERS_QUERY_KEY, projectId];
 }
 
 export function hostProviderCliStatusQueryKey(

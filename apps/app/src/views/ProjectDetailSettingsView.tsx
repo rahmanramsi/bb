@@ -31,6 +31,10 @@ import {
 } from "@/components/dialogs/ProjectSourceDeleteDialog";
 import { MachineStatusDot } from "@/components/machines/MachineStatusDot";
 import {
+  ProjectAccessSettings,
+  ProjectPrivateBadge,
+} from "@/components/settings/ProjectAccessSettings";
+import {
   formatGitRemote,
   pluralize,
 } from "@/components/settings/ProjectsSettingsSection";
@@ -358,6 +362,7 @@ export function ProjectDetailSettingsView() {
                 <h1 className="min-w-0 truncate text-sm font-semibold text-foreground">
                   {project.name}
                 </h1>
+                <ProjectPrivateBadge visibility={project.visibility} />
                 {configuredCount === 0 ? (
                   <SettingsBadge>needs setup</SettingsBadge>
                 ) : null}
@@ -372,22 +377,24 @@ export function ProjectDetailSettingsView() {
                 {pluralize(project.threads.length, "thread")}
               </p>
             </div>
-            <ResourceOverflowMenu
-              label={`${project.name} actions`}
-              items={[
-                {
-                  label: "Rename",
-                  icon: "Edit",
-                  onSelect: () => {
-                    updateProject.reset();
-                    setRenameTarget({
-                      id: project.id,
-                      currentName: project.name,
-                    });
+            {project.viewerCanManage ? (
+              <ResourceOverflowMenu
+                label={`${project.name} actions`}
+                items={[
+                  {
+                    label: "Rename",
+                    icon: "Edit",
+                    onSelect: () => {
+                      updateProject.reset();
+                      setRenameTarget({
+                        id: project.id,
+                        currentName: project.name,
+                      });
+                    },
                   },
-                },
-              ]}
-            />
+                ]}
+              />
+            ) : null}
           </div>
         </div>
 
@@ -495,6 +502,8 @@ export function ProjectDetailSettingsView() {
           )}
         </SettingsSection>
 
+        <ProjectAccessSettings project={project} />
+
         <SettingsSection title="Project information">
           <SettingsRowList>
             <SettingsDetailRow label="Git remote">
@@ -519,26 +528,28 @@ export function ProjectDetailSettingsView() {
 
         <ScopedMachineEnvironmentSettings projectId={project.id} />
 
-        <SettingsSection
-          title="Danger zone"
-          description={`Deleting ${project.name} removes the project and every thread in it, including archived ones. Checkouts stay on disk.`}
-        >
-          <SettingsRowList>
-            <SettingsRow>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                onClick={() => {
-                  deleteProject.reset();
-                  setDeleteTarget({ id: project.id, name: project.name });
-                }}
-              >
-                Delete project
-              </Button>
-            </SettingsRow>
-          </SettingsRowList>
-        </SettingsSection>
+        {project.viewerCanManage ? (
+          <SettingsSection
+            title="Danger zone"
+            description={`Deleting ${project.name} removes the project and every thread in it, including archived ones. Checkouts stay on disk.`}
+          >
+            <SettingsRowList>
+              <SettingsRow>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    deleteProject.reset();
+                    setDeleteTarget({ id: project.id, name: project.name });
+                  }}
+                >
+                  Delete project
+                </Button>
+              </SettingsRow>
+            </SettingsRowList>
+          </SettingsSection>
+        ) : null}
       </div>
 
       <ProjectPathDialog

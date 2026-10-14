@@ -12,7 +12,12 @@ import { createStore, Provider } from "jotai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { CompactViewportOverrideProvider } from "@/components/ui/hooks/use-compact-viewport";
-import { installTestPluginRuntime } from "@get-bb/plugin-sdk/testing/app";
+import type { ReactNode } from "react";
+import type { PluginSidebarProject } from "@get-bb/plugin-sdk/app";
+import {
+  installTestPluginRuntime,
+  renderSlot,
+} from "@get-bb/plugin-sdk/testing/app";
 import { SIDEBAR_CONTROL_STATE_CLASS } from "@/components/ui/sidebar-row-classes";
 import {
   sidebarThreadLifecyclesAtom,
@@ -21,7 +26,9 @@ import {
   sidebarEnvironmentGroupingAtom,
   sidebarSortDirectionAtom,
   sidebarShowProviderIconsAtom,
+  sidebarProjectVisibilityAtom,
 } from "../preferences/atoms.js";
+import { makePluginProject } from "../model/fixtures.js";
 import type { OrganizationMode } from "../../shared/preferences.js";
 
 installTestPluginRuntime();
@@ -35,11 +42,16 @@ afterEach(() => {
   cleanup();
 });
 
+function SlotChildren({ children }: { children: ReactNode }) {
+  return children;
+}
+
 function setup(
   label = "Pinned",
   section = false,
   organization: OrganizationMode = "project",
   compact = false,
+  projects: PluginSidebarProject[] = [],
 ) {
   const store = createStore();
   store.set(sidebarThreadLifecyclesAtom, ["active"]);
@@ -50,23 +62,31 @@ function setup(
   store.set(sidebarShowProviderIconsAtom, false);
   const newThread = vi.fn();
   const newSection = vi.fn();
-  render(
-    <Provider store={store}>
-      <CompactViewportOverrideProvider isCompactViewport={compact}>
-        <TooltipProvider>
-          <SidebarHeaderActionsProvider value={{ onNewSection: newSection }}>
-            <SidebarHeaderControls label={label} onNewThread={newThread}>
-              {section && (
-                <SidebarSectionMenuItems
-                  onRename={vi.fn()}
-                  onRemove={vi.fn()}
-                />
-              )}
-            </SidebarHeaderControls>
-          </SidebarHeaderActionsProvider>
-        </TooltipProvider>
-      </CompactViewportOverrideProvider>
-    </Provider>,
+  renderSlot(
+    { component: SlotChildren },
+    {
+      children: (
+        <Provider store={store}>
+          <CompactViewportOverrideProvider isCompactViewport={compact}>
+            <TooltipProvider>
+              <SidebarHeaderActionsProvider
+                value={{ onNewSection: newSection }}
+              >
+                <SidebarHeaderControls label={label} onNewThread={newThread}>
+                  {section && (
+                    <SidebarSectionMenuItems
+                      onRename={vi.fn()}
+                      onRemove={vi.fn()}
+                    />
+                  )}
+                </SidebarHeaderControls>
+              </SidebarHeaderActionsProvider>
+            </TooltipProvider>
+          </CompactViewportOverrideProvider>
+        </Provider>
+      ),
+    },
+    { sidebarThreads: { projects } },
   );
   return { store, newThread, newSection };
 }
@@ -171,7 +191,14 @@ describe("sidebar header controls", () => {
     await openMenu("Review");
     expect(
       screen.getAllByRole("menuitem").map((item) => item.textContent),
-    ).toEqual(["New section", "Organize", "Sort by", "Filter", "Rename", "Remove"]);
+    ).toEqual([
+      "New section",
+      "Organize",
+      "Sort by",
+      "Filter",
+      "Rename",
+      "Remove",
+    ]);
     expect(screen.getAllByRole("separator")).toHaveLength(3);
     fireEvent.click(screen.getByRole("menuitem", { name: "New section" }));
     expect(newSection).toHaveBeenCalledOnce();
@@ -353,7 +380,9 @@ it.each([false, true])(
   async (compact) => {
     const { store } = setup("Pinned", false, "project", compact);
     if (compact) {
-      fireEvent.click(screen.getByRole("button", { name: /^Pinned actions(?:;|$)/ }));
+      fireEvent.click(
+        screen.getByRole("button", { name: /^Pinned actions(?:;|$)/ }),
+      );
       fireEvent.click(await screen.findByRole("menuitem", { name: "Filter" }));
     } else {
       await openMenu();
@@ -375,3 +404,35 @@ it.each([false, true])(
     expect(store.get(sidebarThreadLifecyclesAtom)).toEqual(["archived"]);
   },
 );
+
+describe("project visibility filter", () => {
+  it("is hidden when the server does not report project visibility", async () => {
+    setup("Pinned", false, "project", false, [makePluginProject()]);
+    await openMenu();
+    await openSubmenu("Filter");
+    await screen.findByRole("menuitemcheckbox", { name: "Active" });
+
+    expect(screen.queryByRole("group", { name: "Projects" })).toBeNull();
+    expect(screen.queryByRole("menuitemradio", { name: "Private" })).toBeNull();
+  });
+
+  it("stores the selected visibility on a multi-user server", async () => {
+    const { store } = setup("Pinned", false, "project", false, [
+      makePluginProject({ experimental_visibility: "public" }),
+    ]);
+    await openMenu();
+    await openSubmenu("Filter");
+
+    const all = await screen.findByRole("menuitemradio", {
+      name: "All projects",
+    });
+    expect(all.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Private" }));
+    expect(store.get(sidebarProjectVisibilityAtom)).toBe("private");
+    expect(
+      screen
+        .getByRole("menuitemradio", { name: "Private" })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+  });
+});

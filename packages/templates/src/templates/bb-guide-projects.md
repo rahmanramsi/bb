@@ -1,7 +1,7 @@
 ---
 kind: instruction
 title: bb Guide — Projects
-summary: Command reference for project CRUD, attachments, and sources.
+summary: Command reference for project CRUD, access, attachments, and sources.
 intent: Provide complete project command documentation for agents.
 editingNotes: Keep flags accurate against the CLI implementation.
 ---
@@ -11,6 +11,7 @@ A project maps to a code repository. All threads belong to a project.
 
   bb project list                         List ordinary projects
     --include-personal                    Also include the personal project
+    --visibility public|private           Only list public or private projects
   bb project discover                     Find recently used git repos
     --machine <id-or-name>                Machine to scan (default: local)
     --host <id-or-name>                   Alias for --machine
@@ -22,6 +23,8 @@ A project maps to a code repository. All threads belong to a project.
     --root <path>                         Project source path
     --machine <id-or-name>                Bind the path to a connected machine
     --host <id-or-name>                   Alias for --machine
+    --visibility public|private           Access (default: public)
+    --member <id-or-email>                Give a user access (repeatable)
 
   An explicit machine/host selector accepts an exact ID or unambiguous name and
   binds --root to that machine. Omitting the selector preserves the existing
@@ -34,6 +37,26 @@ A project maps to a code repository. All threads belong to a project.
 
   bb project delete <id>                  Delete project and all threads
     --yes                                 Skip confirmation
+
+Access:
+
+  bb project visibility <id> public|private
+                                          Make a project public or private
+  bb project member list <id>             List the owner and members
+  bb project member add <id> <user>       Give a user access (ID or email)
+  bb project member remove <id> <user>    Remove a user's access
+
+  On a server with BB_AUTH_MODE=multi, a project created by a signed-in user
+  is owned by that user; projects created before ownership existed, or by the
+  local machine, have no owner (ownerUserId is null) and are team projects.
+  Public projects are visible to everyone on the server. Private projects,
+  and their threads, environments, terminals, and files, are visible only to
+  the owner, members, and admins; to anyone else they do not exist (404).
+  Only the owner and admins can rename, delete, change visibility, or manage
+  members; others get 403. Adding the owner or an existing member is a no-op.
+  Personal is always public and has no members. Agents in threads act as the
+  user who started them, so they see the same projects. In local auth mode
+  every project is visible and manageable.
 
 Global prompt history:
 

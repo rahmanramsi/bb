@@ -21,7 +21,12 @@ import {
   getProjectSourceByHost,
   getProjectSourceForProject,
   listProjectExecutionDefaultsByProjectIds,
-  listPublicProjects,
+  listActiveProjects,
+  addProjectMember,
+  getAuthUserIdentity,
+  listProjectMemberUserIds,
+  listProjectMembers,
+  removeProjectMember,
   listProjectSourcesByProjectIds,
   listThreadSections,
   listThreadsWithPendingInteractionStateForProjects,
@@ -38,6 +43,7 @@ import {
   type ProjectListIncludeOption,
   type ProjectBranchesQuery,
   type ProjectListQuery,
+  type ProjectMembersResponse,
   type ProjectResponse,
   type ProjectWithThreadsResponse,
   type PublicApiSchema,
@@ -57,7 +63,18 @@ import {
   requirePublicProject,
   requirePublicStandardProject,
 } from "../services/lib/entity-lookup.js";
-import { isWindowsHostPath, PROMPT_HISTORY_ENTRY_LIMIT } from "@bb/domain";
+import {
+  DEFAULT_PROJECT_VISIBILITY,
+  isWindowsHostPath,
+  PROMPT_HISTORY_ENTRY_LIMIT,
+  type ProjectVisibility,
+} from "@bb/domain";
+import type { RequestPrincipal } from "../services/user-auth.js";
+import {
+  assertCanManageProject,
+  canManageProject,
+  projectAccessScopeFor,
+} from "../services/projects/project-access.js";
 import { toThreadListEntryResponses } from "../services/threads/thread-runtime-display.js";
 import { callHostRetryableOnlineRpc } from "../services/hosts/online-rpc.js";
 import {
@@ -110,17 +127,25 @@ import {
   resolveProjectWorkspaceTarget,
 } from "../services/projects/project-workspace.js";
 
-type ProjectResponseProjectFields = Omit<ProjectResponse, "sources">;
+type ProjectResponseProjectFields = Omit<
+  ProjectResponse,
+  "sources" | "viewerCanManage"
+>;
 const ATTACHMENT_CONTENT_CACHE_CONTROL = "private, immutable, max-age=31536000";
 
 function toProjectResponseProjectFields(
   project: ProjectResponseProjectFields,
-): ProjectResponseProjectFields {
+  principal: RequestPrincipal,
+): Omit<ProjectResponse, "sources"> {
   return {
     id: project.id,
     kind: project.kind,
     name: project.name,
     gitRemoteUrl: project.gitRemoteUrl,
+    visibility: project.visibility,
+    ownerUserId: project.ownerUserId,
+    viewerCanManage:
+      project.kind === "standard" && canManageProject(project, principal),
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
   };
@@ -129,6 +154,7 @@ function toProjectResponseProjectFields(
 function buildProjectResponsesFromRows(
   deps: AppDeps,
   projects: ProjectResponseProjectFields[],
+  principal: RequestPrincipal,
 ): ProjectResponse[] {
   if (projects.length === 0) {
     return [];
@@ -147,31 +173,42 @@ function buildProjectResponsesFromRows(
   }
 
   return projects.map((project) => ({
-    ...toProjectResponseProjectFields(project),
+    ...toProjectResponseProjectFields(project, principal),
     sources: sourcesByProjectId.get(project.id) ?? [],
   }));
 }
 
-function buildProjectResponses(
+function buildProjectResponse(
   deps: AppDeps,
-  projectId?: string,
-): ProjectResponse[] {
-  const projects = projectId
-    ? [requirePublicStandardProject(deps.db, projectId)]
-    : listPublicProjects(deps.db);
-  return buildProjectResponsesFromRows(deps, projects);
+  projectId: string,
+  principal: RequestPrincipal,
+): ProjectResponse {
+  const response = buildProjectResponsesFromRows(
+    deps,
+    [requirePublicStandardProject(deps.db, projectId)],
+    principal,
+  )[0];
+  if (!response) {
+    throw new ApiError(404, "project_not_found", "Project not found");
+  }
+  return response;
 }
 
 interface ProjectListOptions {
   includePersonal: boolean;
+  principal: RequestPrincipal;
+  visibility: ProjectVisibility | null;
 }
 
 function listDiscoverableProjects(
   deps: AppDeps,
   options: ProjectListOptions,
 ): ProjectResponseProjectFields[] {
-  const projects = listPublicProjects(deps.db);
-  if (!options.includePersonal) {
+  const projects = listActiveProjects(deps.db, {
+    access: projectAccessScopeFor(options.principal),
+    visibility: options.visibility,
+  });
+  if (!options.includePersonal || options.visibility === "private") {
     return projects;
   }
   const personalProject = getPersonalProject(deps.db);
@@ -188,11 +225,12 @@ function listDiscoverableProjects(
 function toProjectOrderResponse(
   deps: AppDeps,
   result: ReorderProjectResult,
+  principal: RequestPrincipal,
 ): ProjectResponse[] {
   switch (result.kind) {
     case "reordered":
     case "unchanged":
-      return buildProjectResponsesFromRows(deps, result.projects);
+      return buildProjectResponsesFromRows(deps, result.projects, principal);
     case "not_found":
       throw new ApiError(404, "project_not_found", "Project not found");
     case "stale_neighbor":
@@ -224,6 +262,7 @@ function buildProjectsWithThreadsResponse(
     deps,
     listDiscoverableProjects(deps, options),
     viewerUserId,
+    options.principal,
   );
 }
 
@@ -231,8 +270,9 @@ function buildProjectsWithThreadsResponseFromRows(
   deps: AppDeps,
   projectRows: ProjectResponseProjectFields[],
   viewerUserId: string,
+  principal: RequestPrincipal,
 ): ProjectWithThreadsResponse[] {
-  const projects = buildProjectResponsesFromRows(deps, projectRows);
+  const projects = buildProjectResponsesFromRows(deps, projectRows, principal);
   const projectIds = projects.map((project) => project.id);
   const threadRows = listThreadsWithPendingInteractionStateForProjects(
     deps.db,
@@ -265,7 +305,16 @@ function buildProjectsWithThreadsResponseFromRows(
   }));
 }
 
-function buildSidebarBootstrapResponse(deps: AppDeps, viewerUserId: string) {
+interface SidebarBootstrapOptions {
+  principal: RequestPrincipal;
+  viewerUserId: string;
+  visibility: ProjectVisibility | null;
+}
+
+function buildSidebarBootstrapResponse(
+  deps: AppDeps,
+  { principal, viewerUserId, visibility }: SidebarBootstrapOptions,
+) {
   const personalProject = getPersonalProject(deps.db);
   if (!personalProject) {
     throw new ApiError(
@@ -278,6 +327,7 @@ function buildSidebarBootstrapResponse(deps: AppDeps, viewerUserId: string) {
     deps,
     [personalProject],
     viewerUserId,
+    principal,
   )[0];
   if (!personalProjectResponse) {
     throw new ApiError(
@@ -287,13 +337,81 @@ function buildSidebarBootstrapResponse(deps: AppDeps, viewerUserId: string) {
     );
   }
   return {
-    sections: listThreadSections(deps.db),
+    sections: listThreadSections(deps.db, projectAccessScopeFor(principal)),
     projects: buildProjectsWithThreadsResponseFromRows(
       deps,
-      listPublicProjects(deps.db),
+      listActiveProjects(deps.db, {
+        access: projectAccessScopeFor(principal),
+        visibility,
+      }),
       viewerUserId,
+      principal,
     ),
     personalProject: personalProjectResponse,
+  };
+}
+
+function requireProjectMemberUser(deps: Pick<AppDeps, "db">, userId: string) {
+  const user = getAuthUserIdentity(deps.db, userId);
+  if (user === null) {
+    throw new ApiError(404, "user_not_found", "User not found");
+  }
+  return user;
+}
+
+function assertExistingProjectMatchesRequestedAccess(
+  deps: Pick<AppDeps, "db">,
+  project: {
+    id: string;
+    ownerUserId: string | null;
+    visibility: ProjectVisibility;
+  },
+  requested: {
+    memberUserIds: readonly string[];
+    visibility: ProjectVisibility | undefined;
+  },
+): void {
+  const existingAccessUserIds = new Set([
+    ...listProjectMemberUserIds(deps.db, project.id),
+    ...(project.ownerUserId === null ? [] : [project.ownerUserId]),
+  ]);
+  if (
+    (requested.visibility !== undefined &&
+      requested.visibility !== project.visibility) ||
+    requested.memberUserIds.some((userId) => !existingAccessUserIds.has(userId))
+  ) {
+    throw new ApiError(
+      409,
+      "project_access_conflict",
+      "A project for this folder already exists with different access settings. Open it and change its access in project settings instead.",
+    );
+  }
+}
+
+function buildProjectMembersResponse(
+  deps: Pick<AppDeps, "db">,
+  project: { id: string; ownerUserId: string | null; createdAt: number },
+): ProjectMembersResponse {
+  const owner =
+    project.ownerUserId === null
+      ? null
+      : getAuthUserIdentity(deps.db, project.ownerUserId);
+  return {
+    owner:
+      owner === null
+        ? null
+        : {
+            userId: owner.id,
+            name: owner.name,
+            email: owner.email,
+            addedAt: project.createdAt,
+          },
+    members: listProjectMembers(deps.db, project.id).map((member) => ({
+      userId: member.userId,
+      name: member.name,
+      email: member.email,
+      addedAt: member.addedAt,
+    })),
   };
 }
 
@@ -427,8 +545,11 @@ export function registerProjectRoutes(app: Hono, deps: AppDeps): void {
 
   get(routes.list, (context, query) => {
     const includes = parseProjectListIncludes(query);
+    const principal = requirePrincipal(context);
     const options: ProjectListOptions = {
       includePersonal: query.includePersonal === "true",
+      principal,
+      visibility: query.visibility ?? null,
     };
     if (includes.has("threads")) {
       return context.json(
@@ -443,13 +564,18 @@ export function registerProjectRoutes(app: Hono, deps: AppDeps): void {
       buildProjectResponsesFromRows(
         deps,
         listDiscoverableProjects(deps, options),
+        principal,
       ),
     );
   });
 
-  get(routes.sidebarBootstrap, (context) =>
+  get(routes.sidebarBootstrap, (context, query) =>
     context.json(
-      buildSidebarBootstrapResponse(deps, requireThreadViewerId(context)),
+      buildSidebarBootstrapResponse(deps, {
+        principal: requirePrincipal(context),
+        viewerUserId: requireThreadViewerId(context),
+        visibility: query.visibility ?? null,
+      }),
     ),
   );
 
@@ -460,12 +586,26 @@ export function registerProjectRoutes(app: Hono, deps: AppDeps): void {
       assertUsableHostId(deps, { hostId: source.hostId });
       assertPathMatchesHostPlatform(deps, source);
     }
-    const existingProject = getPublicProjectByLocalPathSource(deps.db, source);
+    const principal = requirePrincipal(context);
+    const lookupAccess = projectAccessScopeFor(principal);
+    const existingProject = getPublicProjectByLocalPathSource(
+      deps.db,
+      source,
+      lookupAccess,
+    );
+    const memberUserIds = [...new Set(payload.memberUserIds ?? [])];
     if (existingProject) {
+      assertExistingProjectMatchesRequestedAccess(deps, existingProject, {
+        memberUserIds,
+        visibility: payload.visibility,
+      });
       return context.json(
-        buildProjectResponses(deps, existingProject.id)[0],
+        buildProjectResponse(deps, existingProject.id, principal),
         201,
       );
+    }
+    for (const userId of memberUserIds) {
+      requireProjectMemberUser(deps, userId);
     }
     const gitRemoteUrl = await inspectProjectGitRemoteBestEffort(deps, source);
     const { project } = findOrCreateProjectByLocalPathSource(
@@ -474,7 +614,13 @@ export function registerProjectRoutes(app: Hono, deps: AppDeps): void {
       {
         name: payload.name,
         source,
+        access: {
+          ownerUserId: principal.kind === "user" ? principal.userId : null,
+          visibility: payload.visibility ?? DEFAULT_PROJECT_VISIBILITY,
+          memberUserIds,
+        },
       },
+      lookupAccess,
     );
     if (gitRemoteUrl !== null) {
       setProjectGitRemoteUrlIfMissing(
@@ -484,14 +630,16 @@ export function registerProjectRoutes(app: Hono, deps: AppDeps): void {
         gitRemoteUrl,
       );
     }
-    return context.json(buildProjectResponses(deps, project.id)[0], 201);
+    return context.json(buildProjectResponse(deps, project.id, principal), 201);
   });
 
   get(routes.get, (context) =>
     context.json(
-      buildProjectResponsesFromRows(deps, [
-        requirePublicProject(deps.db, context.req.param("id")),
-      ])[0],
+      buildProjectResponsesFromRows(
+        deps,
+        [requirePublicProject(deps.db, context.req.param("id"))],
+        requirePrincipal(context),
+      )[0],
     ),
   );
 
@@ -521,32 +669,88 @@ export function registerProjectRoutes(app: Hono, deps: AppDeps): void {
   });
 
   patch(routes.update, async (context, payload) => {
-    requirePublicStandardProject(deps.db, context.req.param("id"));
-    const project = updateProject(
+    const principal = requirePrincipal(context);
+    const existing = requirePublicStandardProject(
       deps.db,
-      deps.hub,
       context.req.param("id"),
-      payload,
     );
+    assertCanManageProject(deps.db, existing, principal);
+    const project = updateProject(deps.db, deps.hub, existing.id, payload);
     if (!project) {
       throw new ApiError(404, "project_not_found", "Project not found");
     }
-    return context.json(buildProjectResponses(deps, project.id)[0]);
+    if (
+      payload.visibility !== undefined &&
+      payload.visibility !== existing.visibility
+    ) {
+      deps.hub.notifyProjectAccessChanged(
+        project.id,
+        existing.visibility === "public" ? "everyone" : [],
+      );
+    }
+    return context.json(buildProjectResponse(deps, project.id, principal));
+  });
+
+  get(routes.listMembers, (context) => {
+    const project = requirePublicStandardProject(
+      deps.db,
+      context.req.param("id"),
+    );
+    return context.json(buildProjectMembersResponse(deps, project));
+  });
+
+  put(routes.addMember, (context) => {
+    const principal = requirePrincipal(context);
+    const project = requirePublicStandardProject(
+      deps.db,
+      context.req.param("id"),
+    );
+    assertCanManageProject(deps.db, project, principal);
+    const userId = context.req.param("userId");
+    requireProjectMemberUser(deps, userId);
+    if (
+      userId !== project.ownerUserId &&
+      addProjectMember(deps.db, {
+        projectId: project.id,
+        userId,
+        addedByUserId: principal.kind === "user" ? principal.userId : null,
+      })
+    ) {
+      deps.hub.notifyProjectAccessChanged(project.id);
+    }
+    return context.json(buildProjectMembersResponse(deps, project));
+  });
+
+  del(routes.removeMember, (context) => {
+    const principal = requirePrincipal(context);
+    const project = requirePublicStandardProject(
+      deps.db,
+      context.req.param("id"),
+    );
+    assertCanManageProject(deps.db, project, principal);
+    const userId = context.req.param("userId");
+    if (removeProjectMember(deps.db, { projectId: project.id, userId })) {
+      deps.hub.notifyProjectAccessChanged(project.id, [userId]);
+    }
+    return context.json(buildProjectMembersResponse(deps, project));
   });
 
   patch(routes.reorder, async (context, payload) => {
     const projectId = context.req.param("id");
     requirePublicStandardProject(deps.db, projectId);
+    const principal = requirePrincipal(context);
     return context.json(
       toProjectOrderResponse(
         deps,
         reorderProject({
+          access: projectAccessScopeFor(principal),
           db: deps.db,
           notifier: deps.hub,
           projectId,
           previousProjectId: payload.previousProjectId,
           nextProjectId: payload.nextProjectId,
         }),
+        principal,
       ),
     );
   });
@@ -561,6 +765,7 @@ export function registerProjectRoutes(app: Hono, deps: AppDeps): void {
         "The personal project cannot be deleted",
       );
     }
+    assertCanManageProject(deps.db, project, requirePrincipal(context));
     beginProjectDeletion(deps, { projectId: id });
     requestProjectDeletionAdvance(deps, { projectId: id });
     return context.json({ ok: true });

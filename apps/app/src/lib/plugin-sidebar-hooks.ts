@@ -41,6 +41,7 @@ import {
   useEnvironmentPullRequest,
 } from "@/hooks/queries/environment-queries";
 import { useHosts } from "@/hooks/queries/host-queries";
+import { useAuth } from "@/hooks/useAuth";
 import { useArchivedThreads } from "@/hooks/queries/thread-queries";
 import { useSidebarNavigation } from "@/hooks/queries/sidebar-navigation-query";
 import {
@@ -158,6 +159,7 @@ export function useSidebarThreads(
   );
   const query = useSidebarNavigation();
   const data = query.data;
+  const multiUser = useAuth()?.authMode === "multi";
   const { data: hosts } = useHosts();
   const hostNamesById = hostNamesFor(hosts);
   const titleResources = useThreadTitleMentionResources();
@@ -200,11 +202,14 @@ export function useSidebarThreads(
         isPersonal: project.id === PERSONAL_PROJECT_ID,
         href: getProjectComposeRoutePath(project.id),
         settingsHref: getSettingsProjectRoutePath(project.id),
+        ...(multiUser ? { experimental_visibility: project.visibility } : {}),
+        experimental_viewerCanManage: project.viewerCanManage,
       })),
       sections: data.sections,
     };
   }, [
     data,
+    multiUser,
     hostNamesById,
     hosts,
     query.isError,

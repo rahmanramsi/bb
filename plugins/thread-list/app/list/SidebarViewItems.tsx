@@ -23,7 +23,9 @@ import {
   sidebarEnvironmentGroupingAtom,
   sidebarGroupByReadStatusAtom,
   sidebarShowProviderIconsAtom,
+  sidebarProjectVisibilityAtom,
 } from "../preferences/atoms.js";
+import { useProjectVisibilityAvailable } from "../model/use-sidebar-data.js";
 
 const SIDEBAR_ORGANIZE_OPTIONS = [
   { label: "By project", mode: "project" },
@@ -35,6 +37,12 @@ const SIDEBAR_SORT_OPTIONS = [
   { label: "Updated at", sort: "updated", direction: "descending" },
   { label: "Created at", sort: "created", direction: "descending" },
   { label: "Alphabetical", sort: "alpha", direction: "ascending" },
+] as const;
+
+const SIDEBAR_PROJECT_VISIBILITY_OPTIONS = [
+  { label: "All projects", value: "all" },
+  { label: "Public", value: "public" },
+  { label: "Private", value: "private" },
 ] as const;
 
 type SidebarViewPage = "organize" | "sort" | "filter";
@@ -146,37 +154,71 @@ function SidebarViewItems({ page }: { page: SidebarViewPage }) {
   const [showProviderIcons, setShowProviderIcons] = useAtom(
     sidebarShowProviderIconsAtom,
   );
+  const [projectVisibility, setProjectVisibility] = useAtom(
+    sidebarProjectVisibilityAtom,
+  );
+  const projectVisibilityAvailable = useProjectVisibilityAvailable();
   const selectedSort = sort === "none" ? "updated" : sort;
   if (page === "filter") {
     return (
-      <DropdownMenuGroup aria-label="Filter">
-        {(["active", "archived"] as const).map((lifecycle) => {
-          const checked = lifecycles.includes(lifecycle);
-          const required = checked && lifecycles.length === 1;
-          return (
-            <DropdownMenuItem
-              key={lifecycle}
-              role="menuitemcheckbox"
-              aria-checked={checked}
-              title={required ? "Keep at least one filter selected" : undefined}
-              onSelect={(event) => {
-                event.preventDefault();
-                if (required) return;
-                setLifecycles(
-                  checked
-                    ? lifecycles.filter((value) => value !== lifecycle)
-                    : [...lifecycles, lifecycle],
-                );
-              }}
-            >
-              {lifecycle === "active" ? "Active" : "Archived"}
-              <span className="ml-auto inline-flex size-4 items-center justify-center">
-                {checked && <Icon name="Check" className="size-4" />}
-              </span>
-            </DropdownMenuItem>
-          );
-        })}
-      </DropdownMenuGroup>
+      <>
+        <DropdownMenuGroup aria-label="Filter">
+          {(["active", "archived"] as const).map((lifecycle) => {
+            const checked = lifecycles.includes(lifecycle);
+            const required = checked && lifecycles.length === 1;
+            return (
+              <DropdownMenuItem
+                key={lifecycle}
+                role="menuitemcheckbox"
+                aria-checked={checked}
+                title={
+                  required ? "Keep at least one filter selected" : undefined
+                }
+                onSelect={(event) => {
+                  event.preventDefault();
+                  if (required) return;
+                  setLifecycles(
+                    checked
+                      ? lifecycles.filter((value) => value !== lifecycle)
+                      : [...lifecycles, lifecycle],
+                  );
+                }}
+              >
+                {lifecycle === "active" ? "Active" : "Archived"}
+                <span className="ml-auto inline-flex size-4 items-center justify-center">
+                  {checked && <Icon name="Check" className="size-4" />}
+                </span>
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuGroup>
+        {projectVisibilityAvailable ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup aria-label="Projects">
+              <DropdownMenuLabel>Projects</DropdownMenuLabel>
+              {SIDEBAR_PROJECT_VISIBILITY_OPTIONS.map((option) => (
+                <DropdownMenuItem
+                  key={option.value}
+                  role="menuitemradio"
+                  aria-checked={projectVisibility === option.value}
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    setProjectVisibility(option.value);
+                  }}
+                >
+                  {option.label}
+                  <span className="ml-auto inline-flex size-4 shrink-0 items-center justify-center">
+                    {projectVisibility === option.value && (
+                      <Icon name="Check" className="size-4" />
+                    )}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+          </>
+        ) : null}
+      </>
     );
   }
   if (page === "organize") {

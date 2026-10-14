@@ -14,6 +14,10 @@ import type { DbNotifier } from "../notifier.js";
 import { environments, threads } from "../schema.js";
 import { createEnvironmentId } from "../ids.js";
 import { hostPathContains, hostPathEquals } from "./host-path-sql.js";
+import {
+  accessibleProjectIdCondition,
+  type ProjectAccessScope,
+} from "./project-access.js";
 
 type EnvironmentReadConnection = DbConnection | DbTransaction;
 type EnvironmentWriteConnection = DbConnection | DbTransaction;
@@ -162,6 +166,7 @@ export interface ListEnvironmentsFilters {
   limit?: number;
   offset?: number;
   path?: string;
+  projectAccess?: ProjectAccessScope;
   projectId?: string;
   statuses?: readonly EnvironmentStatus[];
 }
@@ -189,6 +194,12 @@ export function listEnvironments(
     filters.statuses === undefined
       ? undefined
       : inArray(environments.status, [...filters.statuses]),
+    filters.projectAccess === undefined
+      ? undefined
+      : accessibleProjectIdCondition(
+          environments.projectId,
+          filters.projectAccess,
+        ),
   ].filter((condition) => condition !== undefined);
   const query = db
     .select()

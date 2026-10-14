@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql, type SQL } from "drizzle-orm";
 import { PERSONAL_PROJECT_ID } from "@bb/domain";
 import type {
   DbConnection,
@@ -8,6 +8,10 @@ import type {
 import { createThreadSectionId } from "../ids.js";
 import type { DbNotifier } from "../notifier.js";
 import { threadSections, threads } from "../schema.js";
+import {
+  accessibleProjectIdCondition,
+  type ProjectAccessScope,
+} from "./project-access.js";
 
 type ThreadSectionWriteConnection = DbConnection | DbTransaction;
 
@@ -87,12 +91,64 @@ function getThreadSectionByName(
   );
 }
 
-export function listThreadSections(db: DbQueryConnection): ThreadSectionRow[] {
+function sectionVisibleToScopeCondition(
+  scope: ProjectAccessScope,
+): SQL | undefined {
+  const accessible = accessibleProjectIdCondition(
+    sql`"section_thread"."project_id"`,
+    scope,
+  );
+  if (accessible === undefined) {
+    return undefined;
+  }
+  return sql`(not exists (select 1 from "threads" as "section_thread" where "section_thread"."section_id" = ${threadSections.id}) or exists (select 1 from "threads" as "section_thread" where "section_thread"."section_id" = ${threadSections.id} and ${accessible}))`;
+}
+
+export function listThreadSections(
+  db: DbQueryConnection,
+  projectAccess?: ProjectAccessScope,
+): ThreadSectionRow[] {
   return db
     .select()
     .from(threadSections)
+    .where(
+      projectAccess === undefined
+        ? undefined
+        : sectionVisibleToScopeCondition(projectAccess),
+    )
     .orderBy(asc(threadSections.name), asc(threadSections.id))
     .all();
+}
+
+export type ThreadSectionAccess = "visible" | "shared_with_hidden" | "hidden";
+
+export function getThreadSectionAccess(
+  db: DbQueryConnection,
+  args: { id: string; projectAccess: ProjectAccessScope },
+): ThreadSectionAccess {
+  const visible = sectionVisibleToScopeCondition(args.projectAccess);
+  if (visible === undefined) {
+    return "visible";
+  }
+  const visibleRow = db
+    .select({ id: threadSections.id })
+    .from(threadSections)
+    .where(and(eq(threadSections.id, args.id), visible))
+    .get();
+  if (visibleRow === undefined) {
+    return "hidden";
+  }
+  const accessible = accessibleProjectIdCondition(
+    threads.projectId,
+    args.projectAccess,
+  );
+  const hiddenThread = db
+    .select({ id: threads.id })
+    .from(threads)
+    .where(and(eq(threads.sectionId, args.id), sql`not (${accessible})`))
+    .limit(1)
+    .get();
+  return hiddenThread === undefined ? "visible" : "shared_with_hidden";
 }
 
 export function createThreadSection(

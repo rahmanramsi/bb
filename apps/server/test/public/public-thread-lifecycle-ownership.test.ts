@@ -301,6 +301,7 @@ it("environment archival stops cross-environment lifecycle dependents on their o
       deletedAt: 100,
     });
     const archivedIds = archiveEnvironmentThreads(harness.deps, {
+      canViewProjectId: () => true,
       environment: ownerEnvironment,
     });
     expect(archivedIds).toEqual(

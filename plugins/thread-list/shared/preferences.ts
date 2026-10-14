@@ -28,6 +28,15 @@ export const sortDirectionSchema = z.enum([
 ]);
 export type SortDirection = z.infer<typeof sortDirectionSchema>;
 
+export const projectVisibilityFilterSchema = z.enum([
+  "all",
+  "public",
+  "private",
+]);
+export type ProjectVisibilityFilter = z.infer<
+  typeof projectVisibilityFilterSchema
+>;
+
 export const environmentGroupingSchema = z.union([
   z.literal("auto"),
   z.boolean(),
@@ -104,6 +113,12 @@ export const preferenceDefinitions = {
       .refine((value) => new Set(value).size === value.length),
     ["active"],
     "Thread lifecycles shown in the list: active, archived, or both. At least one is required.",
+    null,
+  ),
+  projectVisibility: definePreference(
+    projectVisibilityFilterSchema,
+    "all",
+    "Projects shown on a multi-user server: all, public, or private. Single-user servers show every project.",
     null,
   ),
   organizationMode: definePreference(

@@ -7,13 +7,19 @@ import {
   ensurePersonalProject,
   findOrCreateProjectByLocalPathSource,
   getProject,
-  listPublicProjects,
+  listActiveProjects,
   markProjectDeleted,
   reorderProject,
   setProjectGitRemoteUrlIfMissing,
 } from "../../src/data/projects.js";
 import { upsertHost } from "../../src/data/hosts.js";
+import { UNRESTRICTED_PROJECT_ACCESS } from "../../src/data/project-access.js";
 import { createMigratedConnection } from "../helpers/migrated-connection.js";
+
+const ALL_PROJECTS = {
+  access: UNRESTRICTED_PROJECT_ACCESS,
+  visibility: null,
+};
 
 function setup() {
   const db = createMigratedConnection();
@@ -33,7 +39,7 @@ describe("projects", () => {
         hostId: host.id,
         path: "/tmp/same-project",
       },
-    });
+    }, UNRESTRICTED_PROJECT_ACCESS);
 
     const repeated = findOrCreateProjectByLocalPathSource(db, noopNotifier, {
       name: "second-name",
@@ -42,10 +48,10 @@ describe("projects", () => {
         hostId: host.id,
         path: "/tmp/same-project",
       },
-    });
+    }, UNRESTRICTED_PROJECT_ACCESS);
 
     expect(repeated).toEqual(first);
-    expect(listPublicProjects(db)).toEqual([first.project]);
+    expect(listActiveProjects(db, ALL_PROJECTS)).toEqual([first.project]);
   });
 
   it("allows the same path on different hosts", () => {
@@ -61,7 +67,7 @@ describe("projects", () => {
         hostId: host.id,
         path: "/tmp/shared-path",
       },
-    });
+    }, UNRESTRICTED_PROJECT_ACCESS);
     const second = findOrCreateProjectByLocalPathSource(db, noopNotifier, {
       name: "second-host-project",
       source: {
@@ -69,10 +75,10 @@ describe("projects", () => {
         hostId: otherHost.id,
         path: "/tmp/shared-path",
       },
-    });
+    }, UNRESTRICTED_PROJECT_ACCESS);
 
     expect(second.project.id).not.toBe(first.project.id);
-    expect(listPublicProjects(db)).toHaveLength(2);
+    expect(listActiveProjects(db, ALL_PROJECTS)).toHaveLength(2);
   });
 
   it("sets a git remote anchor only while it is missing", () => {
@@ -161,7 +167,7 @@ describe("projects", () => {
         deletingProject.id,
       ]),
     );
-    expect(listPublicProjects(db).map((project) => project.id)).toEqual([
+    expect(listActiveProjects(db, ALL_PROJECTS).map((project) => project.id)).toEqual([
       visibleProject.id,
     ]);
   });
@@ -194,6 +200,7 @@ describe("projects", () => {
     });
 
     const result = reorderProject({
+      access: UNRESTRICTED_PROJECT_ACCESS,
       db,
       notifier: noopNotifier,
       projectId: thirdProject.id,
@@ -202,7 +209,7 @@ describe("projects", () => {
     });
 
     expect(result.kind).toBe("reordered");
-    expect(listPublicProjects(db).map((project) => project.id)).toEqual([
+    expect(listActiveProjects(db, ALL_PROJECTS).map((project) => project.id)).toEqual([
       firstProject.id,
       thirdProject.id,
       secondProject.id,
@@ -237,6 +244,7 @@ describe("projects", () => {
     });
 
     const result = reorderProject({
+      access: UNRESTRICTED_PROJECT_ACCESS,
       db,
       notifier: noopNotifier,
       projectId: secondProject.id,
@@ -260,6 +268,7 @@ describe("projects", () => {
 
     expect(
       reorderProject({
+      access: UNRESTRICTED_PROJECT_ACCESS,
         db,
         notifier: noopNotifier,
         projectId: "proj_missing",
@@ -298,6 +307,7 @@ describe("projects", () => {
 
     expect(
       reorderProject({
+      access: UNRESTRICTED_PROJECT_ACCESS,
         db,
         notifier: noopNotifier,
         projectId: thirdProject.id,
@@ -305,7 +315,7 @@ describe("projects", () => {
         nextProjectId: firstProject.id,
       }).kind,
     ).toBe("invalid_neighbor_order");
-    expect(listPublicProjects(db).map((project) => project.id)).toEqual([
+    expect(listActiveProjects(db, ALL_PROJECTS).map((project) => project.id)).toEqual([
       firstProject.id,
       secondProject.id,
       thirdProject.id,
@@ -332,6 +342,7 @@ describe("projects", () => {
     });
 
     reorderProject({
+      access: UNRESTRICTED_PROJECT_ACCESS,
       db,
       notifier: noopNotifier,
       projectId: secondProject.id,
@@ -348,7 +359,7 @@ describe("projects", () => {
       },
     });
 
-    expect(listPublicProjects(db).map((project) => project.id)).toEqual([
+    expect(listActiveProjects(db, ALL_PROJECTS).map((project) => project.id)).toEqual([
       secondProject.id,
       firstProject.id,
       thirdProject.id,
@@ -379,6 +390,7 @@ describe("projects", () => {
 
     expect(
       reorderProject({
+      access: UNRESTRICTED_PROJECT_ACCESS,
         db,
         notifier: noopNotifier,
         projectId: visibleProject.id,

@@ -11,6 +11,7 @@ import { registerLocalAttachmentPreview } from "@/lib/attachment-local-previews"
 import {
   applyProjectCreateResult,
   applyProjectDeleteResult,
+  applyProjectMembersResult,
   applyProjectUpdateResult,
 } from "../cache-owners/project-cache-owner";
 import {
@@ -38,6 +39,11 @@ interface DeleteLocalProjectSourceRequest {
 
 interface UpdateProjectMutationRequest extends UpdateProjectRequest {
   id: string;
+}
+
+interface ProjectMemberMutationRequest {
+  projectId: string;
+  userId: string;
 }
 
 interface ReorderProjectMutationRequest extends ReorderProjectRequest {
@@ -77,6 +83,44 @@ export function useUpdateProject(options?: { showErrorToast?: boolean }) {
     onSuccess: (project, variables) => {
       applyProjectUpdateResult({ project, queryClient });
       invalidateProjectUpdateQueries({ projectId: variables.id, queryClient });
+    },
+  });
+}
+
+export function useAddProjectMember() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    meta: {
+      errorMessage: "Failed to add member.",
+    },
+    mutationFn: (request: ProjectMemberMutationRequest) =>
+      sdk.projects.experimental_members.add(request),
+    onSuccess: (members, variables) => {
+      applyProjectMembersResult({
+        projectId: variables.projectId,
+        members,
+        queryClient,
+      });
+    },
+  });
+}
+
+export function useRemoveProjectMember() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    meta: {
+      errorMessage: "Failed to remove member.",
+    },
+    mutationFn: (request: ProjectMemberMutationRequest) =>
+      sdk.projects.experimental_members.remove(request),
+    onSuccess: (members, variables) => {
+      applyProjectMembersResult({
+        projectId: variables.projectId,
+        members,
+        queryClient,
+      });
     },
   });
 }

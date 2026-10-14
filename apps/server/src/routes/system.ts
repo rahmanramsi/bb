@@ -15,6 +15,7 @@ import {
   type PrincipalReader,
 } from "../request-context.js";
 import { serverAccessStatus } from "../services/machines/server-access.js";
+import { projectAccessScopeFor } from "../services/projects/project-access.js";
 import {
   getAppSettings,
   getAppKeybindingOverrides,
@@ -174,6 +175,7 @@ export function registerSystemRoutes(
       hasAttention: hasActiveThreadAttention(
         deps.db,
         requirePrincipal(context).userId,
+        projectAccessScopeFor(requirePrincipal(context)),
       ),
     }),
   );

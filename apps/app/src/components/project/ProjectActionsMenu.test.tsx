@@ -56,4 +56,25 @@ describe("ProjectActionsMenu", () => {
       expect(screen.queryByRole("menuitem", { name: "Rename" })).toBeNull();
     });
   });
+
+  it("hides rename and remove from users who cannot manage the project", async () => {
+    render(
+      <MemoryRouter>
+        <ProjectActionsMenu
+          project={makeProjectResponse({ viewerCanManage: false })}
+        />
+      </MemoryRouter>,
+    );
+
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Test project actions" }),
+      { button: 0 },
+    );
+
+    expect(
+      await screen.findByRole("menuitem", { name: "Project settings" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Rename" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Remove" })).toBeNull();
+  });
 });

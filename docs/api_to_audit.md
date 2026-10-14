@@ -3056,6 +3056,27 @@ present on thread rows. It shares the host query and realtime cache. Audit empty
 sections, machine removal, rename updates, and loading behavior before
 stabilizing this field.
 
+**Project visibility (Oct 2026).** `PluginSidebarProject.experimental_visibility`
+is `"public"` or `"private"` on a multi-user server and absent in single-user
+mode or on older hosts. It mirrors `visibility` on the sidebar bootstrap's
+project responses and updates through the same project realtime invalidation.
+The Thread list plugin uses it for its Filter → Projects choice and the lock on
+private project headers. Audit whether owner and member data belong on the
+sidebar project, how the personal project should read, and behavior when a
+user loses access to the project they are viewing before stabilizing this
+field.
+
+**Project management rights (Oct 2026).**
+`PluginSidebarProject.experimental_viewerCanManage` mirrors `viewerCanManage`
+on the sidebar bootstrap's project responses: `true` when the current user can
+rename, remove, or change access to the project, and `false` for the personal
+project and for projects the user can see but does not own on a multi-user
+server. Older hosts omit it; consumers treat a missing value as `true` and rely
+on the server's 403. The Thread list plugin uses it to hide Rename and Remove in
+its project menus and to disable double-click rename. Audit whether the field
+should split into separate rename, delete, and access rights before
+stabilizing it.
+
 **What it does.** Gives a plugin component the sidebar's live thread view and
 the actions that mutate it. The read hook wraps the host's own
 `useSidebarNavigation` query — the same cache and realtime subscriptions the
@@ -4224,3 +4245,9 @@ Stabilize after deciding whether the command should be installable per machine t
 `hosts.experimental_discoverRepos({ hostId })` asks the machine for git repositories under the user's home directory with local activity in the last 30 days, newest first, capped at 10. Each entry has `path`, `name`, `lastActivityAt`, `originUrl`, and `projectId` (the bb project already bound to that path on that machine, or null). `truncated` is true when the three-second walk budget ran out. The walk stops at each repository root, skips dot-directories, common build directories, scratch directories (`tmp`, `temp`, `tmp-*`, `Downloads`), linked worktrees, and submodules. The first-run setup guide and `bb project discover` use it. Host-daemon wire change: the `host.discover_repos` command (protocol 230).
 
 Stabilize after deciding whether depth, recency window, and limit should be caller options, and after exercising slow or network-mounted home directories and Windows hosts.
+
+## `PluginBbSdk.projects.experimental_members`
+
+`projects.experimental_members.list({ projectId, signal? })` reads `GET /api/v1/projects/:id/members` and returns `{ owner, members }`, where `owner` is null for team projects and each entry has `userId`, `name`, `email`, and `addedAt`. `add({ projectId, userId })` calls `PUT /api/v1/projects/:id/members/:userId` and `remove({ projectId, userId })` calls `DELETE /api/v1/projects/:id/members/:userId`; both return the updated list. Adding the owner or an existing member changes nothing, and an unknown user returns `404 user_not_found`. Changing members requires the project owner, an admin, or a local or machine credential; other users who can see the project receive `403 project_manage_forbidden`, and users who cannot see it receive `404 project_not_found`. The personal project has no members. Membership grants access to private projects (`visibility: "private"`, set through `projects.create` and `projects.update`); public projects are visible to every user regardless of membership. Core callers: project settings in the app and `bb project member list|add|remove`.
+
+Stabilize after auditing membership semantics for public projects, owner transfer, and bulk member changes, then rename project-wide and remove this entry.

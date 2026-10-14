@@ -47,6 +47,14 @@ import {
 } from "./authenticate.js";
 import { registerSkillsRegistryRoutes } from "./routes/skills-registry.js";
 import {
+  assertCanViewTerminalId,
+  enforceProjectAccess,
+} from "./services/projects/project-access-guard.js";
+import {
+  createRealtimeProjectAccessResolver,
+  projectAccessScopeFor,
+} from "./services/projects/project-access.js";
+import {
   createPluginService,
   type PluginService,
 } from "./services/plugins/plugin-service.js";
@@ -869,8 +877,15 @@ export function createApp(
   const stopAuthorizationWatch = deps.userAuth.onAuthorizationChange(() => {
     void authenticatedSockets.revalidate();
   });
+  deps.hub.setProjectAccessResolver(
+    createRealtimeProjectAccessResolver(deps.db),
+  );
+  const stopProjectAccessWatch = deps.hub.onProjectAccessChanged(() => {
+    void authenticatedSockets.revalidate();
+  });
   const publicApi = new Hono();
   publicApi.use("*", authenticateApiRequests(deps));
+  publicApi.use("*", enforceProjectAccess(deps));
   publicApi.use("*", async (context, next) => {
     if (
       deps.config.authMode === "local" &&
@@ -978,7 +993,12 @@ export function createApp(
       return {
         onOpen: (_event, socket) => {
           authenticatedSockets.track(socket, credential.isActive);
-          onClientSocketOpen(deps.hub, socket, credential.principal.userId);
+          onClientSocketOpen(
+            deps.hub,
+            socket,
+            credential.principal.userId,
+            projectAccessScopeFor(credential.principal),
+          );
         },
         onMessage: (event, socket) => {
           if (authenticatedSockets.isRevoked(socket)) return;
@@ -998,6 +1018,18 @@ export function createApp(
       const credential = await authenticateRequest(deps, context);
       assertBrowserWebSocketAllowed(context);
       const terminalId = context.req.param("terminalId");
+      assertCanViewTerminalId(deps.db, terminalId, credential.principal);
+      const terminalSocketActive = async (): Promise<boolean> => {
+        if (!(await credential.isActive())) {
+          return false;
+        }
+        try {
+          assertCanViewTerminalId(deps.db, terminalId, credential.principal);
+          return true;
+        } catch {
+          return false;
+        }
+      };
       const query = terminalWebSocketQuerySchema.safeParse({
         outputAcks: context.req.query("outputAcks"),
         sinceSeq: context.req.query("sinceSeq"),
@@ -1011,7 +1043,7 @@ export function createApp(
       }
       return {
         onOpen: (_event, socket) => {
-          authenticatedSockets.track(socket, credential.isActive);
+          authenticatedSockets.track(socket, terminalSocketActive);
           onTerminalSocketOpen(deps, {
             outputAcks: query.data.outputAcks,
             socket,
@@ -1079,6 +1111,7 @@ export function createApp(
     app,
     closeWebSockets: () => {
       stopAuthorizationWatch();
+      stopProjectAccessWatch();
       authenticatedSockets.dispose();
       return closeWebSocketServer({
         forceCloseAfterMs: WEB_SOCKET_SHUTDOWN_FORCE_CLOSE_MS,

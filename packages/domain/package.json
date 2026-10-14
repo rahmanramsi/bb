@@ -34,6 +34,11 @@
       "types": "./src/user-role.ts",
       "default": "./src/user-role.ts"
     },
+    "./project-visibility": {
+      "source": "./src/project-visibility.ts",
+      "types": "./src/project-visibility.ts",
+      "default": "./src/project-visibility.ts"
+    },
     "./thread-visibility": {
       "source": "./src/thread-visibility.ts",
       "types": "./src/thread-visibility.ts",

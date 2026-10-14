@@ -32,7 +32,9 @@ export const JSON_SHAPE_BY_COMMAND_PATH: Readonly<Record<string, string>> = {
   "token revoke": "{ok: true}",
   "user list": "{users: [{id, name, email, role}]}    (wrapped in .users)",
   "project list":
-    "[{id, kind, name, gitRemoteUrl, sources: [{id, hostId, path, isDefault}]}]    (bare array)",
+    "[{id, kind, name, visibility, ownerUserId, viewerCanManage, gitRemoteUrl, sources: [{id, hostId, path, isDefault}]}]    (bare array; ownerUserId is null for team projects)",
+  "project member list":
+    "{owner: {userId, name, email, addedAt} | null, members: [{userId, name, email, addedAt}]}",
   "machine list":
     "[{id, name, type, status, lifecycle, maxPermissionMode, lastSeenAt}]    (bare array)",
   "provider list":

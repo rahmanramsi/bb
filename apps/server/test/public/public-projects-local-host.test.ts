@@ -2,7 +2,8 @@ import { z } from "zod";
 import { describe, expect, it } from "vitest";
 import {
   ensurePersonalProject,
-  listPublicProjects,
+  listActiveProjects,
+  UNRESTRICTED_PROJECT_ACCESS,
   setExperiments,
 } from "@bb/db";
 import { defaultExperiments, PERSONAL_PROJECT_ID } from "@bb/domain";
@@ -66,9 +67,12 @@ describe("public project local host routes", () => {
       expect(response.status).toBe(201);
       const project = projectResponseSchema.parse(await readJson(response));
       expect(project.id).not.toBe(PERSONAL_PROJECT_ID);
-      expect(listPublicProjects(harness.db)).toEqual([
-        expect.objectContaining({ id: project.id }),
-      ]);
+      expect(
+        listActiveProjects(harness.db, {
+          access: UNRESTRICTED_PROJECT_ACCESS,
+          visibility: null,
+        }),
+      ).toEqual([expect.objectContaining({ id: project.id })]);
     });
   });
 
@@ -102,7 +106,12 @@ describe("public project local host routes", () => {
 
       expect(new Set(projects.map((project) => project.id)).size).toBe(1);
       expect(projects[0]?.sources[0]?.path).toBe("C:\\src\\repo");
-      expect(listPublicProjects(harness.db)).toHaveLength(1);
+      expect(
+        listActiveProjects(harness.db, {
+          access: UNRESTRICTED_PROJECT_ACCESS,
+          visibility: null,
+        }),
+      ).toHaveLength(1);
     });
   });
 
@@ -130,7 +139,12 @@ describe("public project local host routes", () => {
       await expect(readJson(response)).resolves.toMatchObject({
         message: expect.stringContaining("This machine uses POSIX paths"),
       });
-      expect(listPublicProjects(harness.db)).toEqual([]);
+      expect(
+        listActiveProjects(harness.db, {
+          access: UNRESTRICTED_PROJECT_ACCESS,
+          visibility: null,
+        }),
+      ).toEqual([]);
     });
   });
 
@@ -157,7 +171,12 @@ describe("public project local host routes", () => {
       await expect(readJson(refused)).resolves.toMatchObject({
         message: expect.stringContaining("This machine uses Windows paths"),
       });
-      expect(listPublicProjects(harness.db)).toEqual([]);
+      expect(
+        listActiveProjects(harness.db, {
+          access: UNRESTRICTED_PROJECT_ACCESS,
+          visibility: null,
+        }),
+      ).toEqual([]);
     });
   });
 
@@ -200,7 +219,12 @@ describe("public project local host routes", () => {
         await readJson(repeatedResponse),
       );
       expect(repeatedProject.id).toBe(firstProject.id);
-      expect(listPublicProjects(harness.db)).toHaveLength(1);
+      expect(
+        listActiveProjects(harness.db, {
+          access: UNRESTRICTED_PROJECT_ACCESS,
+          visibility: null,
+        }),
+      ).toHaveLength(1);
     });
   });
 
