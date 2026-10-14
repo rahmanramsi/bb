@@ -15,6 +15,7 @@ import {
   releaseQueuedMessageClaim,
   releaseQueuedThreadMessageEditHold,
   releaseStaleQueuedMessageClaims,
+  requeueClaimedQueuedThreadMessages,
   type DbQueryConnection,
   type QueuedThreadMessageGroupClaimPolicy,
   type QueuedThreadMessageGroupEligibility,
@@ -659,13 +660,33 @@ async function sendClaimedSystemNotice(
     JSON.parse(lead.systemNotice),
   );
   const queuedMessage = toThreadQueuedMessage(lead);
-  const delivered = await deliverParentSystemMessage(deps, {
+  const delivery = await deliverParentSystemMessage(deps, {
     input: queuedMessage.content,
     parentThread: args.thread,
     systemMessageKind: notice.kind,
     systemMessageSubject: notice.subject,
   });
-  if (!delivered) {
+  if (delivery === "awaiting-running-turn") {
+    const waitingOn: QueuedMessageWaitingOn = { kind: "thread-busy" };
+    requeueClaimedQueuedThreadMessages(deps.db, deps.hub, {
+      claims: args.queuedMessages.map((claimed) => ({
+        id: claimed.id,
+        claimToken: claimed.claimToken,
+      })),
+      threadId: args.thread.id,
+      waitingOn,
+      sendAt: null,
+    });
+    if (args.sendNow) {
+      throw new ApiError(
+        409,
+        "queued_message_still_waiting",
+        `This message cannot be sent yet: ${describeCoreWait(waitingOn)}.`,
+      );
+    }
+    throw createQueuedMessageClaimLostError();
+  }
+  if (delivery === "not-delivered") {
     // The thread changed under the drain. Leave the row claimed-and-released
     // by the caller's error path rather than consuming a notice nobody got.
     throw createQueuedMessageClaimLostError();

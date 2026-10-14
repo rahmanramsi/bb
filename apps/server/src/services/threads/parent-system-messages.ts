@@ -55,8 +55,16 @@ import {
   withThreadSendGuard,
 } from "./thread-context-mutation-guard.js";
 import { requestQueuedMessageDispatch } from "./queued-message-dispatch.js";
+import { sharesRunningTurnAuthority } from "./turn-authority.js";
 
 const PARENT_SYSTEM_MESSAGE_SOURCE = "tell";
+
+const SYSTEM_NOTICE_AUTHOR = { authorRoleCeiling: null, authorUserId: null };
+
+export type ParentSystemMessageDelivery =
+  | "delivered"
+  | "not-delivered"
+  | "awaiting-running-turn";
 
 export interface ParentSystemMessageTaxonomy {
   systemMessageKind: SystemMessageKind;
@@ -127,7 +135,7 @@ function parentSystemTurnRequestFields(
   args: QueueReadyParentSystemMessageArgs,
 ) {
   return {
-    author: { authorRoleCeiling: null, authorUserId: null },
+    author: SYSTEM_NOTICE_AUTHOR,
     threadId: args.thread.id,
     environmentId: args.environment.id,
     type: "client/turn/requested",
@@ -259,7 +267,7 @@ function queueActiveParentSystemMessageInTransaction(
 async function queueActiveParentSystemMessage(
   deps: LoggedPendingInteractionWorkSessionDeps,
   args: QueueReadyParentSystemMessageArgs,
-): Promise<boolean> {
+): Promise<ParentSystemMessageDelivery> {
   const expectedSteerTurnId = getActiveTurnId(deps, args.thread.id);
   if (expectedSteerTurnId === null) {
     const outcome = queueInputForStartingTurn(deps, {
@@ -281,8 +289,8 @@ async function queueActiveParentSystemMessage(
       },
       threadId: args.thread.id,
     });
-    if (outcome.kind === "queued") return true;
-    if (outcome.kind === "dispatched") return false;
+    if (outcome.kind === "queued") return "delivered";
+    if (outcome.kind === "dispatched") return "not-delivered";
     if (outcome.kind === "retry") {
       const currentThread = outcome.thread;
       if (
@@ -291,13 +299,21 @@ async function queueActiveParentSystemMessage(
         currentThread.deletedAt !== null ||
         currentThread.status === "stopping"
       ) {
-        return false;
+        return "not-delivered";
       }
       return queueReadyParentSystemMessage(deps, {
         ...args,
         thread: currentThread,
       });
     }
+  }
+  if (
+    !sharesRunningTurnAuthority(deps, {
+      author: SYSTEM_NOTICE_AUTHOR,
+      thread: args.thread,
+    })
+  ) {
+    return "awaiting-running-turn";
   }
   const permissionEscalation = resolvePermissionEscalation({
     initiator: "system",
@@ -333,7 +349,7 @@ async function queueActiveParentSystemMessage(
     { behavior: "immediate" },
   );
   if (command === null) {
-    return false;
+    return "not-delivered";
   }
 
   deps.hub.notifyThread(args.thread.id, ["events-appended"], {
@@ -353,13 +369,13 @@ async function queueActiveParentSystemMessage(
       );
     },
   });
-  return true;
+  return "delivered";
 }
 
 async function queueReadyParentSystemMessage(
   deps: LoggedPendingInteractionWorkSessionDeps,
   args: QueueReadyParentSystemMessageArgs,
-): Promise<boolean> {
+): Promise<ParentSystemMessageDelivery> {
   if (args.thread.status === "active") {
     return queueActiveParentSystemMessage(deps, args);
   }
@@ -433,7 +449,7 @@ async function queueReadyParentSystemMessage(
       buildThreadStatusChangeMetadata(deps, activeThread),
     );
   }
-  return true;
+  return "delivered";
 }
 
 export async function queueParentSystemMessage(
@@ -455,12 +471,15 @@ export async function queueParentSystemMessage(
   let hostUnavailable = false;
   if (!hasPendingInteraction) {
     try {
-      return await deliverParentSystemMessage(deps, {
+      const delivery = await deliverParentSystemMessage(deps, {
         input: args.input,
         parentThread,
         systemMessageKind: args.systemMessageKind,
         systemMessageSubject: args.systemMessageSubject,
       });
+      if (delivery !== "awaiting-running-turn") {
+        return delivery === "delivered";
+      }
     } catch (error) {
       hostUnavailable = isHostUnavailableApiError(error);
       if (
@@ -533,7 +552,7 @@ interface DeliverParentSystemMessageArgs extends ParentSystemMessageTaxonomy {
 export async function deliverParentSystemMessage(
   deps: LoggedPendingInteractionWorkSessionDeps,
   args: DeliverParentSystemMessageArgs,
-): Promise<boolean> {
+): Promise<ParentSystemMessageDelivery> {
   return withThreadSendGuard(args.parentThread.id, () =>
     deliverParentSystemMessageWithContextGuard(deps, args),
   );
@@ -542,7 +561,7 @@ export async function deliverParentSystemMessage(
 async function deliverParentSystemMessageWithContextGuard(
   deps: LoggedPendingInteractionWorkSessionDeps,
   args: DeliverParentSystemMessageArgs,
-): Promise<boolean> {
+): Promise<ParentSystemMessageDelivery> {
   const { parentThread } = args;
   const { environment } = requireThreadEnvironment(deps.db, parentThread.id);
   const execution = await buildExecutionOptions(
@@ -567,7 +586,7 @@ async function deliverParentSystemMessageWithContextGuard(
       thread: parentThread,
     })
   ) {
-    return true;
+    return "delivered";
   }
 
   const readyEnvironment = requireReadyThreadEnvironment(
