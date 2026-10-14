@@ -28,7 +28,7 @@ import {
   type ExperimentalPluginProviderEnvContext,
   type ExperimentalPluginProviderEnvHealthContext,
   type PluginRpcError,
-  type ExperimentalPluginRpcCaller,
+  type ExperimentalPluginRpcHandlerContext,
 } from "@get-bb/plugin-sdk";
 import {
   enforcePluginCliOutputLimit,
@@ -40,6 +40,7 @@ import {
   validatePluginProviderEnvEntries,
   validateRpcValue,
   validateSettingsUpdate,
+  partitionSettingsUpdate,
 } from "@get-bb/plugin-sdk/internal/host-policy";
 import {
   buildPluginApp,
@@ -146,6 +147,7 @@ import {
   pluginSecretsDir,
   readPluginSettingsValues,
   writePluginSettingsUpdate,
+  writePluginUserSettingsUpdate,
   PluginSettingsValidationError,
   type PluginSettingsView,
 } from "./plugin-settings.js";
@@ -358,11 +360,16 @@ export interface PluginService {
     signal: string;
     payload: JsonValue;
   }): void;
-  getSettings(id: string): Promise<PluginSettingsView | undefined>;
+  getSettings(
+    id: string,
+    userId: string,
+  ): Promise<PluginSettingsView | undefined>;
   updateSettings(
     id: string,
     values: Record<string, unknown>,
+    userId: string,
   ): Promise<PluginSettingsView | undefined>;
+  teamSettingKeys(id: string, values: Record<string, unknown>): string[];
   getHttpRoute(
     id: string,
     method: string,
@@ -404,7 +411,7 @@ export interface PluginService {
     method: string,
     handler: PluginRpcHandler,
     input: unknown,
-    caller: ExperimentalPluginRpcCaller,
+    context: ExperimentalPluginRpcHandlerContext,
   ): Promise<
     { ok: true; result: JsonValue } | { ok: false; error: PluginRpcError }
   >;
@@ -1988,7 +1995,7 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
       }
     },
 
-    async getSettings(id) {
+    async getSettings(id, userId) {
       const plugin = loaded.get(id);
       if (!plugin) return undefined;
       return buildPluginSettingsView({
@@ -1996,10 +2003,16 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
         dataDir: deps.dataDir,
         pluginId: id,
         descriptors: plugin.handle.settings.descriptors,
+        userId,
       });
     },
 
-    async updateSettings(id, values) {
+    teamSettingKeys(id, values) {
+      const descriptors = loaded.get(id)?.handle.settings.descriptors ?? {};
+      return Object.keys(partitionSettingsUpdate(descriptors, values).team);
+    },
+
+    async updateSettings(id, values, userId) {
       const plugin = loaded.get(id);
       if (!plugin) return undefined;
       const storeArgs = {
@@ -2012,8 +2025,18 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
       if (errors.length > 0) {
         throw new PluginSettingsValidationError(errors.join("; "));
       }
+      const partitioned = partitionSettingsUpdate(storeArgs.descriptors, values);
+      if (Object.keys(partitioned.user).length > 0) {
+        const userArgs = { ...storeArgs, userId };
+        const prevUser = await readPluginSettingsValues(userArgs);
+        writePluginUserSettingsUpdate({ ...userArgs, values: partitioned.user });
+        const nextUser = await readPluginSettingsValues(userArgs);
+        if (JSON.stringify(nextUser) !== JSON.stringify(prevUser)) {
+          deps.hub.notifyUserSystem(userId, ["plugins-changed"]);
+        }
+      }
       const prev = await readPluginSettingsValues(storeArgs);
-      await writePluginSettingsUpdate({ ...storeArgs, values });
+      await writePluginSettingsUpdate({ ...storeArgs, values: partitioned.team });
       const next = await readPluginSettingsValues(storeArgs);
       if (JSON.stringify(next) !== JSON.stringify(prev)) {
         for (const listener of plugin.handle.settings.listeners) {
@@ -2038,7 +2061,7 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
           }
         }
       }
-      return buildPluginSettingsView(storeArgs);
+      return buildPluginSettingsView({ ...storeArgs, userId });
     },
 
     getHttpRoute(id, method, path) {
@@ -2142,7 +2165,7 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
       await invokeWrapped(id, `websocket ${route.path} ${event}`, run);
     },
 
-    async invokeRpcHandler(id, method, handler, input, caller) {
+    async invokeRpcHandler(id, method, handler, input, context) {
       const outcome = await invokeWrapped(id, `rpc ${method}`, async () => {
         const parsedInput = await validateRpcValue(
           handler.inputSchema,
@@ -2150,9 +2173,7 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
           "input",
           throwRpcBoundaryError,
         );
-        const result = await handler.handler(parsedInput, {
-          experimental_caller: caller,
-        });
+        const result = await handler.handler(parsedInput, context);
         const parsedOutput = await validateRpcValue(
           handler.outputSchema,
           result,

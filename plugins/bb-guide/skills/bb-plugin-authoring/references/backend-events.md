@@ -414,8 +414,8 @@ function IssuesButton() {
 }
 ```
 
-Each handler also receives a context whose `experimental_caller` identifies
-the calling plugin; see "Calling another plugin's RPC" in `backend-sdk.md`.
+Each handler's context names the calling plugin in `experimental_caller` (see
+`backend-sdk.md`) and the signed-in user (or `null`) in `experimental_callerUserId`.
 
 The wire envelope is `{ ok: true, result }` or `{ ok: false, error }`.
 Failures use stable codes: `invalid_json`, `invalid_input`, `handler_error`,
@@ -429,13 +429,13 @@ rejected rather than coerced or silently dropped.
 
 ### bb.realtime
 
-`bb.realtime.publish(channel, payload)` broadcasts an ephemeral
+`bb.realtime.publish(channel, payload, options?)` broadcasts an ephemeral
 `{ type: "plugin-signal", pluginId, channel, payload }` message to every
-connected client. The channel must be non-empty. V1 has no server-side channel
-subscriptions. The frontend hook `useRealtime(channel, handler)` filters the
-messages. The payload must be JSON-serializable; `undefined` becomes `null`.
-Nothing is persisted. Publish state-change signals and let the frontend
-refetch through RPC.
+connected client, or with `{ experimental_userId }` only to that user's. The
+channel must be non-empty; there are no server-side channel subscriptions. The
+frontend hook `useRealtime(channel, handler)` filters the messages. The payload
+must be JSON-serializable; `undefined` becomes `null`. Nothing is persisted.
+Publish state-change signals and let the frontend refetch through RPC.
 
 ### bb.background — services and schedules
 

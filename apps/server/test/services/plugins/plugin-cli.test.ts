@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -154,6 +155,7 @@ describe("plugin CLI commands (bb.cli.register + endpoints + skill + logs)", () 
       argv: ["issues", "--team", "ENG"],
       ctx: {
         experimental_callerRole: "admin",
+        experimental_callerUserId: LOCAL_OWNER_USER_ID,
         cwd: "/tmp/somewhere",
         threadId: "thr_123",
         projectId: "proj_456",

@@ -99,7 +99,9 @@ prints its full option help; a hand-written `run` leaves that unset and the
 `bb` CLI answers `--help` from the `commands[].usage` line without calling
 the plugin.
 
-In multi-user mode, `ctx.experimental_callerRole` is the caller's server role.
+In multi-user mode, `ctx.experimental_callerRole` is the caller's server role
+and `ctx.experimental_callerUserId` is the caller's user id (the local owner in
+local mode).
 Mark a command that changes server-wide configuration, credentials, or machine
 enrollment with `experimental_requiredRole: "admin"`; `defineCli` then refuses
 members with `admin_required`. A show-or-set command calls

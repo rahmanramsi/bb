@@ -657,11 +657,14 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
           "Declare text, number, toggle, choice, or project fields as data",
           "Get validation and autosave without extra code",
           "Keep secret values on the server, never sent to the browser",
+          "Give each signed-in user their own value for a field",
         ],
         apiSymbols: [
           "PluginSettings",
           "PluginSettingsHandle",
           "PluginSettingDescriptor",
+          "PluginSettingScope",
+          "PluginSettings.experimental_getForUser",
           "PluginSettingsState",
           "useSettings",
           "PluginSettingsValues",
@@ -902,9 +905,9 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
         summary:
           "Use RPC, HTTP, WebSocket, and realtime messages to connect the plugin. With this, a plugin can:",
         bullets: [
-          "Call its server from its UI with schema-checked RPC, admin-only where needed",
+          "Call its server with schema-checked RPC that knows the signed-in caller, admin-only where needed",
           "Receive webhooks and serve HTTP or WebSocket routes",
-          "Push live updates to open bb windows",
+          "Push live updates to open bb windows, or only to one user's windows",
           "Publish RPC methods other plugins can discover",
         ],
         apiSymbols: [
@@ -917,6 +920,8 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
           "PluginBbSdk.plugins.experimental_discoverRpc",
           "PluginHttp",
           "PluginRealtime",
+          "ExperimentalPluginRealtimePublishOptions",
+          "PluginCliContext.experimental_callerUserId",
           "useRpc",
           "PluginRpcClient",
           "useRealtime",
@@ -1229,8 +1234,13 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
           "Keep small values such as flags and cursors in a key-value store",
           "Get its own SQLite database with migrations",
           "Keep internal credentials out of settings",
+          "Keep each user's data private to them and delete it with their account",
         ],
-        apiSymbols: ["PluginStorage"],
+        apiSymbols: [
+          "PluginStorage",
+          "PluginStorage.experimental_forUser",
+          "ExperimentalPluginUserStorage",
+        ],
         firstParty: [
           "Account Pooler [Experimental]",
           "Agent Annotations",

@@ -78,6 +78,7 @@ describe("prebuilt server bundle loading", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -246,6 +247,7 @@ export default function plugin() {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,

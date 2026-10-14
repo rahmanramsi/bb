@@ -74,6 +74,33 @@ afterEach(() => {
 });
 
 describe("PluginSettingsForm", () => {
+  it("marks per-user fields so a member can tell which values are only theirs", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonOk({
+          ok: true,
+          schema: {
+            density: {
+              type: "select",
+              label: "Density",
+              options: ["compact", "cozy"],
+              experimental_scope: "user",
+            },
+            teamName: { type: "string", label: "Team name" },
+          },
+          values: { density: "compact", teamName: "eng" },
+        }),
+      ),
+    );
+
+    const { wrapper } = createQueryClientTestHarness();
+    render(<PluginSettingsForm pluginId="demo" />, { wrapper });
+
+    await screen.findByLabelText("Density");
+    expect(screen.getAllByText("personal")).toHaveLength(1);
+  });
+
   it("autosaves the latest text value on blur", async () => {
     const requests: RecordedRequest[] = [];
     vi.stubGlobal(

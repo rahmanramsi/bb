@@ -16,6 +16,11 @@ import { CronExpressionParser } from "cron-parser";
 import {
   deletePluginKvValue,
   getPluginKvValue,
+  getPluginUserKvValue,
+  setPluginUserKvValue,
+  deletePluginUserKvValue,
+  listPluginUserKvKeys,
+  pluginUserExists,
   getHost,
   listPluginKvKeys,
   setPluginKvValue,
@@ -85,6 +90,8 @@ import {
   normalizeInteractionRequest,
   normalizeMentionProviderRegistration,
   normalizeRealtimePayload,
+  normalizeRealtimeUserId,
+  partitionSettingsUpdate,
   normalizeRpcRegistration,
   publishRpcMethod,
   normalizeWebSocketRouteRegistration,
@@ -494,7 +501,11 @@ export function createPluginApi(options: {
    * Revoked when the handle is invalidated.
    */
   rpcCaller: PluginRpcCallerCredential;
-  publishSignal: (channel: string, payload: unknown) => void;
+  publishSignal: (
+    channel: string,
+    payload: unknown,
+    userId: string | null,
+  ) => void;
   settingsChanged: () => void;
   reportNeedsConfiguration: (message: string) => void;
   isAgentToolNameTaken: (name: string) => string | undefined;
@@ -686,37 +697,60 @@ export function createPluginApi(options: {
     return pending;
   }
 
-  const kv: PluginKvStorage = {
-    async get(key) {
-      assertLive();
-      const raw = getPluginKvValue(db, pluginId, key);
-      if (raw === undefined) return undefined;
-      return JSON.parse(raw);
-    },
-    async set(key, value) {
-      assertLive();
-      const json = JSON.stringify(value);
-      if (json === undefined) {
-        throw new Error(`kv value for "${key}" is not JSON-serializable`);
-      }
-      const bytes = Buffer.byteLength(json, "utf8");
-      if (bytes > KV_VALUE_MAX_BYTES) {
-        throw new Error(
-          `kv value for "${key}" is ${bytes} bytes; the limit is ${KV_VALUE_MAX_BYTES} (256KB). ` +
-            `Store large data in storage.database() instead.`,
-        );
-      }
-      setPluginKvValue(db, pluginId, key, json);
-    },
-    async delete(key) {
-      assertLive();
-      deletePluginKvValue(db, pluginId, key);
-    },
-    async list(kvPrefix) {
-      assertLive();
-      return listPluginKvKeys(db, pluginId, kvPrefix);
-    },
-  };
+  function createKv(rows: {
+    get(key: string): string | undefined;
+    set(key: string, json: string): void;
+    delete(key: string): void;
+    list(prefix: string | undefined): string[];
+  }): PluginKvStorage {
+    return {
+      async get(key) {
+        assertLive();
+        const raw = rows.get(key);
+        if (raw === undefined) return undefined;
+        return JSON.parse(raw);
+      },
+      async set(key, value) {
+        assertLive();
+        const json = JSON.stringify(value);
+        if (json === undefined) {
+          throw new Error(`kv value for "${key}" is not JSON-serializable`);
+        }
+        const bytes = Buffer.byteLength(json, "utf8");
+        if (bytes > KV_VALUE_MAX_BYTES) {
+          throw new Error(
+            `kv value for "${key}" is ${bytes} bytes; the limit is ${KV_VALUE_MAX_BYTES} (256KB). ` +
+              `Store large data in storage.database() instead.`,
+          );
+        }
+        rows.set(key, json);
+      },
+      async delete(key) {
+        assertLive();
+        rows.delete(key);
+      },
+      async list(kvPrefix) {
+        assertLive();
+        return rows.list(kvPrefix);
+      },
+    };
+  }
+
+  const kv = createKv({
+    get: (key) => getPluginKvValue(db, pluginId, key),
+    set: (key, json) => setPluginKvValue(db, pluginId, key, json),
+    delete: (key) => deletePluginKvValue(db, pluginId, key),
+    list: (kvPrefix) => listPluginKvKeys(db, pluginId, kvPrefix),
+  });
+
+  function assertKnownUser(userId: unknown): asserts userId is string {
+    if (typeof userId !== "string" || userId.length === 0) {
+      throw new Error("userId must be a non-empty string");
+    }
+    if (!pluginUserExists(db, userId)) {
+      throw new Error(`unknown user "${userId}"`);
+    }
+  }
 
   let databaseHandle: Database.Database | undefined;
   const storage: PluginStorage = {
@@ -740,6 +774,20 @@ export function createPluginApi(options: {
     migrate(database, statements) {
       assertLive();
       runPluginStorageMigrations(database, statements);
+    },
+    experimental_forUser(userId) {
+      assertLive();
+      assertKnownUser(userId);
+      return {
+        kv: createKv({
+          get: (key) => getPluginUserKvValue(db, { pluginId, userId, key }),
+          set: (key, json) =>
+            setPluginUserKvValue(db, { pluginId, userId, key, value: json }),
+          delete: (key) => deletePluginUserKvValue(db, { pluginId, userId, key }),
+          list: (prefix) =>
+            listPluginUserKvKeys(db, { pluginId, userId, prefix }),
+        }),
+      };
     },
   };
 
@@ -767,7 +815,15 @@ export function createPluginApi(options: {
           for (const [key, value] of Object.entries(values)) {
             rawValues[key] = value;
           }
-          const errors = validateSettingsUpdate(validated, rawValues);
+          const errors = [
+            ...Object.keys(
+              partitionSettingsUpdate(validated, rawValues).user,
+            ).map(
+              (key) =>
+                `setting "${key}" is a per-user setting; only the user changes it`,
+            ),
+            ...validateSettingsUpdate(validated, rawValues),
+          ];
           if (errors.length > 0) {
             throw new Error(errors.join("; "));
           }
@@ -805,6 +861,17 @@ export function createPluginApi(options: {
           settingsRecord.listeners.push(listener as PluginSettingsListener);
         },
       };
+    },
+    async experimental_getForUser(userId) {
+      assertLive();
+      assertKnownUser(userId);
+      return readPluginSettingsValues({
+        db,
+        dataDir,
+        pluginId,
+        descriptors: settingsRecord.descriptors,
+        userId,
+      });
     },
   };
 
@@ -852,9 +919,13 @@ export function createPluginApi(options: {
   };
 
   const realtime: PluginRealtime = {
-    publish(channel, payload) {
+    publish(channel, payload, publishOptions) {
       assertLive();
-      publishSignal(channel, normalizeRealtimePayload(channel, payload));
+      publishSignal(
+        channel,
+        normalizeRealtimePayload(channel, payload),
+        normalizeRealtimeUserId(publishOptions),
+      );
     },
   };
 

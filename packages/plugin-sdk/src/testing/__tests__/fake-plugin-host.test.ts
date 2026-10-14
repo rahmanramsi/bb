@@ -2562,3 +2562,163 @@ describe("environment targets", () => {
     expect(seen).toEqual(["qm_1"]);
   });
 });
+
+describe("user-scoped plugin data", () => {
+  const ALICE = "usr_alice";
+  const BOB = "usr_bob";
+
+  it("keeps each user's kv rows apart from each other and from team kv", async () => {
+    const { bb } = createFakePluginHost({
+      experimental_userIds: [ALICE, BOB],
+    });
+    const alice = bb.storage.experimental_forUser(ALICE);
+    const bob = bb.storage.experimental_forUser(BOB);
+    await alice.kv.set("pref:sort", "alpha");
+    await bob.kv.set("pref:sort", "updated");
+    await bb.storage.kv.set("pref:sort", "team");
+
+    await expect(alice.kv.get("pref:sort")).resolves.toBe("alpha");
+    await expect(bob.kv.get("pref:sort")).resolves.toBe("updated");
+    await expect(bb.storage.kv.get("pref:sort")).resolves.toBe("team");
+    await expect(alice.kv.list("pref:")).resolves.toEqual(["pref:sort"]);
+    await bob.kv.delete("pref:sort");
+    await expect(bob.kv.get("pref:sort")).resolves.toBeUndefined();
+    await expect(alice.kv.get("pref:sort")).resolves.toBe("alpha");
+  });
+
+  it("refuses unknown users and deletes a removed user's rows", async () => {
+    const { bb, harness } = createFakePluginHost({
+      experimental_userIds: [ALICE, BOB],
+      settings: {},
+    });
+    const settings = bb.settings.define({
+      density: {
+        type: "select",
+        label: "Density",
+        options: ["compact", "cozy"],
+        default: "cozy",
+        experimental_scope: "user",
+      },
+    });
+    await bb.storage.experimental_forUser(ALICE).kv.set("k", 1);
+    await harness.behavior.experimental_setUserSettings(ALICE, {
+      density: "compact",
+    });
+    expect(() => bb.storage.experimental_forUser("usr_nobody")).toThrow(
+      /unknown user "usr_nobody"/,
+    );
+
+    harness.behavior.experimental_removeUser(ALICE);
+
+    expect(() => bb.storage.experimental_forUser(ALICE)).toThrow(
+      /unknown user/,
+    );
+    await expect(bb.settings.experimental_getForUser(ALICE)).rejects.toThrow(
+      /unknown user/,
+    );
+    await expect(settings.get()).resolves.toEqual({ density: "cozy" });
+  });
+
+  it("stores user-scoped settings per user and keeps them out of team writes", async () => {
+    const { bb, harness } = createFakePluginHost({
+      experimental_userIds: [ALICE, BOB],
+    });
+    const settings = bb.settings.define({
+      density: {
+        type: "select",
+        label: "Density",
+        options: ["compact", "cozy"],
+        default: "cozy",
+        experimental_scope: "user",
+      },
+      teamName: { type: "string", label: "Team name", default: "eng" },
+    });
+    const changes: unknown[] = [];
+    settings.onChange((next) => changes.push(next));
+
+    await harness.behavior.experimental_setUserSettings(ALICE, {
+      density: "compact",
+    });
+
+    await expect(bb.settings.experimental_getForUser(ALICE)).resolves.toEqual({
+      density: "compact",
+      teamName: "eng",
+    });
+    await expect(bb.settings.experimental_getForUser(BOB)).resolves.toEqual({
+      density: "cozy",
+      teamName: "eng",
+    });
+    await expect(settings.get()).resolves.toEqual({
+      density: "cozy",
+      teamName: "eng",
+    });
+    expect(changes).toEqual([]);
+    await expect(
+      harness.behavior.experimental_setUserSettings(ALICE, { teamName: "x" }),
+    ).rejects.toThrow(/"teamName" is a team setting/);
+    await expect(settings.experimental_set({ density: "compact" })).rejects.toThrow(
+      /"density" is a per-user setting/,
+    );
+    await expect(
+      harness.behavior.setSettings({ density: "compact" }),
+    ).rejects.toThrow(/"density" is a per-user setting/);
+  });
+
+  it("refuses a secret user-scoped setting at define time", () => {
+    const { bb } = createFakePluginHost();
+    expect(() =>
+      bb.settings.define({
+        token: {
+          type: "string",
+          label: "Token",
+          secret: true,
+          experimental_scope: "user",
+        },
+      }),
+    ).toThrow(/cannot have experimental_scope "user"/);
+  });
+
+  it("records a targeted publish with its user and a broadcast without one", () => {
+    const { bb, harness } = createFakePluginHost();
+    bb.realtime.publish("prefs", { a: 1 }, { experimental_userId: ALICE });
+    bb.realtime.publish("prefs", { a: 2 });
+    expect(harness.realtimeSignals).toEqual([
+      { channel: "prefs", payload: { a: 1 }, experimental_userId: ALICE },
+      { channel: "prefs", payload: { a: 2 } },
+    ]);
+  });
+
+  it("passes the caller user id to rpc handlers and CLI commands", async () => {
+    const { bb, harness } = createFakePluginHost();
+    const seen: unknown[] = [];
+    const passthrough = z.unknown();
+    bb.rpc.register(defineRpcContract({ who: { input: passthrough, output: passthrough } }), {
+      who: (_input, context) => {
+        seen.push(context.experimental_callerUserId);
+        return null;
+      },
+    });
+    bb.cli.register({
+      name: "who",
+      summary: "who",
+      run: (_argv, ctx) => ({
+        exitCode: 0,
+        stdout: String(ctx.experimental_callerUserId),
+      }),
+    });
+    await harness.behavior.callRpc("who", null);
+    await harness.behavior.callRpc("who", null, {
+      experimental_callerUserId: ALICE,
+    });
+    await harness.behavior.callRpc("who", null, {
+      experimental_caller: { kind: "plugin", pluginId: "other" },
+    });
+    expect(seen).toEqual(["usr_local_owner", ALICE, null]);
+    await expect(harness.behavior.runCli([])).resolves.toMatchObject({
+      stdout: "usr_local_owner",
+    });
+    await expect(
+      harness.behavior.runCli([], { experimental_callerUserId: BOB }),
+    ).resolves.toMatchObject({ stdout: BOB });
+  });
+});

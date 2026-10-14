@@ -2,7 +2,9 @@ import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
   getPluginSettingsValues,
+  getPluginUserSettingsValues,
   setPluginSettingsValues,
+  setPluginUserSettingsValues,
   type DbConnection,
 } from "@bb/db";
 import type {
@@ -10,7 +12,10 @@ import type {
   PluginSettingDescriptors,
   PluginSettingValue,
 } from "@get-bb/plugin-sdk";
-import { coerceStoredPluginSettingValue } from "@get-bb/plugin-sdk/internal/host-policy";
+import {
+  coerceStoredPluginSettingValue,
+  isUserScopedSetting,
+} from "@get-bb/plugin-sdk/internal/host-policy";
 import type { PluginSettingDescriptor as PublicPluginSettingDescriptor } from "@bb/server-contract";
 import { deleteSecretFile, writeSecretFile } from "@bb/secret-storage";
 
@@ -57,6 +62,7 @@ interface PluginSettingsStoreArgs {
   dataDir: string;
   pluginId: string;
   descriptors: PluginSettingDescriptors;
+  userId?: string;
 }
 
 function parseStoredSettingValue(
@@ -78,10 +84,20 @@ export function readPluginSettingsValuesSync(
   args: Omit<PluginSettingsStoreArgs, "dataDir">,
 ): Record<string, PluginSettingValue | undefined> {
   const stored = getPluginSettingsValues(args.db, args.pluginId);
+  const userStored =
+    args.userId === undefined
+      ? {}
+      : getPluginUserSettingsValues(args.db, {
+          pluginId: args.pluginId,
+          userId: args.userId,
+        });
   const values: Record<string, PluginSettingValue | undefined> = {};
   for (const [key, descriptor] of Object.entries(args.descriptors)) {
     if (isSecret(descriptor)) continue;
-    values[key] = parseStoredSettingValue(descriptor, stored[key]);
+    values[key] = parseStoredSettingValue(
+      descriptor,
+      isUserScopedSetting(descriptor) ? userStored[key] : stored[key],
+    );
   }
   return values;
 }
@@ -105,7 +121,7 @@ export async function writePluginSettingsUpdate(
   const rowUpdates: Record<string, string | null> = {};
   for (const [key, value] of Object.entries(args.values)) {
     const descriptor = args.descriptors[key];
-    if (!descriptor) continue;
+    if (!descriptor || isUserScopedSetting(descriptor)) continue;
     if (isSecret(descriptor)) {
       const path = secretFilePath(args.dataDir, args.pluginId, key);
       if (value === null) await deleteSecretFile(path);
@@ -116,6 +132,27 @@ export async function writePluginSettingsUpdate(
   }
   if (Object.keys(rowUpdates).length > 0) {
     setPluginSettingsValues(args.db, args.pluginId, rowUpdates);
+  }
+}
+
+export function writePluginUserSettingsUpdate(
+  args: Omit<PluginSettingsStoreArgs, "dataDir" | "userId"> & {
+    userId: string;
+    values: Record<string, unknown>;
+  },
+): void {
+  const rowUpdates: Record<string, string | null> = {};
+  for (const [key, value] of Object.entries(args.values)) {
+    const descriptor = args.descriptors[key];
+    if (!descriptor || !isUserScopedSetting(descriptor)) continue;
+    rowUpdates[key] = value === null ? null : JSON.stringify(value);
+  }
+  if (Object.keys(rowUpdates).length > 0) {
+    setPluginUserSettingsValues(args.db, {
+      pluginId: args.pluginId,
+      userId: args.userId,
+      values: rowUpdates,
+    });
   }
 }
 

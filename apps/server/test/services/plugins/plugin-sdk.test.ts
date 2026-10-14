@@ -192,6 +192,7 @@ describe("plugin bb.sdk bind gate", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,

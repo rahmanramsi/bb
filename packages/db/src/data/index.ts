@@ -215,6 +215,13 @@ export {
   setPluginSettingsValues,
   listPluginKvRows,
   listPluginSettingRows,
+  pluginUserExists,
+  getPluginUserKvValue,
+  setPluginUserKvValue,
+  deletePluginUserKvValue,
+  listPluginUserKvKeys,
+  getPluginUserSettingsValues,
+  setPluginUserSettingsValues,
 } from "./plugin-storage.js";
 export {
   claimPluginScheduledRun,

@@ -82,6 +82,7 @@ describe("plugin background services", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -203,6 +204,7 @@ describe("plugin background services", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -264,6 +266,7 @@ describe("plugin background services", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -560,6 +563,7 @@ describe("plugin schedules", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,

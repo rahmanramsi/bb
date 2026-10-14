@@ -77,6 +77,14 @@ export type PluginSettingDescriptor =
       type: "string";
       label: string;
       description?: string;
+      /**
+       * `"user"` stores the value per signed-in user: any user, members
+       * included, reads and writes only their own value through bb's
+       * settings page, CLI, and SDK, and the server plugin reads it with
+       * `bb.settings.experimental_getForUser`. Defaults to `"team"`, one value
+       * that only admins can change. Secret settings cannot be per user.
+       */
+      experimental_scope?: PluginSettingScope;
       /** Stored in a 0600 file under <dataDir>/plugins/<id>/secrets/, never in the db or sent to the frontend. */
       secret?: true;
       /**
@@ -92,6 +100,14 @@ export type PluginSettingDescriptor =
       type: "boolean";
       label: string;
       description?: string;
+      /**
+       * `"user"` stores the value per signed-in user: any user, members
+       * included, reads and writes only their own value through bb's
+       * settings page, CLI, and SDK, and the server plugin reads it with
+       * `bb.settings.experimental_getForUser`. Defaults to `"team"`, one value
+       * that only admins can change. Secret settings cannot be per user.
+       */
+      experimental_scope?: PluginSettingScope;
       /** Synchronously validate without transforming a proposed value. */
       experimental_schema?: StandardSchemaV1<boolean, boolean>;
       default?: boolean;
@@ -100,6 +116,14 @@ export type PluginSettingDescriptor =
       type: "number";
       label: string;
       description?: string;
+      /**
+       * `"user"` stores the value per signed-in user: any user, members
+       * included, reads and writes only their own value through bb's
+       * settings page, CLI, and SDK, and the server plugin reads it with
+       * `bb.settings.experimental_getForUser`. Defaults to `"team"`, one value
+       * that only admins can change. Secret settings cannot be per user.
+       */
+      experimental_scope?: PluginSettingScope;
       experimental_schema?: StandardSchemaV1<number, number>;
       default?: number;
     }
@@ -107,6 +131,14 @@ export type PluginSettingDescriptor =
       type: "select";
       label: string;
       description?: string;
+      /**
+       * `"user"` stores the value per signed-in user: any user, members
+       * included, reads and writes only their own value through bb's
+       * settings page, CLI, and SDK, and the server plugin reads it with
+       * `bb.settings.experimental_getForUser`. Defaults to `"team"`, one value
+       * that only admins can change. Secret settings cannot be per user.
+       */
+      experimental_scope?: PluginSettingScope;
       options: string[];
       /** Display labels keyed by option value; options without one show the value itself. */
       experimental_optionLabels?: Record<string, string>;
@@ -118,12 +150,22 @@ export type PluginSettingDescriptor =
       type: "project";
       label: string;
       description?: string;
+      /**
+       * `"user"` stores the value per signed-in user: any user, members
+       * included, reads and writes only their own value through bb's
+       * settings page, CLI, and SDK, and the server plugin reads it with
+       * `bb.settings.experimental_getForUser`. Defaults to `"team"`, one value
+       * that only admins can change. Secret settings cannot be per user.
+       */
+      experimental_scope?: PluginSettingScope;
       /** Synchronously validate without transforming a proposed value. */
       experimental_schema?: StandardSchemaV1<string, string>;
       default?: string;
     };
 
 export type PluginSettingDescriptors = Record<string, PluginSettingDescriptor>;
+
+export type PluginSettingScope = "team" | "user";
 
 export type PluginSettingValue = string | number | boolean;
 
@@ -147,9 +189,17 @@ type PluginSettingValueOf<D extends PluginSettingDescriptor> = D extends {
 export interface PluginSettingsHandle<
   Ds extends Record<string, PluginSettingDescriptor>,
 > {
-  /** Load-safe: callable inside the factory. */
+  /**
+   * Load-safe: callable inside the factory. Fields with
+   * `experimental_scope: "user"` read as their default here; read a user's
+   * value with `bb.settings.experimental_getForUser`.
+   */
   get(): Promise<PluginSettingsValues<Ds>>;
-  /** Validate and persist this handle's fields; `null` unsets a stored value. */
+  /**
+   * Validate and persist this handle's team fields; `null` unsets a stored
+   * value. Rejects fields with `experimental_scope: "user"`: only the user
+   * changes their own value.
+   */
   experimental_set(
     values: Partial<{
       [K in keyof Ds]: PluginSettingValueOf<Ds[K]> | null;
@@ -168,6 +218,17 @@ export interface PluginSettings {
   define<Ds extends Record<string, PluginSettingDescriptor>>(
     descriptors: Ds,
   ): PluginSettingsHandle<Ds>;
+  /**
+   * Every defined setting as `userId` sees it: that user's stored value (or
+   * the default) for `experimental_scope: "user"` fields, and the team value
+   * for the rest, secrets included. Pass the authenticated caller's id
+   * (`experimental_callerUserId` in rpc and CLI contexts), never an id a
+   * client sent. A removed user's values are deleted with the account.
+   * `onChange` listeners do not fire for per-user writes.
+   */
+  experimental_getForUser(
+    userId: string,
+  ): Promise<Readonly<Record<string, PluginSettingValue | undefined>>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -200,6 +261,18 @@ export interface PluginStorage {
    * Append-only — never reorder or edit shipped statements.
    */
   migrate(db: Database.Database, statements: string[]): void;
+  /**
+   * Key-value rows private to one user, namespaced by plugin id and user id
+   * and deleted when that user is removed. Same limits as `kv`. Rejects an
+   * id that names no user. Pass the authenticated caller's id
+   * (`experimental_callerUserId` in rpc and CLI contexts), never an id a
+   * client sent: the host trusts the id it is given.
+   */
+  experimental_forUser(userId: string): ExperimentalPluginUserStorage;
+}
+
+export interface ExperimentalPluginUserStorage {
+  kv: PluginKvStorage;
 }
 
 // ---------------------------------------------------------------------------
@@ -897,14 +970,23 @@ export interface PluginRpc {
   ): void;
 }
 
+export interface ExperimentalPluginRealtimePublishOptions {
+  experimental_userId?: string;
+}
+
 export interface PluginRealtime {
   /**
    * Broadcast an ephemeral `plugin-signal` WS message
    * `{ pluginId, channel, payload }` to every connected client (V1 has no
    * per-channel subscriptions). `payload` must be JSON-serializable;
-   * `undefined` is normalized to `null`. Nothing is persisted.
+   * `undefined` is normalized to `null`. Nothing is persisted. With
+   * `experimental_userId`, only that user's connected clients receive it.
    */
-  publish(channel: string, payload: unknown): void;
+  publish(
+    channel: string,
+    payload: unknown,
+    options?: ExperimentalPluginRealtimePublishOptions,
+  ): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -959,6 +1041,12 @@ export interface PluginCliContext {
    * run when code calls `run` without one.
    */
   experimental_callerRole?: "admin" | "member";
+  /**
+   * The invoking user's id, taken from the request's credential by the
+   * server. bb always sets it; in local mode it is the local owner. Use it
+   * for `bb.storage.experimental_forUser` and per-user settings.
+   */
+  experimental_callerUserId?: string;
 }
 
 export type PluginInteractionCancelReason =

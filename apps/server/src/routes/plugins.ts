@@ -537,8 +537,10 @@ export function registerPluginRoutes(
         400,
       );
     }
+    const principal = requirePrincipal(context);
     const ctx: PluginCliContext = {
-      experimental_callerRole: requirePrincipal(context).role,
+      experimental_callerRole: principal.role,
+      experimental_callerUserId: principal.userId,
     };
     if (typeof body?.cwd === "string") ctx.cwd = body.cwd;
     if (typeof body?.threadId === "string") ctx.threadId = body.threadId;
@@ -826,25 +828,36 @@ export function registerPluginRoutes(
   };
 
   app.get("/plugins/:id/settings", async (context) => {
-    const view = await plugins.getSettings(context.req.param("id"));
+    const view = await plugins.getSettings(
+      context.req.param("id"),
+      requirePrincipal(context).userId,
+    );
     if (!view) return context.json(NOT_RUNNING, 404);
     return context.json({ ok: true, ...view });
   });
 
   app.put("/plugins/:id/settings", async (context) => {
-    assertAdmin(context);
     const json: unknown = await context.req.json().catch(() => null);
     const body = pluginSettingsUpdateRequestSchema.safeParse(json);
     if (!body.success) {
+      assertAdmin(context);
       return context.json(
         { ok: false, error: "expected { values: Record<string, unknown> }" },
         400,
       );
     }
+    const id = context.req.param("id");
+    if (
+      plugins.teamSettingKeys(id, body.data.values).length > 0 ||
+      Object.keys(body.data.values).length === 0
+    ) {
+      assertAdmin(context);
+    }
     try {
       const view = await plugins.updateSettings(
-        context.req.param("id"),
+        id,
         body.data.values,
+        requirePrincipal(context).userId,
       );
       if (!view) return context.json(NOT_RUNNING, 404);
       return context.json({ ok: true, ...view });
@@ -1034,7 +1047,13 @@ export function registerPluginRoutes(
       method,
       lookup.value,
       input,
-      callerResolution.caller,
+      {
+        experimental_caller: callerResolution.caller,
+        experimental_callerUserId:
+          callerResolution.caller.kind === "plugin"
+            ? null
+            : requirePrincipal(context).userId,
+      },
     );
     if (!outcome.ok) {
       return context.json(

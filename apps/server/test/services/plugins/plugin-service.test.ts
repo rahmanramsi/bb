@@ -24,7 +24,11 @@ import {
   upsertPluginMarketplace,
   type DbConnection,
 } from "@bb/db";
-import { PLUGIN_SDK_VERSION, type SystemChangeKind } from "@bb/domain";
+import {
+  PLUGIN_SDK_VERSION,
+  type SystemChangeKind,
+  LOCAL_OWNER_USER_ID,
+} from "@bb/domain";
 import type { Logger } from "@bb/logger";
 import { pluginListResponseSchema } from "@bb/server-contract";
 import { createAiServiceRegistry } from "../../../src/services/ai/ai-service-registry.js";
@@ -124,6 +128,7 @@ describe("plugin service", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -143,6 +148,7 @@ describe("plugin service", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -642,6 +648,7 @@ describe("plugin service", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -695,6 +702,7 @@ describe("plugin service", () => {
         hub: {
           getDaemonSessionIdForHost: () => null,
           notifyPluginSignal: () => 0,
+          notifyUserSystem: () => {},
           notifySystem: () => {},
         },
         logger: capturing,
@@ -785,6 +793,7 @@ describe("plugin service", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -814,6 +823,7 @@ describe("plugin service", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -1230,7 +1240,9 @@ describe("plugin service", () => {
     });
 
     it("keeps it unloaded when its settings are updated", async () => {
-      expect(await service.updateSettings("held-copy", {})).toBeUndefined();
+      expect(
+        await service.updateSettings("held-copy", {}, LOCAL_OWNER_USER_ID),
+      ).toBeUndefined();
       expectHeld();
     });
 
@@ -1289,6 +1301,7 @@ describe("plugin service", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -1304,11 +1317,23 @@ describe("plugin service", () => {
     });
     try {
       await observing.installPath(rootDir);
-      await observing.updateSettings("observed", { floor: "1" });
+      await observing.updateSettings(
+        "observed",
+        { floor: "1" },
+        LOCAL_OWNER_USER_ID,
+      );
       expect(changed).toEqual(["observed:1"]);
-      await observing.updateSettings("observed", { floor: "1" });
+      await observing.updateSettings(
+        "observed",
+        { floor: "1" },
+        LOCAL_OWNER_USER_ID,
+      );
       expect(changed).toEqual(["observed:1"]);
-      await observing.updateSettings("observed", { floor: null });
+      await observing.updateSettings(
+        "observed",
+        { floor: null },
+        LOCAL_OWNER_USER_ID,
+      );
       expect(changed).toEqual(["observed:1", "observed:60"]);
     } finally {
       await observing.stop();
@@ -1334,7 +1359,11 @@ describe("plugin service", () => {
       serverSource: serverSource("b"),
     });
     await service.installPath(checkoutA);
-    await service.updateSettings("moved", { floor: "1", token: "s3cret" });
+    await service.updateSettings(
+      "moved",
+      { floor: "1", token: "s3cret" },
+      LOCAL_OWNER_USER_ID,
+    );
     expect(
       db.$client
         .prepare("SELECT name FROM plugin_schedules WHERE plugin_id = ?")
@@ -1355,7 +1384,9 @@ describe("plugin service", () => {
       sourcePath: checkoutB,
       rootDir: checkoutB,
     });
-    expect((await service.getSettings("moved"))?.values).toEqual({
+    expect(
+      (await service.getSettings("moved", LOCAL_OWNER_USER_ID))?.values,
+    ).toEqual({
       floor: "1",
       token: { set: true },
     });
@@ -1373,7 +1404,9 @@ describe("plugin service", () => {
     expect(service.list().find((p) => p.id === "moved")?.status).toBe(
       "running",
     );
-    expect((await service.getSettings("moved"))?.values).toEqual({
+    expect(
+      (await service.getSettings("moved", LOCAL_OWNER_USER_ID))?.values,
+    ).toEqual({
       floor: "1",
       token: { set: true },
     });
@@ -1446,7 +1479,11 @@ describe("plugin service", () => {
         }`,
     });
     await service.installPath(checkoutA);
-    await service.updateSettings("brittle", { token: "s3cret" });
+    await service.updateSettings(
+      "brittle",
+      { token: "s3cret" },
+      LOCAL_OWNER_USER_ID,
+    );
 
     await expect(service.installPath(checkoutB)).rejects.toThrowError(
       /failed to start from path:.*boom at startup.*was kept/,
@@ -1465,7 +1502,9 @@ describe("plugin service", () => {
     });
     expect((globalThis as Record<string, unknown>).__brittleCheckout).toBe("a");
     expect(service.getApi("brittle")).toBeDefined();
-    expect((await service.getSettings("brittle"))?.values).toEqual({
+    expect(
+      (await service.getSettings("brittle", LOCAL_OWNER_USER_ID))?.values,
+    ).toEqual({
       token: { set: true },
     });
   });
@@ -1553,6 +1592,7 @@ describe("plugins-changed broadcast", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem,
       },
       logger,

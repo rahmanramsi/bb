@@ -190,6 +190,7 @@ function createService(args: {
     hub: {
       getDaemonSessionIdForHost: () => null,
       notifyPluginSignal: () => 0,
+      notifyUserSystem: () => {},
       notifySystem: () => {},
     },
     logger,

@@ -181,6 +181,62 @@ audit whether plugin HTTP routes, WebSocket
 routes, and agent tools need the same role, whether `experimental_caller`
 should also carry the role, and whether RPC discovery should publish it.
 
+## User-scoped plugin data (`ExperimentalPluginRpcHandlerContext.experimental_callerUserId`, `PluginCliContext.experimental_callerUserId`, `bb.storage.experimental_forUser`, `PluginSettingDescriptor.experimental_scope`, `bb.settings.experimental_getForUser`, and `bb.realtime.publish`'s `experimental_userId`)
+
+`experimental_callerUserId` is the user id of the principal that authenticated
+the plugin RPC or CLI request. The server takes it from the request's
+credential, never from the body, so a client cannot name another user. It is
+`null` in an RPC handler called by another plugin through
+`bb.sdk.plugins.callRpc`, or by bb itself (`invokeRpcHandler` from host
+removal and server-move status). In local mode it is the local owner. The fake
+plugin host defaults it to `"usr_local_owner"` for client callers and `null`
+for plugin callers. `callRpc` and `runCli` accept `experimental_callerUserId`.
+
+`bb.storage.experimental_forUser(userId)` returns `{ kv }` with the team kv's
+interface and 256KB limit. Rows live in `plugin_user_kv` keyed by plugin id,
+user id, and key, with a cascading foreign key to the user, so removing the
+user deletes them. It throws `unknown user "<id>"` for an id that names no
+user. The host trusts the id it receives, so plugins must pass
+`experimental_callerUserId` and never an id a client sent. Team `bb.storage.kv`
+and `database()` are unchanged.
+
+A non-secret settings descriptor with `experimental_scope: "user"` (the
+default is `"team"`) stores one value per user in `plugin_user_settings`, which
+also cascades on user removal and is deleted when the plugin is removed.
+`GET /api/v1/plugins/<id>/settings` returns the caller's own value for such
+fields. `PUT` lets any signed-in user, members included, write fields that are
+all per-user, for themselves; an update with any team field, or with no
+fields, still requires an admin. A per-user write notifies only that user's
+clients (`plugins-changed`) and does not fire `onChange`. A handle's `get()`
+returns per-user fields at their defaults, and `experimental_set` rejects
+them. `bb.settings.experimental_getForUser(userId)` returns every defined
+field as that user sees it. The app's settings form labels per-user fields
+`personal`, and `bb plugin config` reads and writes through the same route.
+The fake host offers `experimental_setUserSettings`, `experimental_removeUser`,
+and the `experimental_userIds` option.
+
+`bb.realtime.publish(channel, payload, { experimental_userId })` sends the
+`plugin-signal` only to sockets registered for that user, through the hub's
+per-user socket map; omitting the option keeps the team broadcast. The fake
+host records `experimental_userId` on targeted signals.
+
+Core caller: Thread list stores sidebar preferences with
+`experimental_forUser(experimental_callerUserId)` from its RPC handlers and
+`bb thread-list prefs` commands, and it publishes each change only to that
+user. It refuses callers without a user id. Values stored team-wide earlier
+are read as a user's value until that user sets or resets their own. The
+server suite `multi-user-plugin-data.test.ts` covers isolation between two
+users, cascades, targeted delivery, the settings role split, and local mode.
+
+This lands before the general caller identity work. Once
+`experimental_caller` carries the authenticated user, fold
+`experimental_callerUserId` into it with one project-wide rename. Before
+stabilizing, also audit whether plugin HTTP routes, WebSocket handlers, and
+agent tools need the same id, whether plugin state snapshots and rollback
+should include per-user rows (they do not today), whether per-user settings
+need their own change listener, and whether user removal should notify loaded
+plugins.
+
 ## `bb.http.experimental_websocket`
 
 **What it does.** Registers an exact-path WebSocket upgrade in the plugin's
