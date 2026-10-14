@@ -36,6 +36,12 @@ beforeEach(async () => {
       requests.push(request);
       if (request.url.endsWith("/auth/session"))
         return Response.json({ authMode: "multi" });
+      if (request.url.endsWith("/me"))
+        return Response.json({
+          user,
+          effectiveRole: "member",
+          roleCeiling: "member",
+        });
       if (
         request.url.endsWith("/users") ||
         request.url.endsWith("/users/directory")
@@ -106,6 +112,16 @@ describe("CLI authentication", () => {
       "devbox",
     );
     expect(stored.servers["http://other"].authToken).toBe("bbpat_other");
+  });
+
+  it("shows the effective role of a capped credential and keeps login output to the user", async () => {
+    const log = vi.mocked(console.log);
+    await run(["whoami"]);
+    expect(log).toHaveBeenLastCalledWith(
+      "u  user@example.test  member (credential capped at member; account role admin)",
+    );
+    await run(["login", "--token", "bbpat_saved", "--json"]);
+    expect(JSON.parse(String(log.mock.calls.at(-1)?.[0]))).toEqual({ user });
   });
 
   it.each([

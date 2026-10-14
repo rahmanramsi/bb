@@ -70,7 +70,10 @@ option, `bb login` reads a PAT from a hidden prompt or standard input. Login
 validates the credential before saving it to the server origin's profile in
 `<BB_DATA_DIR>/client.json`, with file permissions `0600`. `BB_SERVER_URL`
 selects the server; `BB_TOKEN` overrides its saved token for CLI requests,
-including plugin commands. `bb whoami [--json]` shows the current user.
+including plugin commands. `bb whoami [--json]` shows the current user and
+the role the credential acts with: a member-capped `BB_TOKEN` reports
+`effectiveRole: "member"` and `roleCeiling: "member"` even after its user is
+promoted, and the text output names the cap and the account role.
 `bb logout [--json]` removes only that profile's saved login. It does not
 revoke the PAT or unset `BB_TOKEN`.
 

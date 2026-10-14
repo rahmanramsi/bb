@@ -16,7 +16,8 @@ export const JSON_SHAPE_BY_COMMAND_PATH: Readonly<Record<string, string>> = {
     "{entries: [{id, createdAt, input, projectId, threadId, scope}], nextCursor: string | null}    (only the caller's prompts)",
   login: "{user: {id, name, email, role}}",
   logout: "{ok: true}",
-  whoami: "{user: {id, name, email, role}}",
+  whoami:
+    '{user: {id, name, email, role}, effectiveRole, roleCeiling: "member"|null}',
   "user connect-members list": "{members: [{userId, email, role}]}",
   "user connect-members add": "{member: {userId, email, role}}",
   "user connect-members remove": "{ok: true}",

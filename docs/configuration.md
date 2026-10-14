@@ -1950,7 +1950,10 @@ option, `bb login` reads a PAT from a hidden prompt or standard input. Login
 validates the credential before saving it to the server origin's profile in
 `<BB_DATA_DIR>/client.json`, with file permissions `0600`. `BB_SERVER_URL`
 selects the server; `BB_TOKEN` overrides its saved token for CLI requests,
-including plugin commands. `bb whoami [--json]` shows the current user.
+including plugin commands. `bb whoami [--json]` shows the current user and
+the role the credential acts with: a member-capped `BB_TOKEN` reports
+`effectiveRole: "member"` and `roleCeiling: "member"` even after its user is
+promoted, and the text output names the cap and the account role.
 `bb logout [--json]` removes only that profile's saved login. It does not
 revoke the PAT or unset `BB_TOKEN`.
 
@@ -1970,8 +1973,10 @@ the current user's PATs. New token values are shown once. A member-capped
 Roles are guardrails for a trusted team. A member who runs an agent effectively
 has shell access to its host. In multi mode, each turn supplies a signed
 seven-day `BB_TOKEN` to the agent shell through the launch environment. For a
-turn a user sent, it authenticates as that user with their current role. For a
-turn no user sent, or that a plugin or other service credential sent, it
+turn a user sent, it authenticates as that user with their current role. The
+first turn of a thread a user creates, that turn restarted after its environment
+is provisioned again, and a manual context compaction count as sent by the user
+who requested them. For a turn no user sent, or that a plugin or other service credential sent, it
 authenticates as the thread creator only if the creator exists and is a member
 when the turn starts, and it stays capped at member even if that user is later
 promoted to admin. The cap carries over to work the capped token requests: a
@@ -2022,7 +2027,8 @@ with any other credential, and the timeline shows the error
 `turn_request_author_unknown`: the message was not delivered and must be sent
 again.
 
-`GET /api/v1/me` returns the authenticated user. Admins update roles with
+`GET /api/v1/me` returns the authenticated user, the role the credential acts
+with as `effectiveRole`, and its `roleCeiling` (`"member"` or null). Admins update roles with
 `PUT /api/v1/users/:id/role` (`{"role":"admin"|"member"}`) and remove accounts
 with `DELETE /api/v1/users/:id`. Invite management uses
 `GET /api/v1/auth/invites` and `DELETE /api/v1/auth/invites/:id`.

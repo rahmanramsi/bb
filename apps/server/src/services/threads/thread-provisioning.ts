@@ -1,6 +1,7 @@
 import {
   getLatestThreadSequence,
   getNonDestroyedHostByLaunchKey,
+  getTurnRequestAuthor,
 } from "@bb/db";
 import { sweepProviderMachine } from "../machines/provider-orchestration.js";
 import { cancelProviderEnvironmentCreation } from "../environments/environment-engine.js";
@@ -269,9 +270,13 @@ async function startThreadIfEnvironmentReady(
     throw new Error("Thread provisioning that starts a run has no execution");
   }
 
+  const author = getTurnRequestAuthor(deps.db, {
+    requestId: args.context.request.clientRequestId,
+    threadId: args.thread.id,
+  });
   await requestThreadStart(deps, {
-    authorRoleCeiling: null,
-    authorUserId: null,
+    authorRoleCeiling: author?.authorRoleCeiling ?? null,
+    authorUserId: author?.authorUserId ?? null,
     thread: args.thread,
     environment: {
       id: args.environment.id,
