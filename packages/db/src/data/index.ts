@@ -447,6 +447,7 @@ export {
   deleteQueuedRetriesForThreadEventSuffixInTransaction,
   deleteClaimedQueuedThreadMessageBatchInTransaction,
   deleteQueuedThreadMessage,
+  deleteQueuedThreadMessagesByAuthorInTransaction,
   getQueuedThreadMessage,
   hasQueuedRetryOfTurnRequest,
   hasClaimedQueuedThreadMessages,
@@ -526,3 +527,8 @@ export {
 export * from "./project-attachments.js";
 
 export * from "./project-attachment-backfill.js";
+export {
+  getTurnRequestAuthor,
+  recordTurnRequestAuthorInTransaction,
+} from "./turn-request-authors.js";
+export type { TurnRequestAuthor } from "./turn-request-authors.js";

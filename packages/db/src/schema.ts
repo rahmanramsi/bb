@@ -941,6 +941,23 @@ export const events = sqliteTable(
   ],
 );
 
+export const turnRequestAuthors = sqliteTable(
+  "turn_request_authors",
+  {
+    threadId: text("thread_id")
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    requestId: text("request_id").notNull(),
+    authorUserId: text("author_user_id").references(() => authUsers.id, {
+      onDelete: "cascade",
+    }),
+    authorRoleCeiling: text("author_role_ceiling", {
+      enum: roleCeilingValues,
+    }),
+  },
+  (table) => [primaryKey({ columns: [table.threadId, table.requestId] })],
+);
+
 export const retainedEventOutputs = sqliteTable(
   "retained_event_outputs",
   {

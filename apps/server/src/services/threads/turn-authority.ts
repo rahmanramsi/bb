@@ -2,13 +2,17 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import {
   createQueuedThreadMessageInTransaction,
   events,
+  getTurnRequestAuthor,
+  getThread,
   type DbNotifier,
   type DbQueryConnection,
   type DbTransaction,
+  type TurnRequestAuthor,
 } from "@bb/db";
 import {
   systemMessageKindSchema,
   systemMessageSubjectSchema,
+  threadScope,
   type ThreadRecord,
 } from "@bb/domain";
 import type { HostDaemonCommand } from "@bb/host-daemon-contract";
@@ -18,11 +22,10 @@ import {
   resolveThreadShellCredential,
   type ThreadShellCredential,
 } from "./thread-runtime-config.js";
-import { getActiveTurnId } from "./thread-events.js";
 import {
-  readTurnRequestAuthor,
-  type TurnAuthor,
-} from "./turn-request-authors.js";
+  appendSystemErrorEventInTransaction,
+  getActiveTurnId,
+} from "./thread-events.js";
 
 function latestTurnStartRequestId(
   db: DbQueryConnection,
@@ -96,7 +99,7 @@ export function runningTurnBindingHolds(
 export function sharesRunningTurnAuthority(
   deps: Pick<AppDeps, "config" | "db">,
   args: {
-    author: TurnAuthor;
+    author: TurnRequestAuthor;
     binding: RunningTurnBinding;
     thread: ThreadRecord;
   },
@@ -104,7 +107,7 @@ export function sharesRunningTurnAuthority(
   if (deps.config.authMode !== "multi") return true;
   const requestId = args.binding.turnStartRequestId;
   if (requestId === null) return false;
-  const runningAuthor = readTurnRequestAuthor({
+  const runningAuthor = getTurnRequestAuthor(deps.db, {
     requestId,
     threadId: args.thread.id,
   });
@@ -117,6 +120,8 @@ export function sharesRunningTurnAuthority(
     resolveThreadShellCredential(deps, { ...args.author, thread: args.thread }),
   );
 }
+
+const TURN_REQUEST_AUTHOR_UNKNOWN_ERROR_CODE = "turn_request_author_unknown";
 
 const refusedTurnRequestSchema = z.object({
   senderThreadId: z.string().nullable(),
@@ -142,16 +147,27 @@ export function requeueTurnSubmitRefusedForBindingInTransaction(
     .get();
   if (row === undefined) return;
   const request = refusedTurnRequestSchema.parse(JSON.parse(row.data));
-  const author = readTurnRequestAuthor({
+  const author = getTurnRequestAuthor(deps.db, {
     requestId: command.requestId,
     threadId: command.threadId,
   });
+  if (author === null) {
+    appendSystemErrorEventInTransaction(deps, {
+      threadId: command.threadId,
+      environmentId: getThread(deps.db, command.threadId)?.environmentId ?? null,
+      code: TURN_REQUEST_AUTHOR_UNKNOWN_ERROR_CODE,
+      message:
+        "A message was not delivered because its sender could not be verified. Send it again.",
+      scope: threadScope(),
+    });
+    return;
+  }
   createQueuedThreadMessageInTransaction(deps.db, {
     threadId: command.threadId,
     content: command.input,
     senderThreadId: request.senderThreadId,
-    authorUserId: author?.authorUserId ?? null,
-    authorRoleCeiling: author?.authorRoleCeiling ?? null,
+    authorUserId: author.authorUserId,
+    authorRoleCeiling: author.authorRoleCeiling,
     origin: null,
     originPluginId: null,
     model: command.options.model,

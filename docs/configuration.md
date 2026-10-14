@@ -1955,8 +1955,9 @@ including plugin commands. `bb whoami [--json]` shows the current user.
 revoke the PAT or unset `BB_TOKEN`.
 
 Admins use `bb user list`, `bb user role USER_ID admin|member`, and
-`bb user remove USER_ID`. System users and the last account admin cannot be
-removed or demoted. `bb invite create [--email EMAIL] [--role admin|member]`
+`bb user remove USER_ID`. Removing a user also deletes their queued and
+scheduled messages. System users and the last account admin cannot be removed
+or demoted. `bb invite create [--email EMAIL] [--role admin|member]`
 prints a seven-day, single-use token. `bb invite list` lists pending unexpired
 invites without tokens; `bb invite revoke ID` invalidates one. New users run
 `bb invite accept TOKEN --email EMAIL --name NAME` and enter their password,
@@ -2012,6 +2013,14 @@ against the new turn: a notice waits in the queue, and any other message
 follows the interrupt rule above. The host never steers a message into a turn
 other than the one it was checked against; it hands the message back to the
 queue instead.
+
+bb stores each message's author and role ceiling with its turn request, so a
+message handed back keeps them, including after a server restart. If bb cannot
+recover the author, for example because an older bb version accepted the
+message or its author was removed, it drops the message rather than running it
+with any other credential, and the timeline shows the error
+`turn_request_author_unknown`: the message was not delivered and must be sent
+again.
 
 `GET /api/v1/me` returns the authenticated user. Admins update roles with
 `PUT /api/v1/users/:id/role` (`{"role":"admin"|"member"}`) and remove accounts
