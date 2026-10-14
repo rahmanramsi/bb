@@ -123,10 +123,18 @@ export function resolvePermissionEscalation(
   return "ask";
 }
 
-function threadShellCredential(
-  deps: LoggedWorkSessionDeps,
-  args: ResolveThreadRuntimeCommandConfigArgs,
-): { userId: string; roleCeiling: RoleCeiling | null } | null {
+export interface ThreadShellCredential {
+  roleCeiling: RoleCeiling | null;
+  userId: string;
+}
+
+export function resolveThreadShellCredential(
+  deps: Pick<LoggedWorkSessionDeps, "db">,
+  args: Pick<
+    ResolveThreadRuntimeCommandConfigArgs,
+    "authorRoleCeiling" | "authorUserId" | "thread"
+  >,
+): ThreadShellCredential | null {
   if (args.authorUserId !== null && !isSystemUserId(args.authorUserId)) {
     return { userId: args.authorUserId, roleCeiling: args.authorRoleCeiling };
   }
@@ -234,7 +242,7 @@ export async function resolveThreadRuntimeCommandConfig(
       )
         contributedEnv.splice(index, 1);
     }
-    const shellCredential = threadShellCredential(deps, args);
+    const shellCredential = resolveThreadShellCredential(deps, args);
     if (shellCredential !== null) {
       const token = await issueThreadShellToken(
         deps.config.dataDir,

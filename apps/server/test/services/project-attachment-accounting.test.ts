@@ -119,6 +119,7 @@ describe("project attachment accounting", () => {
       });
       const result = updateQueuedThreadMessage(h.db, h.hub, {
         editorRoleCeiling: null,
+        editorUserId: null,
         id: queued.id,
         threadId: thread.id,
         expectedUpdatedAt: queued.updatedAt,
@@ -136,6 +137,7 @@ describe("project attachment accounting", () => {
       expect(
         updateQueuedThreadMessage(h.db, h.hub, {
           editorRoleCeiling: null,
+          editorUserId: null,
           id: queued.id,
           threadId: thread.id,
           expectedUpdatedAt: queued.updatedAt,

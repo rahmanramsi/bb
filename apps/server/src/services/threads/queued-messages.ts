@@ -568,6 +568,10 @@ async function sendClaimedQueuedMessageForIdleProviderThread(
         throw createQueuedMessageClaimLostError();
       }
       const request = appendClientTurnEventInTransaction(tx, {
+        author: {
+          authorRoleCeiling: args.queuedMessages[0]!.authorRoleCeiling,
+          authorUserId: queuedMessage.authorUserId,
+        },
         environmentId: thread.environmentId,
         execution,
         initiator,

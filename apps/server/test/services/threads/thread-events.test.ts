@@ -58,6 +58,7 @@ describe("thread event appends", () => {
       const turnId = "turn-active";
       const providerThreadId = "provider-thread-active";
       const initialRequest = appendClientTurnEvent(harness.deps, {
+        author: { authorRoleCeiling: null, authorUserId: null },
         threadId: thread.id,
         environmentId: environment.id,
         type: "client/turn/requested",
@@ -93,6 +94,7 @@ describe("thread event appends", () => {
         },
       });
       const compactSteer = appendClientTurnEvent(harness.deps, {
+        author: { authorRoleCeiling: null, authorUserId: null },
         threadId: thread.id,
         environmentId: environment.id,
         type: "client/turn/requested",
@@ -320,6 +322,7 @@ describe("thread event appends", () => {
       const notifyThreadSpy = vi.spyOn(harness.deps.hub, "notifyThread");
 
       appendClientTurnEvent(harness.deps, {
+        author: { authorRoleCeiling: null, authorUserId: null },
         threadId: thread.id,
         environmentId: environment.id,
         type: "client/turn/requested",

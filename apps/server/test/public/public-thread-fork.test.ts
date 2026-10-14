@@ -941,6 +941,7 @@ describe("public thread fork route", () => {
           authorUserId: LOCAL_OWNER_USER_ID,
           beforeAppendInTransaction: ({ tx }) => {
             appendClientTurnEventInTransaction(tx, {
+              author: { authorRoleCeiling: null, authorUserId: null },
               environmentId: thread.environmentId,
               execution: {
                 model: "gpt-5",

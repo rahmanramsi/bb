@@ -114,6 +114,17 @@ and is masked in runtime environment displays. Threads created before multi
 mode and threads a plugin creates without a parent have no creator to fall back
 to. In local mode, shells need no credential.
 
+A running turn keeps the `BB_TOKEN` it started with, so in multi mode a
+message steers into it only when it would get the same credential: the same
+user with the same role ceiling, or no token for both. A message from anyone
+else, including a plugin, an automation, or the same user's member-capped
+`BB_TOKEN`, interrupts the running turn instead and starts as a new turn with
+its own credential under the rules above. The timeline shows the interruption
+as stopped because another author sent a message, and the send answers
+`delivery: "queued"` until the new turn starts. A queued message that another
+user or a plugin edits is attributed to the editor and runs with the editor's
+credential.
+
 Plugin RPC methods and commands that change server-wide settings, such as
 `bb concurrency-limit global 0` or `bb pool routing claude`, are admin-only and
 fail for members with `admin_required`. Session cookies are `Secure` when

@@ -29,6 +29,7 @@ export type SystemMessageKind = z.infer<typeof systemMessageKindSchema>;
 
 export const systemThreadInterruptedReasonSchema = z.enum([
   "manual-stop",
+  "other-author",
   "host-daemon-restarted",
   "host-removed",
   "provider-turn-idle",

@@ -385,6 +385,7 @@ function lifecycleEventForInterruptedThread(
   switch (reason) {
     case "host-removed":
     case "manual-stop":
+    case "other-author":
       return { type: "stop.settled" };
     case "host-daemon-restarted":
     case "host-connection-lost":
@@ -403,6 +404,8 @@ function pendingInteractionStopReason(
       return "Thread stopped because the machine was removed";
     case "manual-stop":
       return "Thread stopped by user request";
+    case "other-author":
+      return "Thread stopped to start a message from another author";
     case "host-daemon-restarted":
       return "Host daemon restarted while awaiting user interaction";
     case "host-connection-lost":
@@ -420,6 +423,7 @@ function threadCommandFailureMessageForInterruption(
   switch (reason) {
     case "host-removed":
     case "manual-stop":
+    case "other-author":
       return null;
     case "host-daemon-restarted":
       return "Thread interrupted because the host daemon disconnected";
@@ -440,6 +444,8 @@ function threadCommandFailureDetailForInterruption(
       return "Thread stopped because the machine was removed";
     case "manual-stop":
       return "Thread stopped by user request";
+    case "other-author":
+      return "Thread stopped to start a message from another author";
     case "host-daemon-restarted":
     case "host-connection-lost":
       return "Please retry the thread to continue.";
@@ -1556,6 +1562,22 @@ export function requestThreadStopForCurrentState(
   ) {
     requestPreStartThreadStop(deps, thread);
   }
+}
+
+export function requestThreadInterruptForOtherAuthor(
+  deps: RequestThreadStopForCurrentStateDeps,
+  thread: RequestThreadStopForCurrentStateThread,
+  environment: RequestThreadStopForCurrentStateEnvironment,
+): void {
+  if (!hasLiveThreadRuntime(deps, thread)) {
+    return;
+  }
+  requestThreadStop(deps, {
+    environmentId: environment.id,
+    hostId: environment.hostId,
+    interruptionReason: "other-author",
+    threadId: thread.id,
+  });
 }
 
 export async function stopThreadForCurrentState(
