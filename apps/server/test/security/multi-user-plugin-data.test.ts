@@ -38,7 +38,9 @@ const DATA_PLUGIN_SOURCE = `
       },
       teamName: { type: "string", label: "Team name", default: "eng" },
     });
-    const mine = (context: any) => bb.storage.experimental_forUser(context.experimental_callerUserId);
+    const callerUserId = (context: any) =>
+      context.experimental_caller.kind === "client" ? context.experimental_caller.userId : null;
+    const mine = (context: any) => bb.storage.experimental_forUser(callerUserId(context));
     bb.rpc.register(
       {
         whoami: { input: passthrough, output: passthrough },
@@ -48,11 +50,12 @@ const DATA_PLUGIN_SOURCE = `
         storageFor: { input: passthrough, output: passthrough },
         mySettings: { input: passthrough, output: passthrough },
         teamSettings: { input: passthrough, output: passthrough },
+        setSettings: { input: passthrough, output: passthrough },
         publishMine: { input: passthrough, output: passthrough },
         publishTeam: { input: passthrough, output: passthrough },
       },
       {
-        whoami: (_input: any, context: any) => ({ userId: context.experimental_callerUserId }),
+        whoami: (_input: any, context: any) => ({ userId: callerUserId(context) }),
         saveMine: async (input: any, context: any) => {
           await mine(context).kv.set(input.key, input.value);
           return null;
@@ -69,10 +72,14 @@ const DATA_PLUGIN_SOURCE = `
             return { error: error.message };
           }
         },
-        mySettings: (_input: any, context: any) => bb.settings.experimental_getForUser(context.experimental_callerUserId),
+        mySettings: (_input: any, context: any) => bb.settings.experimental_getForUser(callerUserId(context)),
         teamSettings: () => settings.get(),
+        setSettings: async (input: any) => {
+          await settings.experimental_set(input);
+          return null;
+        },
         publishMine: (input: any, context: any) => {
-          bb.realtime.publish("prefs", input, { experimental_userId: context.experimental_callerUserId });
+          bb.realtime.publish("prefs", input, { experimental_userId: callerUserId(context) });
           return null;
         },
         publishTeam: (input: any) => {
@@ -377,6 +384,54 @@ describe("user-scoped plugin settings", () => {
         .where(eq(pluginUserSettings.userId, team.memberId))
         .all(),
     ).toEqual([]);
+  });
+});
+
+describe("settings writes inside a member's invocation", () => {
+  it("refuses plugin team writes for a member while the member still saves their own per-user setting", async () => {
+    server = await startTestServer({ authMode: "multi" });
+    await installDataPlugin(server);
+    const team = await bootstrapTeam();
+    const setSettings = (headers: Record<string, string>, values: unknown) =>
+      request("POST", "/api/v1/plugins/data/rpc/setSettings", headers, values);
+
+    for (const values of [{ teamName: "ops" }, { density: "compact" }]) {
+      const refused = await setSettings(team.member, values);
+      expect(refused.status).toBe(403);
+      expect(await refused.json()).toMatchObject({
+        ok: false,
+        error: { code: "forbidden" },
+      });
+    }
+    const ownWrite = await request(
+      "PUT",
+      "/api/v1/plugins/data/settings",
+      team.member,
+      { values: { density: "compact" } },
+    );
+    expect(ownWrite.status).toBe(200);
+    const teamWrite = await request(
+      "PUT",
+      "/api/v1/plugins/data/settings",
+      team.member,
+      { values: { teamName: "ops" } },
+    );
+    expect(teamWrite.status).toBe(403);
+
+    expect((await setSettings(team.admin, { teamName: "ops" })).status).toBe(200);
+    const adminUserWrite = await setSettings(team.admin, { density: "compact" });
+    expect(adminUserWrite.status).toBe(500);
+    expect(JSON.stringify(await adminUserWrite.json())).toContain(
+      "is a per-user setting",
+    );
+    expect(await rpc("mySettings", null, team.member)).toEqual({
+      density: "compact",
+      teamName: "ops",
+    });
+    expect(await rpc("mySettings", null, team.admin)).toEqual({
+      density: "cozy",
+      teamName: "ops",
+    });
   });
 });
 

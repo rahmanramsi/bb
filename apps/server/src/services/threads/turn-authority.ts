@@ -168,7 +168,8 @@ export function requeueTurnSubmitRefusedForBindingInTransaction(
   if (author === null) {
     appendTurnRequestAuthorUnknownEventInTransaction(deps, {
       threadId: command.threadId,
-      environmentId: getThread(deps.db, command.threadId)?.environmentId ?? null,
+      environmentId:
+        getThread(deps.db, command.threadId)?.environmentId ?? null,
     });
     return;
   }
@@ -196,4 +197,24 @@ export function requeueTurnSubmitRefusedForBindingInTransaction(
           },
   });
   deps.hub.notifyThread(command.threadId, ["queue-changed"]);
+}
+
+export function readRunningTurnAuthorCredential(
+  deps: Pick<AppDeps, "db">,
+  args: { thread: ThreadRecord; turnId: string },
+): ThreadShellCredential | null {
+  const binding = readRunningTurnBinding(deps.db, args.thread.id);
+  if (
+    binding.activeTurnId !== args.turnId ||
+    binding.turnStartRequestId === null
+  ) {
+    return null;
+  }
+  const author = getTurnRequestAuthor(deps.db, {
+    requestId: binding.turnStartRequestId,
+    threadId: args.thread.id,
+  });
+  return author === null
+    ? null
+    : resolveThreadShellCredential(deps, { ...author, thread: args.thread });
 }

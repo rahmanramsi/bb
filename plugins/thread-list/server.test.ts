@@ -9,6 +9,18 @@ const LOCAL_OWNER = "usr_local_owner";
 const ALICE = "usr_alice";
 const BOB = "usr_bob";
 
+function asUser(userId: string) {
+  return {
+    experimental_caller: {
+      kind: "client",
+      userId,
+      role: "member",
+      roleCeiling: null,
+      effectiveRole: "member",
+    },
+  } as const;
+}
+
 function mine(bb: BbPluginApi, userId = LOCAL_OWNER) {
   return bb.storage.experimental_forUser(userId).kv;
 }
@@ -315,18 +327,14 @@ describe("per-user sidebar preferences", () => {
     await harness.behavior.callRpc(
       "setPreference",
       { key: "organizationMode", value: "machine" },
-      { experimental_callerUserId: ALICE },
+      asUser(ALICE),
     );
 
     await expect(
-      harness.behavior.callRpc("listPreferences", null, {
-        experimental_callerUserId: ALICE,
-      }),
+      harness.behavior.callRpc("listPreferences", null, asUser(ALICE)),
     ).resolves.toMatchObject({ preferences: { organizationMode: "machine" } });
     await expect(
-      harness.behavior.callRpc("listPreferences", null, {
-        experimental_callerUserId: BOB,
-      }),
+      harness.behavior.callRpc("listPreferences", null, asUser(BOB)),
     ).resolves.toMatchObject({
       preferences: { organizationMode: "chronological" },
     });
@@ -345,8 +353,8 @@ describe("per-user sidebar preferences", () => {
     const { bb, harness } = setup();
     await bb.storage.kv.set("preference:organizationMode", "machine");
     await plugin(bb);
-    const asAlice = { experimental_callerUserId: ALICE };
-    const asBob = { experimental_callerUserId: BOB };
+    const asAlice = asUser(ALICE);
+    const asBob = asUser(BOB);
 
     await expect(
       harness.behavior.callRpc("listPreferences", null, asAlice),
@@ -380,7 +388,7 @@ describe("per-user sidebar preferences", () => {
       }),
     ).rejects.toThrow(/belong to a signed-in user/);
     const cli = await harness.behavior.runCli(["prefs", "list"], {
-      experimental_callerUserId: undefined,
+      experimental_caller: { kind: "system" },
     });
     expect(cli.exitCode).not.toBe(0);
     expect(cli.stderr).toMatch(/belong to a signed-in user/);
@@ -391,7 +399,7 @@ describe("per-user sidebar preferences", () => {
     await plugin(bb);
     const set = await harness.behavior.runCli(
       ["prefs", "set", "organizationMode", "project"],
-      { experimental_callerUserId: BOB },
+      asUser(BOB),
     );
     expect(set.exitCode).toBe(0);
     await expect(mine(bb, BOB).get("preference:organizationMode")).resolves.toBe(

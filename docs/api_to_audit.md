@@ -112,30 +112,57 @@ Before stabilization, audit whether holds need an owner token so two clients edi
 
 Before stabilization, audit whether the response should report retained-but-unused sizes so a UI can show reclaimable space without a dry run, and whether stale `.staging`, `.promoting`, and `.corrupt` directories left by crashes should be collected too.
 
-## RPC caller identity (`ExperimentalPluginRpcHandlerContext.experimental_caller`)
+## Plugin caller identity (`ExperimentalPluginCaller`, `experimental_caller`)
 
-Every `bb.rpc.register` handler receives a second argument, an
-`ExperimentalPluginRpcHandlerContext`; `register` takes an
-`ExperimentalPluginRpcHandlersWithContext` map, and a one-argument
-`PluginRpcHandlers` map still assigns to it, so plugins that call their own
-handlers directly keep compiling. `experimental_caller` is an
-`ExperimentalPluginRpcCaller`: `{ kind: "plugin", pluginId }` when a loaded
-plugin called through its own `bb.sdk.plugins.callRpc`, and `{ kind: "client" }`
-for every other caller (the app, the `bb` CLI, agents, and bb itself). The
-server gives each plugin load an unguessable caller token kept only in server
-memory, attaches it to that load's `bb.sdk.plugins.callRpc` requests in the
-`x-bb-plugin-caller` header, and revokes it when the load is disposed or
-replaced. The rpc route answers 403 for any token that is not a live load's,
-so a client can't claim to be a plugin. The fake plugin host's
-`harness.callRpc(method, input, { experimental_caller })` sets the caller for
-tests and defaults to the client. Requires SDK 0.6.3.
+Every plugin entry point learns who called it. `bb.rpc.register` handlers
+receive a second argument, an `ExperimentalPluginRpcHandlerContext`;
+`register` takes an `ExperimentalPluginRpcHandlersWithContext` map, and a
+one-argument `PluginRpcHandlers` map still assigns to it. HTTP route handlers
+receive an `ExperimentalPluginCallerContext` as their second argument;
+`ExperimentalPluginWebSocketContext`, `PluginAgentToolContext`, and
+`PluginCliContext` carry `experimental_caller` (the CLI keeps
+`experimental_callerRole`, now the caller's effective role).
 
-Before stabilizing, audit whether other surfaces (HTTP routes, agent tools,
-CLI commands) need the same identity, whether a plugin needs to know the
-calling app window or thread, and whether in-process plugins that read other
-plugins' memory make the token a meaningful boundary for third-party plugins.
-bb account relies on it to keep `/api/connect/` requests, credential reads,
+`ExperimentalPluginCaller` (alias `ExperimentalPluginRpcCaller`) is:
+
+- `{ kind: "client", userId, role, roleCeiling, effectiveRole }` for an
+  authenticated person. `role` is the account role read at request time,
+  `roleCeiling` is the credential's cap (`"member"` for a capped `BB_TOKEN`),
+  and `effectiveRole` is the request principal's role. For an agent tool it is
+  the author of the running turn the call belongs to, with the role ceiling
+  that turn's `BB_TOKEN` carries (`resolveThreadShellCredential`). In local
+  mode every client is the local owner admin. The server takes `userId` from
+  the request's credential, never from its body, so it is the key for
+  user-scoped plugin data (below).
+- `{ kind: "plugin", pluginId }` when a loaded plugin called through its own
+  `bb.sdk.plugins.callRpc`. The server gives each plugin load an unguessable
+  caller token kept only in server memory, attaches it in the
+  `x-bb-plugin-caller` header, and revokes it when the load is disposed or
+  replaced. The rpc route answers 403 for any token that is not a live load's.
+- `{ kind: "system" }` for bb itself: the server service credential without a
+  plugin token, core's own calls (host removal, server move), and agent tool
+  calls whose turn has no human author or whose turn id is not the thread's
+  running turn. A tool's `system` caller has member authority, so admin-only
+  tools refuse it.
+
+The fake plugin host sets the caller through `harness.callRpc(method, input,
+{ experimental_caller })`, `fetchHttp(method, path, init, { experimental_caller })`,
+`experimental_openWebSocket(path, init, { experimental_caller })`, and the
+`runCli` and `callAgentTool` contexts. Every one defaults to an admin client
+with user id `"usr_local_owner"`, the fake host's local owner. The change is breaking for code that constructed
+`{ kind: "client" }` without the user fields; readers of `kind` are unaffected.
+
+Before stabilizing, audit whether a plugin needs to know the calling app
+window or thread, whether in-process plugins that read other plugins' memory
+make the plugin token a meaningful boundary, whether a plugin called through
+another plugin's `experimental_asCaller` SDK should learn the person behind it,
+and whether `role` should be read once per request. bb account relies on the
+plugin kind to keep `/api/connect/` requests, credential reads,
 refused-credential reports, and credential adoption to the connect plugin.
+Core callers: the plugin rpc, HTTP, WebSocket, CLI, and tool-call routes build
+the caller through `pluginCallerForPrincipal` and `pluginCallerForTurnAuthor`;
+Side chat reads it through `experimental_asCaller`, and Thread list keys its
+per-user preferences by the `client` caller's `userId`.
 
 ## Admin-only RPC methods and CLI commands
 
@@ -169,6 +196,23 @@ call it only when they write. A missing role counts as a member. The fake plugin
 host defaults `runCli` to an admin context and `callRpc` to an admin caller,
 with `experimental_callerRole: "member"` to test refusals.
 
+`bb.http.route` and `bb.http.experimental_websocket` options and
+`registerTool` accept the same `experimental_requiredRole: "admin"`. Core
+checks the request's effective authority before the handler runs: an HTTP
+route answers 403 `{ ok: false, error: { code: "forbidden", message } }`, a
+WebSocket upgrade answers 403 and never opens, and a tool call returns an
+error result to the agent. The RPC route uses the same check
+(`pluginRequiredRoleRefusal`), and the fake host enforces it identically.
+
+`settings.experimental_set` refuses with `experimental_PluginRpcForbiddenError`
+(RPC 403 `forbidden`) when it runs inside an entry-point invocation whose
+authority is not admin. Core knows the in-flight caller because every
+invocation (rpc handler, HTTP route, WebSocket handler and its events, CLI
+command, agent tool) runs inside an `AsyncLocalStorage` scope holding the
+caller and its authority. Work started inside the scope inherits it, including
+any plugin code core runs synchronously within it; background services and
+schedules run outside any scope, so they keep writing as the plugin.
+
 First-party callers: Concurrency limit, Account Pooler, bb connect, bb account,
 Storage retention, Keep Awake, Modal Sandbox, Custom instructions, MCP, Docs,
 and ACP providers (new adapter) mark their server-wide configuration, credential,
@@ -177,27 +221,71 @@ create, update, run, pause, and resume, which control code that executes on
 the server host, with separate admin-only RPC methods,
 `experimental_PluginRpcForbiddenError` in the shared methods, and
 `experimental_assertCliAdmin`. Before stabilizing,
-audit whether plugin HTTP routes, WebSocket
-routes, and agent tools need the same role, whether `experimental_caller`
-should also carry the role, and whether RPC discovery should publish it.
+audit whether RPC discovery should publish the role, whether admin-only tools
+should be withheld from member turns' tool lists instead of refused per call,
+and whether the settings gate should also cover writes from timers a member's
+request scheduled.
 
-## User-scoped plugin data (`ExperimentalPluginRpcHandlerContext.experimental_callerUserId`, `PluginCliContext.experimental_callerUserId`, `bb.storage.experimental_forUser`, `PluginSettingDescriptor.experimental_scope`, `bb.settings.experimental_getForUser`, and `bb.realtime.publish`'s `experimental_userId`)
+## Acting as the caller (`PluginBbSdk.experimental_asCaller`)
 
-`experimental_callerUserId` is the user id of the principal that authenticated
-the plugin RPC or CLI request. The server takes it from the request's
-credential, never from the body, so a client cannot name another user. It is
-`null` in an RPC handler called by another plugin through
-`bb.sdk.plugins.callRpc`, or by bb itself (`invokeRpcHandler` from host
-removal and server-move status). In local mode it is the local owner. The fake
-plugin host defaults it to `"usr_local_owner"` for client callers and `null`
-for plugin callers. `callRpc` and `runCli` accept `experimental_callerUserId`.
+`bb.sdk.experimental_asCaller(ctx)` takes any entry-point context and returns a
+`PluginBbSdk` whose requests authenticate as that caller. Core looks the
+context's caller object up in a server-side map filled when the invocation
+started, so a forged or copied caller, another plugin's context, or an
+invocation that has ended throws. `plugin` and `system` callers throw. In local
+mode it returns `bb.sdk`, since every caller is the local owner.
+
+In multi-user mode it mints a `bbcaller_` credential: an HMAC-signed payload
+(the auth secret also signs `BB_TOKEN`) holding a random id, the user id, the
+plugin id, the invocation's authority as `maxRole`, the caller's
+`roleCeiling`, and an expiry five minutes out. The id must also be live in
+server memory; core revokes it when the invocation ends (handler return, or
+WebSocket close) and a restart forgets every id. The request principal is the
+user with `role = min(current account role, maxRole, roleCeiling)`, the caller's
+`roleCeiling`, and `delegatedPluginId`; it never exceeds the caller's
+authority at mint time and drops when the account is demoted or removed.
+`POST /auth/tokens` refuses it with 403 `credential_delegated`, as it refuses
+capped credentials. Threads, forks, and messages created through it record the
+user as creator and turn author through the ordinary routes, so `BB_TOKEN` and
+cross-authority rules apply as for a direct request. The SDK keeps attaching
+the plugin's caller token, so plugin RPC handlers reached through it see the
+calling plugin with the person's authority. One SDK is cached per invocation.
+The fake host records calls through it with `experimental_caller` in
+`harness.sdk.calls`.
+
+Core caller: Side chat creates forks through `experimental_asCaller(ctx)`, so
+a member's side chat is created by the member.
+
+Before stabilizing, audit request logs and telemetry attribution for
+delegated principals, whether long-lived WebSockets need renewable
+credentials, whether the five-minute expiry suits slow handlers, and how
+deferred work should act as a user. A minimal design for deferred work:
+`bb.sdk.experimental_createCallerGrant(ctx, { purpose, expiresInDays? })`
+inserts a `plugin_caller_grants` row (id, plugin id, user id with cascade
+delete, role at mint, role ceiling, purpose, created, expires, revoked) and
+returns an opaque id; `bb.sdk.experimental_asGrant(grantId)` mints the same
+`bbcaller_` credential only when the row belongs to the calling plugin, is
+unrevoked and unexpired, and the user's current role is at least the role at
+mint, with authority `min(role at mint, current role, ceiling)`;
+`experimental_revokeCallerGrant(grantId)` revokes it. Users and admins list and
+revoke grants through `GET/DELETE /users/:id/plugin-grants` and
+`bb user grants list|revoke`. Grants must be refused from delegated or capped
+credentials, minted only by `client` callers, and revoked on role change and
+user removal.
+
+## User-scoped plugin data (`bb.storage.experimental_forUser`, `PluginSettingDescriptor.experimental_scope`, `bb.settings.experimental_getForUser`, and `bb.realtime.publish`'s `experimental_userId`)
+
+These APIs take a user id and trust it. Plugins pass the `userId` of a
+`client` `experimental_caller` (see "Plugin caller identity"), which the
+server takes from the request's credential, and never an id a client sent.
+`plugin` and `system` callers have no user; a plugin decides whether to refuse
+them or fall back to team data.
 
 `bb.storage.experimental_forUser(userId)` returns `{ kv }` with the team kv's
 interface and 256KB limit. Rows live in `plugin_user_kv` keyed by plugin id,
 user id, and key, with a cascading foreign key to the user, so removing the
 user deletes them. It throws `unknown user "<id>"` for an id that names no
-user. The host trusts the id it receives, so plugins must pass
-`experimental_callerUserId` and never an id a client sent. Team `bb.storage.kv`
+user. Team `bb.storage.kv`
 and `database()` are unchanged.
 
 A non-secret settings descriptor with `experimental_scope: "user"` (the
@@ -210,7 +298,10 @@ fields, still requires an admin. A per-user write notifies only that user's
 clients (`plugins-changed`) and does not fire `onChange`. A handle's `get()`
 returns per-user fields at their defaults, and `experimental_set` rejects
 them. `bb.settings.experimental_getForUser(userId)` returns every defined
-field as that user sees it. The app's settings form labels per-user fields
+field as that user sees it. The `PUT` route is not a plugin invocation, so the
+`settings.experimental_set` refusal inside a member's invocation does not
+apply to it; a member's own per-user write succeeds, and a member's team write
+is refused by the route. The app's settings form labels per-user fields
 `personal`, and `bb plugin config` reads and writes through the same route.
 The fake host offers `experimental_setUserSettings`, `experimental_removeUser`,
 and the `experimental_userIds` option.
@@ -221,18 +312,14 @@ per-user socket map; omitting the option keeps the team broadcast. The fake
 host records `experimental_userId` on targeted signals.
 
 Core caller: Thread list stores sidebar preferences with
-`experimental_forUser(experimental_callerUserId)` from its RPC handlers and
+`experimental_forUser(experimental_caller.userId)` from its RPC handlers and
 `bb thread-list prefs` commands, and it publishes each change only to that
-user. It refuses callers without a user id. Values stored team-wide earlier
+user. It refuses `plugin` and `system` callers. Values stored team-wide earlier
 are read as a user's value until that user sets or resets their own. The
 server suite `multi-user-plugin-data.test.ts` covers isolation between two
 users, cascades, targeted delivery, the settings role split, and local mode.
 
-This lands before the general caller identity work. Once
-`experimental_caller` carries the authenticated user, fold
-`experimental_callerUserId` into it with one project-wide rename. Before
-stabilizing, also audit whether plugin HTTP routes, WebSocket handlers, and
-agent tools need the same id, whether plugin state snapshots and rollback
+Before stabilizing, audit whether plugin state snapshots and rollback
 should include per-user rows (they do not today), whether per-user settings
 need their own change listener, and whether user removal should notify loaded
 plugins.
@@ -1734,12 +1821,12 @@ batches. Confirm the platform coverage (Linux
 `/proc`, macOS `lsof`) and whether the grace should be per call.
 
 0b. **Process identity.** `experimental_readProcessIdentity(pid)` from
-   `@get-bb/plugin-sdk/host` returns `{ command, startedAt }` (`ps` on POSIX,
-   CIM on Windows) or null. bb's launcher uses the same probe to confirm a
-   recorded PID before stopping it. Storage & retention checks a development
-   instance's recorded launcher entry path and start time before signalling
-   it, so a reused PID is never killed. Confirm start-time precision per
-   platform and whether a combined verified-stop helper should replace it.
+`@get-bb/plugin-sdk/host` returns `{ command, startedAt }` (`ps` on POSIX,
+CIM on Windows) or null. bb's launcher uses the same probe to confirm a
+recorded PID before stopping it. Storage & retention checks a development
+instance's recorded launcher entry path and start time before signalling
+it, so a reused PID is never killed. Confirm start-time precision per
+platform and whether a combined verified-stop helper should replace it.
 
 0. **Call timeout.** `ExperimentalHostCallOptions.timeoutMs` (default 30s,
    capped at 30 minutes) lets a plugin run a long host call — a setup

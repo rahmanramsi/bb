@@ -26,7 +26,19 @@ import {
   setPluginKvValue,
   type DbConnection,
 } from "@bb/db";
-import type { ThreadEventItemPresentation } from "@bb/domain";
+import {
+  LOCAL_OWNER_USER_ID,
+  type ThreadEventItemPresentation,
+} from "@bb/domain";
+import {
+  currentPluginInvocation,
+  pluginInvocationForCaller,
+  type PluginInvocation,
+} from "./plugin-invocation.js";
+import type {
+  PluginCallerCredential,
+  PluginCallerCredentialArgs,
+} from "../user-auth.js";
 import type {
   BbPluginApi,
   PluginAgentConfiguration,
@@ -82,6 +94,7 @@ import type {
   PluginRpcContract,
   ExperimentalPluginRpcHandlerContext,
 } from "@get-bb/plugin-sdk";
+import { experimental_PluginRpcForbiddenError } from "@get-bb/plugin-sdk";
 import {
   KV_VALUE_MAX_BYTES,
   normalizeAgentToolRegistration,
@@ -113,6 +126,8 @@ import {
   validateSettingsUpdate,
   validatePluginAiServiceDeclaration,
   validatePluginProviderDeclaration,
+  pluginAsCallerRefusal,
+  PLUGIN_SETTINGS_WRITE_FORBIDDEN_MESSAGE,
 } from "@get-bb/plugin-sdk/internal/host-policy";
 import type {
   NormalizedPluginAiService,
@@ -186,12 +201,14 @@ export interface PluginHttpRouteRecord {
   method: string;
   path: string;
   auth: PluginHttpAuthMode;
+  requiredRole: "admin" | null;
   handler: PluginHttpHandler;
 }
 
 export interface PluginWebSocketRouteRecord {
   path: string;
   auth: PluginHttpAuthMode;
+  requiredRole: "admin" | null;
   handler: ExperimentalPluginWebSocketHandler;
   active: boolean;
   sockets: Set<ExperimentalPluginWebSocket>;
@@ -213,6 +230,7 @@ export interface PluginAgentToolRecord {
   description: string;
   presentation: PluginRowPresentation | null;
   instructions: string | null;
+  requiredRole: "admin" | null;
   inputSchema: unknown;
   parse(
     input: unknown,
@@ -355,9 +373,11 @@ function wrapSdkForPlugin(
   sdk: BbSdk,
   pluginId: string,
   rpcCallerSdk: BbSdk,
+  asCaller: PluginBbSdk["experimental_asCaller"],
 ): PluginBbSdk {
   return {
     ...sdk,
+    experimental_asCaller: asCaller,
     plugins: {
       ...sdk.plugins,
       callRpc(args) {
@@ -501,6 +521,14 @@ export function createPluginApi(options: {
    * Revoked when the handle is invalidated.
    */
   rpcCaller: PluginRpcCallerCredential;
+  /**
+   * Mints the short-lived credential behind `bb.sdk.experimental_asCaller`.
+   * Null in local mode, where every caller is the local owner and
+   * `experimental_asCaller` returns `bb.sdk`.
+   */
+  issuePluginCallerCredential:
+    | ((args: PluginCallerCredentialArgs) => PluginCallerCredential)
+    | null;
   publishSignal: (
     channel: string,
     payload: unknown,
@@ -571,6 +599,7 @@ export function createPluginApi(options: {
     getLoopbackBaseUrl,
     getServiceToken,
     rpcCaller,
+    issuePluginCallerCredential,
     publishSignal,
     settingsChanged,
     reportNeedsConfiguration,
@@ -648,6 +677,51 @@ export function createPluginApi(options: {
 
   function assertLive(): void {
     if (invalidated) throw new PluginContextStaleError(pluginId);
+  }
+
+  const callerSdks = new WeakMap<PluginInvocation, PluginBbSdk>();
+  function asCaller(
+    context: unknown,
+    pluginSdk: PluginBbSdk,
+    loopbackBaseUrl: string,
+  ): PluginBbSdk {
+    assertLive();
+    const resolution = pluginAsCallerRefusal(
+      context,
+      (caller) => pluginInvocationForCaller(pluginId, caller) !== null,
+    );
+    if (!resolution.ok) throw new Error(resolution.message);
+    const invocation = pluginInvocationForCaller(pluginId, resolution.caller);
+    if (invocation === null) {
+      throw new Error("bb.sdk.experimental_asCaller: the invocation ended");
+    }
+    if (issuePluginCallerCredential === null) {
+      if (resolution.caller.userId === LOCAL_OWNER_USER_ID) return pluginSdk;
+      throw new Error(
+        "bb.sdk.experimental_asCaller is unavailable on this server",
+      );
+    }
+    const cached = callerSdks.get(invocation);
+    if (cached !== undefined) return cached;
+    const credential = issuePluginCallerCredential({
+      maxRole: invocation.authority,
+      pluginId,
+      roleCeiling: resolution.caller.roleCeiling,
+      userId: resolution.caller.userId,
+    });
+    invocation.onEnd(() => credential.revoke());
+    const callerSdk = createPluginLoopbackSdk({
+      authToken: credential.token,
+      baseUrl: loopbackBaseUrl,
+      callerToken: rpcCaller.token,
+    });
+    const created = wrapSdkForPlugin(callerSdk, pluginId, callerSdk, () => {
+      throw new Error(
+        "bb.sdk.experimental_asCaller is not available on a caller-bound SDK",
+      );
+    });
+    callerSdks.set(invocation, created);
+    return created;
   }
 
   const prefix = `[plugin:${pluginId}]`;
@@ -811,6 +885,11 @@ export function createPluginApi(options: {
         },
         async experimental_set(values) {
           assertLive();
+          if (currentPluginInvocation()?.authority === "member") {
+            throw new experimental_PluginRpcForbiddenError(
+              PLUGIN_SETTINGS_WRITE_FORBIDDEN_MESSAGE,
+            );
+          }
           const rawValues: Record<string, unknown> = {};
           for (const [key, value] of Object.entries(values)) {
             rawValues[key] = value;
@@ -1016,6 +1095,7 @@ export function createPluginApi(options: {
       description: string;
       instructions?: string;
       presentation?: PluginRowPresentation;
+      experimental_requiredRole?: "admin";
       parameters: unknown;
       execute(
         params: never,
@@ -1429,16 +1509,17 @@ export function createPluginApi(options: {
             "use it inside handlers, services, or timers, not at factory load time",
         );
       }
-      wrappedSdk ??= wrapSdkForPlugin(
+      const pluginSdk: PluginBbSdk = (wrappedSdk ??= wrapSdkForPlugin(
         sdk,
         pluginId,
         createPluginLoopbackSdk({
+          authToken: serviceToken,
           baseUrl: loopbackBaseUrl,
           callerToken: rpcCaller.token,
-          serviceToken,
         }),
-      );
-      return wrappedSdk;
+        (context) => asCaller(context, pluginSdk, loopbackBaseUrl),
+      ));
+      return pluginSdk;
     },
     onDispose(hook) {
       assertLive();

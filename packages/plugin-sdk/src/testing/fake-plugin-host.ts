@@ -4,6 +4,7 @@ import {
   type NormalizedPluginEnvironmentComposition,
 } from "../internal/host-policy.js";
 import type { MachineBootstrapApi } from "../machine-bootstrap.js";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -38,7 +39,11 @@ import {
   normalizeRpcRegistration,
   publishRpcMethod,
   normalizeWebSocketRouteRegistration,
+  pluginAsCallerRefusal,
+  pluginCallerAuthority,
   pluginCliCollisionWarning,
+  pluginRequiredRoleRefusal,
+  PLUGIN_SETTINGS_WRITE_FORBIDDEN_MESSAGE,
   providerAlreadyRegisteredMessage,
   providerIconRefusalMessage,
   providerWithoutBridgeMessage,
@@ -114,6 +119,7 @@ import type {
   PluginThreadEventPayloads,
   PluginUi,
   PluginRpcError,
+  ExperimentalPluginCaller,
   ExperimentalPluginRpcCaller,
   ExperimentalPluginRpcHandlerContext,
   StandardSchemaV1,
@@ -124,6 +130,7 @@ import {
   type FakeSdkHarness,
   type FakeSdkOverrides,
 } from "./fake-sdk.js";
+import { experimental_PluginRpcForbiddenError } from "../rpc-contract.js";
 
 /**
  * `createFakePluginHost` — an in-process stand-in for the BB server's plugin
@@ -168,6 +175,18 @@ export type FakeLogLevel = "debug" | "info" | "warn" | "error";
 export interface FakeLogEntry {
   level: FakeLogLevel;
   message: string;
+}
+
+function defaultClientCaller(
+  role: "admin" | "member",
+): ExperimentalPluginCaller {
+  return {
+    kind: "client",
+    userId: FAKE_LOCAL_OWNER_USER_ID,
+    role,
+    roleCeiling: null,
+    effectiveRole: role,
+  };
 }
 
 export interface FakeHttpRouteRecord {
@@ -395,13 +414,14 @@ export interface FakePluginBehaviorDrivers {
    * Invoke a registered rpc method with host semantics: input/output schemas,
    * strict JSON result normalization, and structured failure codes. Rejects
    * with the same message/code/issues the frontend client surfaces. The
-   * handler sees `options.experimental_caller` as its caller, `{ kind:
-   * "client" }` by default; pass `{ kind: "plugin", pluginId }` to act as
-   * another plugin calling through `bb.sdk.plugins.callRpc`.
-   * `experimental_callerUserId` defaults to `"usr_local_owner"` for client
-   * callers and `null` for plugin callers, like the host. The caller is an
-   * admin unless `options.experimental_callerRole` is `"member"`, in which
-   * case admin-only methods reject with code `forbidden`.
+   * handler sees `options.experimental_caller` as its caller, by default a
+   * `client` with id `"usr_local_owner"` whose role is
+   * `options.experimental_callerRole` (default `"admin"`); pass
+   * `{ kind: "plugin", pluginId }` to act as another plugin calling through
+   * `bb.sdk.plugins.callRpc`. Admin-only methods reject with code `forbidden`
+   * unless the caller's effective role (or `experimental_callerRole`) is
+   * `"admin"`. `bb.sdk.experimental_asCaller(ctx)` works only while the
+   * handler runs.
    */
   callRpc(
     method: string,
@@ -409,15 +429,14 @@ export interface FakePluginBehaviorDrivers {
     options?: {
       experimental_caller?: ExperimentalPluginRpcCaller;
       experimental_callerRole?: "admin" | "member";
-      experimental_callerUserId?: string | null;
     },
   ): Promise<unknown>;
   /**
    * Invoke the plugin's CLI command with host semantics: the result's
    * exitCode must be a number, stdout/stderr default to "", and a throwing
    * run() becomes `{ exitCode: 1, stderr: "bb <name> failed: …" }`.
-   * `ctx.experimental_callerRole` defaults to `"admin"` and
-   * `ctx.experimental_callerUserId` to `"usr_local_owner"`.
+   * `ctx.experimental_caller` defaults to an admin `client`, and
+   * `ctx.experimental_callerRole` to that caller's effective role.
    */
   runCli(
     argv: string[],
@@ -427,17 +446,25 @@ export interface FakePluginBehaviorDrivers {
    * Dispatch a request to a registered `bb.http` route (exact method+path
    * match, like the host's V1 router) through a real Hono context. Auth
    * modes are not enforced. A throwing handler yields the host's 500
-   * `{ ok: false, error: "plugin route failed: …" }` response.
+   * `{ ok: false, error: "plugin route failed: …" }` response. The handler
+   * sees `options.experimental_caller`, an admin `client` by default; an
+   * admin-only route answers other callers 403 `forbidden`.
    */
   fetchHttp(
     method: string,
     path: string,
     init?: RequestInit,
+    options?: { experimental_caller?: ExperimentalPluginCaller },
   ): Promise<Response>;
-  /** Open and drive an exact-match `bb.http.experimental_websocket` route. */
+  /**
+   * Open and drive an exact-match `bb.http.experimental_websocket` route as
+   * `options.experimental_caller` (an admin `client` by default). An
+   * admin-only route rejects other callers before the handler runs.
+   */
   experimental_openWebSocket(
     path: string,
     init?: RequestInit,
+    options?: { experimental_caller?: ExperimentalPluginCaller },
   ): Promise<ExperimentalFakeWebSocketSession>;
   /**
    * Start a registered background service once, deterministically. `done`
@@ -465,7 +492,9 @@ export interface FakePluginBehaviorDrivers {
    * Call a registered agent tool the way a provider tool-call would:
    * arguments go through the tool's parse step (zod-validated for zod
    * registrations; a parse failure throws), then execute. `ctx` fields
-   * default to "thread-test"/"project-test" and a fresh signal.
+   * default to "thread-test"/"project-test", a fresh signal, and an admin
+   * `client` caller. An admin-only tool returns an error result to other
+   * callers without running.
    */
   callAgentTool(
     name: string,
@@ -822,6 +851,31 @@ function createFakePluginHostInternal(
     },
   };
 
+  const liveCallers = new WeakSet<object>();
+  const invocationAuthority = new AsyncLocalStorage<"admin" | "member">();
+  function beginInvocation(caller: ExperimentalPluginCaller): {
+    caller: ExperimentalPluginCaller;
+    end(): void;
+  } {
+    const issued = Object.freeze({ ...caller });
+    liveCallers.add(issued);
+    return { caller: issued, end: () => liveCallers.delete(issued) };
+  }
+  async function runInvocation<T>(
+    caller: ExperimentalPluginCaller,
+    run: (caller: ExperimentalPluginCaller) => T | Promise<T>,
+  ): Promise<T> {
+    const invocation = beginInvocation(caller);
+    try {
+      return await invocationAuthority.run(
+        pluginCallerAuthority(invocation.caller),
+        () => run(invocation.caller),
+      );
+    } finally {
+      invocation.end();
+    }
+  }
+
   // --- settings ---
   const settingsDescriptors: PluginSettingDescriptors = {};
   const settingsListeners: Array<
@@ -923,6 +977,11 @@ function createFakePluginHostInternal(
         },
         async experimental_set(values) {
           assertLive();
+          if (invocationAuthority.getStore() === "member") {
+            throw new experimental_PluginRpcForbiddenError(
+              PLUGIN_SETTINGS_WRITE_FORBIDDEN_MESSAGE,
+            );
+          }
           const rawValues: Record<string, unknown> = {};
           for (const [key, value] of Object.entries(values)) {
             rawValues[key] = value;
@@ -958,6 +1017,7 @@ function createFakePluginHostInternal(
   // --- http ---
   const httpRoutes: FakeHttpRouteRecord[] = [];
   const websocketRoutes: ExperimentalFakeWebSocketRouteRecord[] = [];
+  const requiredRoles = new WeakMap<object, "admin" | null>();
   const websocketSessions = new Set<{
     closeForReload(): Promise<void>;
   }>();
@@ -971,7 +1031,14 @@ function createFakePluginHostInternal(
         opts,
         httpRoutes,
       );
-      httpRoutes.push({ ...route, handler });
+      const record: FakeHttpRouteRecord = {
+        method: route.method,
+        path: route.path,
+        auth: route.auth,
+        handler,
+      };
+      requiredRoles.set(record, route.requiredRole);
+      httpRoutes.push(record);
     },
     experimental_websocket(path, handler, opts) {
       assertLive();
@@ -981,7 +1048,13 @@ function createFakePluginHostInternal(
         opts,
         websocketRoutes,
       );
-      websocketRoutes.push({ ...route, handler });
+      const record: ExperimentalFakeWebSocketRouteRecord = {
+        path: route.path,
+        auth: route.auth,
+        handler,
+      };
+      requiredRoles.set(record, route.requiredRole);
+      websocketRoutes.push(record);
     },
   };
 
@@ -1185,6 +1258,7 @@ function createFakePluginHostInternal(
       description: string;
       instructions?: string;
       presentation?: PluginRowPresentation;
+      experimental_requiredRole?: "admin";
       parameters: unknown;
       execute(
         params: never,
@@ -1200,6 +1274,7 @@ function createFakePluginHostInternal(
       if (agentTools.some((existing) => existing.name === record.name)) {
         throw new Error(`tool "${record.name}" is already registered`);
       }
+      requiredRoles.set(record, record.requiredRole);
       agentTools.push(record);
     },
   };
@@ -1256,6 +1331,13 @@ function createFakePluginHostInternal(
   const { sdk, harness: sdkHarness } = createFakeSdk({
     pluginId,
     overrides: options.sdk,
+    resolveCaller(context) {
+      const resolution = pluginAsCallerRefusal(context, (caller) =>
+        liveCallers.has(caller),
+      );
+      if (!resolution.ok) throw new Error(resolution.message);
+      return resolution.caller;
+    },
   });
 
   // --- thread events / dispose ---
@@ -1925,9 +2007,6 @@ function createFakePluginHostInternal(
     },
 
     async callRpc(method, input, options = {}) {
-      const caller: ExperimentalPluginRpcCaller = options.experimental_caller ?? {
-        kind: "client",
-      };
       const record = rpcHandlers.get(method);
       if (!record) {
         return throwRpcError({
@@ -1935,14 +2014,16 @@ function createFakePluginHostInternal(
           message: `plugin "${pluginId}" has no rpc method "${method}"`,
         });
       }
-      if (
-        record.requiredRole === "admin" &&
-        (options.experimental_callerRole ?? "admin") !== "admin"
-      ) {
-        return throwRpcError({
-          code: "forbidden",
-          message: `rpc method "${method}" requires an admin`,
-        });
+      const caller =
+        options.experimental_caller ??
+        defaultClientCaller(options.experimental_callerRole ?? "admin");
+      const refusal = pluginRequiredRoleRefusal(
+        record.requiredRole,
+        options.experimental_callerRole ?? pluginCallerAuthority(caller),
+        `rpc method "${method}"`,
+      );
+      if (refusal !== null) {
+        return throwRpcError({ code: "forbidden", message: refusal });
       }
       const parsedInput =
         input === undefined
@@ -1956,15 +2037,11 @@ function createFakePluginHostInternal(
       );
       let result: unknown;
       try {
-        result = await record.handler(validatedInput as never, {
-          experimental_caller: caller,
-          experimental_callerUserId:
-            options.experimental_callerUserId !== undefined
-              ? options.experimental_callerUserId
-              : caller.kind === "plugin"
-                ? null
-                : FAKE_LOCAL_OWNER_USER_ID,
-        });
+        result = await runInvocation(caller, (issued) =>
+          record.handler(validatedInput as never, {
+            experimental_caller: issued,
+          }),
+        );
       } catch (error) {
         return throwRpcError(rpcHandlerError(error, errorMessage(error)));
       }
@@ -1982,12 +2059,17 @@ function createFakePluginHostInternal(
       if (!registration) {
         throw new Error(`plugin "${pluginId}" registers no CLI command`);
       }
+      const caller =
+        ctx.experimental_caller ??
+        defaultClientCaller(ctx.experimental_callerRole ?? "admin");
       try {
-        const result = await registration.run(argv, {
-          experimental_callerRole: "admin",
-          experimental_callerUserId: FAKE_LOCAL_OWNER_USER_ID,
-          ...ctx,
-        });
+        const result = await runInvocation(caller, (issued) =>
+          registration.run(argv, {
+            experimental_callerRole: pluginCallerAuthority(issued),
+            ...ctx,
+            experimental_caller: issued,
+          }),
+        );
         if (typeof result?.exitCode !== "number") {
           throw new Error(
             "cli run() must return { exitCode: number, stdout?, stderr? }",
@@ -2013,7 +2095,7 @@ function createFakePluginHostInternal(
       }
     },
 
-    async fetchHttp(method, path, init) {
+    async fetchHttp(method, path, init, fetchOptions = {}) {
       const normalizedMethod = String(method).toUpperCase();
       const pathname = new URL(path, "http://plugin.test").pathname;
       const route = httpRoutes.find(
@@ -2029,10 +2111,27 @@ function createFakePluginHostInternal(
             }`,
         );
       }
+      const caller =
+        fetchOptions.experimental_caller ?? defaultClientCaller("admin");
+      const refusal = pluginRequiredRoleRefusal(
+        requiredRoles.get(route) ?? null,
+        pluginCallerAuthority(caller),
+        `plugin "${pluginId}" route ${route.method} ${route.path}`,
+      );
+      if (refusal !== null) {
+        return Response.json(
+          { ok: false, error: { code: "forbidden", message: refusal } },
+          { status: 403 },
+        );
+      }
       const app = new Hono();
       app.on(route.method, route.path, async (context) => {
         try {
-          return adoptHttpRouteResponse(await route.handler(context));
+          return adoptHttpRouteResponse(
+            await runInvocation(caller, (issued) =>
+              route.handler(context, { experimental_caller: issued }),
+            ),
+          );
         } catch (error) {
           const message = errorMessage(error);
           emitLog(
@@ -2048,7 +2147,7 @@ function createFakePluginHostInternal(
       return app.request(path, { ...init, method: normalizedMethod });
     },
 
-    async experimental_openWebSocket(path, init) {
+    async experimental_openWebSocket(path, init, socketOptions = {}) {
       assertLive();
       const url = new URL(path, "http://plugin.test");
       const route = websocketRoutes.find(
@@ -2062,14 +2161,29 @@ function createFakePluginHostInternal(
           }`,
         );
       }
+      const refusal = pluginRequiredRoleRefusal(
+        requiredRoles.get(route) ?? null,
+        pluginCallerAuthority(
+          socketOptions.experimental_caller ?? defaultClientCaller("admin"),
+        ),
+        `plugin "${pluginId}" websocket ${route.path}`,
+      );
+      if (refusal !== null) throw new Error(refusal);
+      const invocation = beginInvocation(
+        socketOptions.experimental_caller ?? defaultClientCaller("admin"),
+      );
+      const authority = pluginCallerAuthority(invocation.caller);
       const request = new Request(url, { ...init, method: "GET" });
       let handlers: ExperimentalPluginWebSocketHandlers;
       try {
-        handlers = route.handler({
-          request,
-          url,
-          headers: request.headers,
-        });
+        handlers = invocationAuthority.run(authority, () =>
+          route.handler({
+            request,
+            url,
+            headers: request.headers,
+            experimental_caller: invocation.caller,
+          }),
+        );
         if (
           typeof handlers !== "object" ||
           handlers === null ||
@@ -2091,6 +2205,7 @@ function createFakePluginHostInternal(
           }
         }
       } catch (error) {
+        invocation.end();
         emitLog(
           "warn",
           `websocket ${route.path} connect failed: ${errorMessage(error)}`,
@@ -2112,7 +2227,7 @@ function createFakePluginHostInternal(
       ): Promise<void> => {
         eventQueue = eventQueue.then(async () => {
           try {
-            await run();
+            await invocationAuthority.run(authority, run);
           } catch (error) {
             emitLog(
               "warn",
@@ -2141,6 +2256,7 @@ function createFakePluginHostInternal(
         if (closeNotified) return;
         closeNotified = true;
         readyState = 3;
+        invocation.end();
         websocketSessions.delete(session);
         if (handlers.onClose !== undefined) {
           await invoke("close", () =>
@@ -2247,11 +2363,23 @@ function createFakePluginHostInternal(
           `tool "${name}" arguments are invalid: ${parsed.error}`,
         );
       }
-      return record.execute(parsed.value, {
-        threadId: ctx?.threadId ?? "thread-test",
-        projectId: ctx?.projectId ?? "project-test",
-        signal: ctx?.signal ?? new AbortController().signal,
-      });
+      const caller = ctx?.experimental_caller ?? defaultClientCaller("admin");
+      const refusal = pluginRequiredRoleRefusal(
+        requiredRoles.get(record) ?? null,
+        pluginCallerAuthority(caller),
+        `Tool "${name}"`,
+      );
+      if (refusal !== null) {
+        return { content: [{ type: "text", text: refusal }], isError: true };
+      }
+      return runInvocation(caller, (issued) =>
+        record.execute(parsed.value, {
+          threadId: ctx?.threadId ?? "thread-test",
+          projectId: ctx?.projectId ?? "project-test",
+          signal: ctx?.signal ?? new AbortController().signal,
+          experimental_caller: issued,
+        }),
+      );
     },
 
     async resolveAgentConfiguration(context) {

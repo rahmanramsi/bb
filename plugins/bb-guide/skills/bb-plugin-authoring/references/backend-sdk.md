@@ -54,11 +54,27 @@ const thread = await bb.sdk.threads.spawn({
 
 `bb.sdk.plugins.callRpc({ pluginId, method, input, outputSchema })` calls
 another plugin's `bb.rpc` handler. Each handler receives a context whose
-`experimental_caller` is `{ kind: "plugin", pluginId }` for a call through a
-loaded plugin's own `bb.sdk.plugins.callRpc`, verified with a per-load token
-only the server holds, and `{ kind: "client" }` for everything else: the app,
-CLI, agents, and bb. Tests set it with
-`harness.callRpc(method, input, { experimental_caller })`.
+`experimental_caller` is an `ExperimentalPluginCaller`:
+
+- `{ kind: "client", userId, role, roleCeiling, effectiveRole }` for a person
+  using the app, the `bb` CLI, or a thread's `BB_TOKEN`. `role` is the account
+  role, `roleCeiling` is `"member"` for a capped `BB_TOKEN`, and
+  `effectiveRole` is the authority the request has. In local mode it is always
+  the local owner admin. `userId` comes from the credential, never the request
+  body; it is the id to pass to `bb.storage.experimental_forUser`,
+  `bb.settings.experimental_getForUser`, and `bb.realtime.publish`'s
+  `experimental_userId`.
+- `{ kind: "plugin", pluginId }` for a call through a loaded plugin's own
+  `bb.sdk.plugins.callRpc`, verified with a per-load token only the server
+  holds.
+- `{ kind: "system" }` for bb itself.
+
+HTTP route handlers get the same caller in their second argument, WebSocket
+and agent tool contexts carry `experimental_caller`, and so does
+`PluginCliContext`. Tests set it with
+`harness.callRpc(method, input, { experimental_caller })`, `fetchHttp`'s and
+`experimental_openWebSocket`'s options, and the `runCli` and `callAgentTool`
+contexts.
 
 ```ts
 handOver(input, { experimental_caller: caller }) {
@@ -68,6 +84,32 @@ handOver(input, { experimental_caller: caller }) {
   return handOver(input);
 },
 ```
+
+### Acting as the caller
+
+`bb.sdk` authenticates as bb's server service account, an admin. To do work
+on behalf of the person who called a handler, use
+`bb.sdk.experimental_asCaller(ctx)` with the handler's context. Its requests
+carry that person's effective role and role ceiling and never more, so a
+member cannot reach admin-only routes through your plugin, and threads it
+creates or messages it sends record the person as creator and author.
+
+```ts
+bb.http.route("POST", "/side-chats", async (c, ctx) => {
+  const { sourceThreadId } = await c.req.json();
+  const sdk = bb.sdk.experimental_asCaller(ctx);
+  const fork = await sdk.threads.fork({ sourceThreadId });
+  return c.json({ threadId: fork.id });
+});
+```
+
+The credential behind it stops working when the handler returns (a
+WebSocket's when the socket closes), expires within a few minutes, and cannot
+create personal access tokens. It throws for `plugin` and `system` callers and
+for a context that another plugin's handler received. In local mode it returns
+`bb.sdk`. Do background work after the handler returns with `bb.sdk`. In
+tests, calls through it are recorded with `experimental_caller` in
+`harness.sdk.calls`.
 
 ### Thread plugin metadata
 

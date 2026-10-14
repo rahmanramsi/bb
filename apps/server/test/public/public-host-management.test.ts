@@ -1,3 +1,4 @@
+import { SYSTEM_PLUGIN_CALLER } from "../../src/services/plugins/plugin-invocation.js";
 import { createBbSdk } from "@bb/sdk/core";
 import { createHttpTransport } from "@bb/sdk/node";
 import { spawnSync } from "node:child_process";
@@ -876,10 +877,7 @@ describe("public host management", () => {
         "revokeMachine",
         revokeRecord,
         { machineId: "machine-cloud-remove" },
-        {
-          experimental_caller: { kind: "client" },
-          experimental_callerUserId: null,
-        },
+        SYSTEM_PLUGIN_CALLER,
       );
     });
   }, 30_000);

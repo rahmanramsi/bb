@@ -37,6 +37,8 @@ import type {
 } from "@bb/server-contract";
 import type { JsonValue, ReadonlyJsonValue } from "./json-value.js";
 import type {
+  ExperimentalPluginCaller,
+  ExperimentalPluginCallerContext,
   ExperimentalPluginRpcHandlersWithContext,
   PluginRpcContract,
   StandardSchemaV1,
@@ -222,7 +224,7 @@ export interface PluginSettings {
    * Every defined setting as `userId` sees it: that user's stored value (or
    * the default) for `experimental_scope: "user"` fields, and the team value
    * for the rest, secrets included. Pass the authenticated caller's id
-   * (`experimental_callerUserId` in rpc and CLI contexts), never an id a
+   * (`experimental_caller.userId` of a `client` caller), never an id a
    * client sent. A removed user's values are deleted with the account.
    * `onChange` listeners do not fire for per-user writes.
    */
@@ -265,7 +267,7 @@ export interface PluginStorage {
    * Key-value rows private to one user, namespaced by plugin id and user id
    * and deleted when that user is removed. Same limits as `kv`. Rejects an
    * id that names no user. Pass the authenticated caller's id
-   * (`experimental_callerUserId` in rpc and CLI contexts), never an id a
+   * (`experimental_caller.userId` of a `client` caller), never an id a
    * client sent: the host trusts the id it is given.
    */
   experimental_forUser(userId: string): ExperimentalPluginUserStorage;
@@ -887,8 +889,13 @@ export interface PluginHooks {
 
 export type PluginHttpAuthMode = "local" | "token" | "none";
 
+/**
+ * The second argument says who sent the request; pass it to
+ * `bb.sdk.experimental_asCaller` to act as that caller.
+ */
 export type PluginHttpHandler = (
   context: Context,
+  experimental_context: ExperimentalPluginCallerContext,
 ) => Response | Promise<Response>;
 
 export interface ExperimentalPluginWebSocket {
@@ -901,6 +908,12 @@ export interface ExperimentalPluginWebSocketContext {
   request: Request;
   url: URL;
   headers: Headers;
+  /**
+   * Who opened the socket. `bb.sdk.experimental_asCaller(context)` stays
+   * usable for the socket's lifetime, within the credential's few-minute
+   * expiry.
+   */
+  readonly experimental_caller: ExperimentalPluginCaller;
 }
 
 export interface ExperimentalPluginWebSocketHandlers {
@@ -934,7 +947,15 @@ export interface PluginHttp {
     method: string,
     path: string,
     handler: PluginHttpHandler,
-    opts?: { auth?: PluginHttpAuthMode },
+    opts?: {
+      auth?: PluginHttpAuthMode;
+      /**
+       * `"admin"` limits the route to server admins. bb answers other callers
+       * with HTTP 403 `{ ok: false, error: { code: "forbidden", message } }`
+       * before the handler runs; a refused WebSocket upgrade never opens.
+       */
+      experimental_requiredRole?: "admin";
+    },
   ): void;
 
   /**
@@ -945,7 +966,15 @@ export interface PluginHttp {
   experimental_websocket(
     path: string,
     handler: ExperimentalPluginWebSocketHandler,
-    opts?: { auth?: PluginHttpAuthMode },
+    opts?: {
+      auth?: PluginHttpAuthMode;
+      /**
+       * `"admin"` limits the route to server admins. bb answers other callers
+       * with HTTP 403 `{ ok: false, error: { code: "forbidden", message } }`
+       * before the handler runs; a refused WebSocket upgrade never opens.
+       */
+      experimental_requiredRole?: "admin";
+    },
   ): void;
 }
 
@@ -1042,11 +1071,12 @@ export interface PluginCliContext {
    */
   experimental_callerRole?: "admin" | "member";
   /**
-   * The invoking user's id, taken from the request's credential by the
-   * server. bb always sets it; in local mode it is the local owner. Use it
-   * for `bb.storage.experimental_forUser` and per-user settings.
+   * Who invoked the command. bb always sets it; `experimental_callerRole` is
+   * its effective role. A `client` caller's `userId` keys
+   * `bb.storage.experimental_forUser` and per-user settings. Pass the context
+   * to `bb.sdk.experimental_asCaller` to act as that caller.
    */
-  experimental_callerUserId?: string;
+  experimental_caller?: ExperimentalPluginCaller;
 }
 
 export type PluginInteractionCancelReason =
@@ -1194,6 +1224,11 @@ export interface PluginAgentToolContext {
    * plugin disposal still abort the signal after detachment.
    */
   signal: AbortSignal;
+  /**
+   * The author of the turn that called the tool, with the authority the
+   * turn's `BB_TOKEN` carries; `system` when the turn has no human author.
+   */
+  readonly experimental_caller: ExperimentalPluginCaller;
 }
 
 /**
@@ -1251,6 +1286,12 @@ export interface PluginAgentToolRegistrationBase {
    * BB's standard rendering. See docs/api_to_audit.md.
    */
   presentation?: PluginRowPresentation;
+  /**
+   * `"admin"` runs the tool only when the turn's author acts as a server
+   * admin. bb answers other calls with an error result before `execute`
+   * runs.
+   */
+  experimental_requiredRole?: "admin";
 }
 
 /** Stable, plain-data context resolved by the server for one agent session. */
@@ -2161,9 +2202,25 @@ export interface PluginStatusApi {
  * leaves the namespace unchanged.
  */
 export type PluginBbSdk = Omit<BbSdk, "threads"> & {
+  /**
+   * An SDK whose requests authenticate as the caller of the given handler
+   * invocation, with that caller's effective authority and role ceiling and
+   * never more. Threads and messages it creates record the caller as their
+   * creator and author. bb mints a short-lived credential bound to the
+   * caller, this plugin, and the invocation: it stops working when the
+   * handler returns (a WebSocket's when the socket closes) and after a few
+   * minutes at most, and it cannot create personal access tokens. Throws for
+   * a `plugin` or `system` caller, a context bb did not hand to this plugin,
+   * or an invocation that already ended. In local mode it returns `bb.sdk`.
+   */
+  experimental_asCaller(context: {
+    readonly experimental_caller?: ExperimentalPluginCaller;
+  }): PluginBbSdk;
   threads: Omit<
     BbSdk["threads"],
-    "getPluginMetadata" | "updatePluginMetadata" | "experimental_listPluginMetadata"
+    | "getPluginMetadata"
+    | "updatePluginMetadata"
+    | "experimental_listPluginMetadata"
   > & {
     getPluginMetadata(
       args: Omit<ThreadPluginMetadataArgs, "pluginId"> & { pluginId?: string },

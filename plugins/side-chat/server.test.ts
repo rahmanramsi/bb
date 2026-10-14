@@ -61,6 +61,29 @@ async function loadPlugin(sdkThreads: Record<string, unknown>) {
 }
 
 describe("createSideChat rpc", () => {
+  it("forks as the caller so the fork is created by them", async () => {
+    const member = {
+      kind: "client",
+      userId: "usr_member",
+      role: "member",
+      roleCeiling: null,
+      effectiveRole: "member",
+    } as const;
+    const { harness } = await loadPlugin({
+      fork: async () => makeThreadResponse({ id: "thr_fork" }),
+    });
+
+    await harness.callRpc(
+      "createSideChat",
+      { sourceThreadId: "thr_src", anchorText: "" },
+      { experimental_caller: member },
+    );
+
+    expect(
+      harness.sdk.calls.filter((call) => call.path === "threads.fork"),
+    ).toEqual([expect.objectContaining({ experimental_caller: member })]);
+  });
+
   it("does not read the source timeline to decide whether to include the anchor", async () => {
     const timeline = vi.fn();
     const fork = vi.fn(
@@ -251,12 +274,11 @@ describe("empty-fork sweep", () => {
     const { bb, harness } = await loadPlugin({ list: async () => [] });
     await harness.runSchedule("empty-fork-cleanup");
     const db = bb.storage.database();
-    db.prepare(`WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<10000)
+    db.prepare(
+      `WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<10000)
       INSERT INTO cleanup_candidates(thread_id, created_at, due_at)
-      SELECT 'future-'||x,?,? FROM n`).run(
-      Date.now(),
-      Date.now() + EMPTY_FORK_MAX_AGE_MS,
-    );
+      SELECT 'future-'||x,?,? FROM n`,
+    ).run(Date.now(), Date.now() + EMPTY_FORK_MAX_AGE_MS);
     const prepare = vi.spyOn(db, "prepare");
     await harness.runSchedule("empty-fork-cleanup");
     const queries = prepare.mock.calls.map(([sql]) => sql);

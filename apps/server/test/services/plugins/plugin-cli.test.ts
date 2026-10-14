@@ -154,8 +154,14 @@ describe("plugin CLI commands (bb.cli.register + endpoints + skill + logs)", () 
     expect(JSON.parse(result.stdout)).toEqual({
       argv: ["issues", "--team", "ENG"],
       ctx: {
+        experimental_caller: {
+          kind: "client",
+          userId: LOCAL_OWNER_USER_ID,
+          role: "admin",
+          roleCeiling: null,
+          effectiveRole: "admin",
+        },
         experimental_callerRole: "admin",
-        experimental_callerUserId: LOCAL_OWNER_USER_ID,
         cwd: "/tmp/somewhere",
         threadId: "thr_123",
         projectId: "proj_456",

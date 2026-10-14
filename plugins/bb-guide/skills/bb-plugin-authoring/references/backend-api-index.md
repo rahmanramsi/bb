@@ -63,10 +63,13 @@ Read the installed declarations for exact current signatures.
 - `ExperimentalLiveFileTarget`
 - `ExperimentalOpenFixedTabOptions`
 - `ExperimentalPermissionModePickerProps`
+- `ExperimentalPluginCaller`
+- `ExperimentalPluginCallerContext`
 - `ExperimentalPluginFixedTabReference`
 - `ExperimentalPluginRpcCaller`
 - `ExperimentalPluginRpcHandlerContext`
 - `ExperimentalPluginRpcHandlersWithContext`
+- `PluginBbSdk.experimental_asCaller`
 - `ExperimentalPluginWebSocket`
 - `ExperimentalPluginWebSocketContext`
 - `ExperimentalPluginWebSocketHandler`

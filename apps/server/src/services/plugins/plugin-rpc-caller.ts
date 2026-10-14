@@ -6,7 +6,7 @@ import {
   type BbSdk,
 } from "@bb/sdk";
 import { createNodeWebsocketFactory } from "@bb/sdk/node-websocket";
-import type { ExperimentalPluginRpcCaller } from "@get-bb/plugin-sdk";
+import type { ExperimentalPluginCaller } from "@get-bb/plugin-sdk";
 
 export const PLUGIN_RPC_CALLER_HEADER = "x-bb-plugin-caller";
 
@@ -16,7 +16,10 @@ export interface PluginRpcCallerCredential {
 }
 
 export type PluginRpcCallerResolution =
-  | { ok: true; caller: ExperimentalPluginRpcCaller }
+  | {
+      ok: true;
+      caller: Extract<ExperimentalPluginCaller, { kind: "plugin" }> | null;
+    }
   | { ok: false };
 
 export interface PluginRpcCallerRegistry {
@@ -43,7 +46,7 @@ export function createPluginRpcCallerRegistry(): PluginRpcCallerRegistry {
       };
     },
     resolve(token) {
-      if (token === undefined) return { ok: true, caller: { kind: "client" } };
+      if (token === undefined) return { ok: true, caller: null };
       const pluginId = callers.get(tokenKey(token));
       return pluginId === undefined
         ? { ok: false }
@@ -53,14 +56,14 @@ export function createPluginRpcCallerRegistry(): PluginRpcCallerRegistry {
 }
 
 export function createPluginLoopbackSdk(args: {
+  authToken: string;
   baseUrl: string;
   callerToken: string | null;
-  serviceToken: string;
 }): BbSdk {
   const timeoutFetch = createRequestTimeoutFetch({
     timeoutMs: DEFAULT_BB_REQUEST_TIMEOUT_MS,
   });
-  const authorization = `Bearer ${args.serviceToken}`;
+  const authorization = `Bearer ${args.authToken}`;
   return createNodeBbSdk({
     baseUrl: args.baseUrl,
     fetch: (input, init) => {
