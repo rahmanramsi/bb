@@ -867,6 +867,7 @@ export function createApp(
   }
   const authenticatedSockets = createAuthenticatedSocketRegistry();
   const stopAuthorizationWatch = deps.userAuth.onAuthorizationChange(() => {
+    deps.hub.notifySystem(["users-changed"]);
     void authenticatedSockets.revalidate();
   });
   const publicApi = new Hono();

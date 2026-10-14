@@ -93,6 +93,7 @@ async function setup() {
     gitRemote: null,
     inputs: null,
     suggestedBranchName: "bb/test",
+    experimental_requester: null,
     attempt: 1,
     pathKey: THREAD_ID,
     experimental_claimPath: async () => true,

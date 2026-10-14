@@ -1886,7 +1886,15 @@ already signed in, sign out before accepting an invite for another account.
 Thread lists and headers show each creator in multi mode. Local mode keeps
 the existing interface without sign-in, account controls, or creator labels.
 The app hides administrative settings for members; the server enforces the
-same role restrictions for API, SDK, and CLI callers.
+same role restrictions for API, SDK, and CLI callers. A member-capped
+credential counts as a member there too. `GET /api/v1/auth/session` reports the
+caller's `effectiveRole` and `roleCeiling` alongside the user. When an admin
+changes a role, the app refreshes the signed-in user without a reload. Plugin
+pages read the same user with `experimental_useCurrentUser()` to hide
+admin-only controls, such as Docs **Add vault** and bb connect **Revoke all**.
+They scope browser storage per user with `experimental_useUserStorageKey()`.
+Environment providers receive the thread creator and their role as
+`experimental_requester`, for per-user git identity or branch prefixes.
 
 On a fresh `multi` server the first account registered with
 `POST /api/v1/auth/sign-up` becomes an admin. After that, sign-up requires an

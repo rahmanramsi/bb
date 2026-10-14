@@ -1,4 +1,9 @@
-import { userRoleSchema, type RoleCeiling, type UserRole } from "@bb/domain";
+import {
+  roleCeilingValues,
+  userRoleSchema,
+  type RoleCeiling,
+  type UserRole,
+} from "@bb/domain";
 import { z } from "zod";
 
 export const authModeSchema = z.enum(["local", "multi"]);
@@ -23,6 +28,8 @@ export const authSessionResponseSchema = z
     needsBootstrap: z.boolean(),
     principalKind: authPrincipalKindSchema.nullable(),
     user: authUserSchema.nullable(),
+    effectiveRole: userRoleSchema.nullable(),
+    roleCeiling: z.enum(roleCeilingValues).nullable(),
   })
   .strict();
 export type AuthSessionResponse = z.infer<typeof authSessionResponseSchema>;

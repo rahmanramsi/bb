@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import {
   definePluginApp,
   experimental_usePluginId,
+  experimental_useUserStorageKey,
   Markdown,
   useBbContext,
   useComposer,
@@ -68,9 +69,13 @@ function scopeStorageKey(pluginId: string, kind: ComposerKind): string {
   return `${pluginId}:scope:${kind}`;
 }
 
-function readStickyScope(pluginId: string, kind: ComposerKind): PromptScope {
+function readStickyScope(
+  storageKey: string | null,
+  kind: ComposerKind,
+): PromptScope {
+  if (storageKey === null) return "global";
   const stored = promptScopeSchema.safeParse(
-    window.localStorage.getItem(scopeStorageKey(pluginId, kind)),
+    window.localStorage.getItem(storageKey),
   );
   return stored.success && scopesFor(kind).includes(stored.data)
     ? stored.data
@@ -156,6 +161,9 @@ function PromptLibraryPopup() {
   const pluginId = experimental_usePluginId();
   const context = useBbContext();
   const kind = composerKind(composer.scope);
+  const scopeKey = experimental_useUserStorageKey(
+    scopeStorageKey(pluginId, kind),
+  );
   const targets = scopeTargets(composer.scope, context.projectId);
   const availableScopes = scopesFor(kind).filter(
     (scope) =>
@@ -164,7 +172,7 @@ function PromptLibraryPopup() {
   );
   const [query, setQuery] = useState("");
   const [preferredScope, setPreferredScope] = useState(() =>
-    readStickyScope(pluginId, kind),
+    readStickyScope(scopeKey, kind),
   );
   const scope = availableScopes.includes(preferredScope)
     ? preferredScope
@@ -283,7 +291,7 @@ function PromptLibraryPopup() {
   const changeScope = (next: PromptScope) => {
     setPreferredScope(next);
     setHighlightedKey(null);
-    window.localStorage.setItem(scopeStorageKey(pluginId, kind), next);
+    if (scopeKey !== null) window.localStorage.setItem(scopeKey, next);
   };
 
   const starPrompt = ({ text, mentions }: ComposerDraft) => {

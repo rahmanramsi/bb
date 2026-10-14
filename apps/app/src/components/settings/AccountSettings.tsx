@@ -5,7 +5,7 @@ import { Button } from "@bb/shared-ui/button";
 import { Input } from "@bb/shared-ui/input";
 import { SettingsSection } from "@/components/ui/settings-section";
 import { CopyButton } from "@/components/ui/copy-button";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth, useCurrentUser } from "@/hooks/useAuth";
 import {
   INVITES_QUERY_KEY,
   TOKENS_QUERY_KEY,
@@ -437,6 +437,7 @@ function InviteSettings() {
 
 export function AccountSettings() {
   const auth = useAuth();
+  const currentUser = useCurrentUser();
   if (auth?.authMode !== "multi" || auth.user === null) return null;
   return (
     <>
@@ -450,7 +451,7 @@ export function AccountSettings() {
         </p>
       </SettingsSection>
       <TokenSettings />
-      {auth.user.role === "admin" && (
+      {currentUser?.effectiveRole === "admin" && (
         <>
           <UserSettings currentUserId={auth.user.id} />
           <InviteSettings />

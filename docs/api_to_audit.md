@@ -4189,7 +4189,10 @@ and pagination for larger teams. Core attribution uses `directory`.
 `me` returns the current user, the role the calling credential acts with
 (`effectiveRole`), and its `roleCeiling` (`"member"` for a capped `BB_TOKEN`,
 otherwise null); `session` returns authentication mode, bootstrap
-status, and the optional current user. `signIn`, `signUp`, and `signOut` use
+status, the optional current user, and the same `effectiveRole` and
+`roleCeiling` (both null while signed out). The app reads the session for
+`experimental_useCurrentUser`, and the server broadcasts the `users-changed`
+system change on every authorization change so clients refetch it. `signIn`, `signUp`, and `signOut` use
 server-owned account authentication. `createToken({ name })`, `listTokens`,
 and `revokeToken({ id })` manage the caller's PATs. `createInvite({ email?,
 role? })`, `listInvites`, and `revokeInvite({ id })` require admin;
@@ -4202,6 +4205,56 @@ WebSocket factory also uses it. Session cookies remain the browser default.
 Before stabilization, audit cookie handling, PAT lifecycle, invite expiry and
 revocation, last-admin protection, and the account settings UI's use of these
 same routes.
+
+## `app.experimental_useCurrentUser` and `app.experimental_useUserStorageKey` (`@get-bb/plugin-sdk/app`)
+
+`experimental_useCurrentUser()` returns `ExperimentalCurrentUser | null`:
+`{ userId, displayName, email, role, effectiveRole, roleCeiling }`. Both roles
+are `ExperimentalUserRole` (`"admin" | "member"`); `effectiveRole` is the role
+the app's credential acts with, `member` under a `roleCeiling` of `"member"`.
+`email` is null for the local owner, whose stored address is a placeholder. The
+value is derived from `GET /api/v1/auth/session`, so local mode reports the local
+owner as an admin and null appears only while nobody is signed in. It
+re-renders when the session query refetches: on the `users-changed` system
+change, after the realtime socket reconnects (the server closes sockets whose
+user changes role), and on the session's 60-second refetch.
+`experimental_useUserStorageKey(key)` returns `key` unchanged in local mode,
+`${key}:user:${userId}` in multi-user mode, and null while signed out.
+Hiding a control is presentation only; the server keeps enforcing
+`experimental_requiredRole` and `experimental_PluginRpcForbiddenError`.
+
+Core callers use the same `useCurrentUser` and `useUserStorageKey` hooks the
+plugin runtime exports: settings navigation, the admin settings route gate,
+onboarding, the settings view redirect, Account settings' user and invite
+administration, and command palette recents. First-party callers: Docs hides
+**Add vault**, bb connect hides **Revoke all**, and Prompt Library keeps its
+sticky search scope per user. The fake host's `renderSlot` takes
+`experimental_currentUser` (omitted: local owner admin) and
+`behavior.experimental_setCurrentUser`.
+
+Before stabilizing, audit whether `BbContext` should carry the user, whether
+`displayName` and `email` should follow directory visibility rules, whether the
+storage key format should include the server origin for one browser that
+signs in to several servers, and whether a pre-existing local-mode key should
+migrate to the owner's scoped key when a server switches to multi-user mode.
+
+## `PluginEnvironmentProviderCreateContext.experimental_requester` (`@get-bb/plugin-sdk/environment-provider`)
+
+`create` receives `experimental_requester: PluginEnvironmentProviderRequester |
+null`, `{ userId, role }` for the thread's `createdByUserId`, or null when the
+thread has no human creator (no creator, or the machine-auth system user) or the
+creator no longer exists. `role` is the account role read when the create
+attempt starts. In multi-user mode it is `admin` only when the thread's
+provisioning request was authored by that same user without a role ceiling;
+otherwise a member-capped or agent-inherited request reports `member`. Local
+mode reports the local owner as `admin`. `restore` does not receive it. No
+first-party provider reads it yet; the server test
+`environment-provider-requester.test.ts` drives it through thread creation.
+
+Before stabilizing, audit whether `restore` and `remove` need the requester,
+whether a later sender who triggers reprovisioning should replace the creator,
+whether providers need the display name or email for git identity, and whether
+first-party worktree providers should apply per-user branch prefixes.
 
 ## `ThreadChatMessageReference.experimental_messageSeq`
 

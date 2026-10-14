@@ -20,6 +20,7 @@ import {
   paletteActionIdForCommand,
 } from "@/lib/command-palette/palette-app-commands";
 import {
+  PALETTE_RECENTS_KEY,
   readPaletteRecents,
   recordPaletteRecent,
 } from "@/lib/command-palette/palette-recents";
@@ -32,6 +33,7 @@ import { getActiveThreadPanelOpener } from "@/components/plugin/plugin-thread-pa
 import { pluginListQueryOptions } from "@/hooks/queries/plugin-settings-queries";
 import type { PluginSettingsCandidate } from "@/components/settings/plugin-settings-entries";
 import { appQueryClient } from "@/lib/app-query-client";
+import { useUserStorageKey } from "@/hooks/useAuth";
 import { LazyCommandPaletteBody } from "./LazyCommandPaletteBody";
 import { ThreadSearchPalettePlaceholder } from "./ThreadSearchPalettePlaceholder";
 
@@ -74,8 +76,9 @@ export function CommandPalette({ threadId, projectId }: CommandPaletteProps) {
   const [installedPlugins, setInstalledPlugins] = useState<
     readonly PluginSettingsCandidate[]
   >([]);
+  const recentsKey = useUserStorageKey(PALETTE_RECENTS_KEY);
   const [recents, setRecents] = useState<readonly string[]>(() =>
-    readPaletteRecents(),
+    readPaletteRecents(recentsKey),
   );
   const pluginSlots = usePluginSlots();
   const pluginCommandIds = useMemo(
@@ -209,15 +212,20 @@ export function CommandPalette({ threadId, projectId }: CommandPaletteProps) {
     return byCommand;
   }, [actions, pluginCommandIds]);
 
-  const chooseAction = useCallback((action: PaletteAction) => {
-    setRecents((current) => recordPaletteRecent(current, action.id));
-    if (action.id === THREAD_SEARCH_ACTION_ID) {
-      action.run();
-      return;
-    }
-    pendingRunRef.current = action.run;
-    setOpen(false);
-  }, []);
+  const chooseAction = useCallback(
+    (action: PaletteAction) => {
+      setRecents((current) =>
+        recordPaletteRecent(recentsKey, current, action.id),
+      );
+      if (action.id === THREAD_SEARCH_ACTION_ID) {
+        action.run();
+        return;
+      }
+      pendingRunRef.current = action.run;
+      setOpen(false);
+    },
+    [recentsKey],
+  );
 
   const runAfterClose = useCallback((run: () => void) => {
     pendingRunRef.current = run;

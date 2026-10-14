@@ -2,7 +2,7 @@ import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
 import { TooltipProvider } from "@bb/shared-ui/tooltip";
 import { useUpdateGeneralSettings } from "@/hooks/mutations/settings-mutations";
 import { useSystemConfig } from "@/hooks/queries/system-queries";
-import { useAuth } from "@/hooks/useAuth";
+import { useActsAsMember } from "@/hooks/useAuth";
 
 const OnboardingFlow = lazy(() =>
   import("./OnboardingFlow").then((module) => ({
@@ -29,7 +29,7 @@ function rememberOnboardingSeen(): void {
 }
 
 export function OnboardingGate({ children }: { children: ReactNode }) {
-  const auth = useAuth();
+  const member = useActsAsMember();
   const configQuery = useSystemConfig();
   const updateSettings = useUpdateGeneralSettings();
   const [firstRunClosed, setFirstRunClosed] = useState(false);
@@ -52,9 +52,7 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
   }
 
   const firstRun =
-    settings.onboardingCompletedAt === null &&
-    !firstRunClosed &&
-    !(auth?.authMode === "multi" && auth.user?.role !== "admin");
+    settings.onboardingCompletedAt === null && !firstRunClosed && !member;
   if (!firstRun) return children;
 
   return (

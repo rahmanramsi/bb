@@ -324,7 +324,12 @@ Read the installed declarations for exact current signatures.
 - `PluginEnvironmentProviderValidateContext` — the `validate` context
   typed from `requires` and `inputs`, like the create context
 - `PluginEnvironmentProviderCreateContext` — facts for a fresh environment,
-  including the `suggestedBranchName` core would use
+  including the `suggestedBranchName` core would use and
+  `experimental_requester`
+- `PluginEnvironmentProviderRequester` — `{ userId, role }` for the thread's
+  creator, or null without a human creator. `role` is the account role read
+  when the attempt starts: `member` in multi-user mode unless the creator asked
+  without a role ceiling, `admin` for the local owner in local mode
 - `PluginEnvironmentProviderRestoreContext` — `restore`'s
   context: the creation inputs plus `previous.environment` and its private
   `previous.resource`

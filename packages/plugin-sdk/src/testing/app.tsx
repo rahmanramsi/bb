@@ -27,6 +27,7 @@ import {
   type ComposerSubmitOptions,
   type ComposerView,
   type ExperimentalAppOverlayRegistration,
+  type ExperimentalCurrentUser,
   type ExperimentalQuestionFormHost,
   type PluginAppDefinition,
   type PluginAppSetup,
@@ -271,6 +272,7 @@ interface SlotEnv {
   rpcCalls: RpcCall[];
   realtimeHandlers: Map<string, Set<(payload: unknown) => void>>;
   realtimeConnection: TestRealtimeConnectionStore;
+  currentUser: TestCurrentUserStore;
   settingsState: PluginSettingsState;
   bbContext: BbContext;
   pluginId: string;
@@ -459,6 +461,35 @@ interface TestRealtimeConnectionStore {
   getSnapshot(): PluginRealtimeConnectionState;
   subscribe(listener: () => void): () => void;
   setState(state: PluginRealtimeConnectionState): void;
+}
+
+interface TestCurrentUserStore {
+  authMode: "local" | "multi";
+  getSnapshot(): ExperimentalCurrentUser | null;
+  subscribe(listener: () => void): () => void;
+  setUser(user: ExperimentalCurrentUser | null): void;
+}
+
+const TEST_LOCAL_OWNER: ExperimentalCurrentUser = {
+  userId: "usr_local_owner",
+  displayName: "Local owner",
+  email: null,
+  role: "admin",
+  effectiveRole: "admin",
+  roleCeiling: null,
+};
+
+function useTestCurrentUser(hook: string): {
+  authMode: "local" | "multi";
+  user: ExperimentalCurrentUser | null;
+} {
+  const store = useSlotEnv(hook).currentUser;
+  const user = useSyncExternalStore(
+    store.subscribe,
+    store.getSnapshot,
+    store.getSnapshot,
+  );
+  return { authMode: store.authMode, user };
 }
 
 const SlotEnvContext = createContext<SlotEnv | null>(null);
@@ -1172,7 +1203,9 @@ function TestDiff({
   );
 }
 
-type TestClipboard = (content: ExperimentalClipboardContent) => Promise<boolean>;
+type TestClipboard = (
+  content: ExperimentalClipboardContent,
+) => Promise<boolean>;
 
 let activeClipboard: TestClipboard | null = null;
 
@@ -1232,6 +1265,16 @@ const testPluginSdkApp = {
   },
   experimental_usePluginId(): string {
     return useSlotEnv("experimental_usePluginId").pluginId;
+  },
+  experimental_useCurrentUser(): ExperimentalCurrentUser | null {
+    return useTestCurrentUser("experimental_useCurrentUser").user;
+  },
+  experimental_useUserStorageKey(key: string): string | null {
+    const { authMode, user } = useTestCurrentUser(
+      "experimental_useUserStorageKey",
+    );
+    if (authMode === "local") return key;
+    return user === null ? null : `${key}:user:${user.userId}`;
   },
   experimental_useQuestionFormHost(): ExperimentalQuestionFormHost {
     return useSlotEnv("experimental_useQuestionFormHost").questionFormHost;
@@ -1724,6 +1767,13 @@ export interface RenderSlotOptions<
   context?: { projectId?: string | null; threadId?: string | null };
   /** `experimental_usePluginId()` value; defaults to `test-plugin`. */
   pluginId?: string;
+  /**
+   * The signed-in user `experimental_useCurrentUser()` reports. Omitted → local
+   * mode with the local owner admin and unscoped storage keys. Passing a user,
+   * or null for nobody signed in, selects multi-user mode, where
+   * `experimental_useUserStorageKey` scopes keys by `userId`.
+   */
+  experimental_currentUser?: ExperimentalCurrentUser | null;
   /** Initial `useRealtimeConnectionState()` value; defaults to `connected`. */
   realtimeConnectionState?: PluginRealtimeConnectionState;
   /** Initial state for this render's isolated composer scope and view. */
@@ -1849,6 +1899,10 @@ export interface RenderedSlotBehaviorDrivers {
   /** Drive the lifecycle of the same connection used by realtime events. */
   setRealtimeConnectionState(
     state: PluginRealtimeConnectionState,
+  ): Promise<void>;
+  /** Replace the signed-in user, as after a role change or sign-out, wrapped in act. */
+  experimental_setCurrentUser(
+    user: ExperimentalCurrentUser | null,
   ): Promise<void>;
   /** Replace composer text as a host-originated edit, wrapped in act. */
   setComposerText(text: string): Promise<void>;
@@ -1991,6 +2045,25 @@ export function renderSlot<
       if (state === realtimeConnectionState) return;
       realtimeConnectionState = state;
       for (const listener of realtimeConnectionListeners) listener();
+    },
+  };
+
+  let currentUserSnapshot =
+    options.experimental_currentUser === undefined
+      ? TEST_LOCAL_OWNER
+      : options.experimental_currentUser;
+  const currentUserListeners = new Set<() => void>();
+  const currentUser: TestCurrentUserStore = {
+    authMode:
+      options.experimental_currentUser === undefined ? "local" : "multi",
+    getSnapshot: () => currentUserSnapshot,
+    subscribe(listener) {
+      currentUserListeners.add(listener);
+      return () => currentUserListeners.delete(listener);
+    },
+    setUser(user) {
+      currentUserSnapshot = user;
+      for (const listener of currentUserListeners) listener();
     },
   };
 
@@ -2457,6 +2530,7 @@ export function renderSlot<
     rpcCalls,
     realtimeHandlers,
     realtimeConnection,
+    currentUser,
     settingsState: { values: options.settings, isLoading: false },
     bbContext: { projectId, threadId },
     pluginId: options.pluginId ?? "test-plugin",
@@ -2545,6 +2619,11 @@ export function renderSlot<
   ): Promise<void> => {
     await act(async () => realtimeConnection.setState(state));
   };
+  const experimental_setCurrentUser = async (
+    user: ExperimentalCurrentUser | null,
+  ): Promise<void> => {
+    await act(async () => currentUser.setUser(user));
+  };
   const setComposerText = async (text: string): Promise<void> => {
     await act(async () => commitComposerText(text));
   };
@@ -2568,6 +2647,7 @@ export function renderSlot<
     rpcCalls,
     emitRealtime,
     setRealtimeConnectionState,
+    experimental_setCurrentUser,
     setComposerText,
     setComposerScope,
     navigateCalls,
@@ -2580,6 +2660,7 @@ export function renderSlot<
     behavior: {
       emitRealtime,
       setRealtimeConnectionState,
+      experimental_setCurrentUser,
       setComposerText,
       setComposerScope,
     },

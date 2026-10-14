@@ -276,9 +276,9 @@ call `sdk.environments.delete` to drive retirement. The former
 `experimental_defineEnvironmentProvider` runtime and `provision` decision
 contract are removed. The environment-provider entry exports operation types.
 
-`create` receives the resolved facts, thread, suggestedBranchName, monotonic
-attempt, pathKey, report, and an abort signal, and always builds a fresh
-environment. A thread whose environment was destroyed gets it back only when
+`create` receives the resolved facts, thread, suggestedBranchName, the creator as
+`experimental_requester` (for per-user git identity, not authorization), monotonic attempt,
+pathKey, report, and an abort signal, and always builds a fresh environment. A thread whose environment was destroyed gets it back only when
 the user asks for a restore and the provider declares the optional
 `restore`: it receives the same facts, with the inputs the
 environment was created with, plus `previous: { environment, resource }`

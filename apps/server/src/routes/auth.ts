@@ -64,6 +64,8 @@ export function registerAuthRoutes(app: Hono, deps: AuthRouteDeps): void {
         deps.config.authMode === "multi" && deps.userAuth.needsBootstrap(),
       principalKind: principal?.kind ?? null,
       user: principal === null ? null : deps.userAuth.getUser(principal.userId),
+      effectiveRole: principal?.role ?? null,
+      roleCeiling: principal?.roleCeiling ?? null,
     });
   });
 
