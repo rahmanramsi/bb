@@ -1719,7 +1719,11 @@ describe("thread command dispatch", () => {
           injectedSkillSources: [],
           instructionMode: "append",
         },
-        target: { mode: "auto", expectedTurnId: "turn-1" },
+        target: {
+          mode: "auto",
+          expectedTurnId: "turn-1",
+          bindExpectedTurn: false,
+        },
       },
       harness.dispatchOptions(),
     );
@@ -1872,7 +1876,11 @@ describe("thread command dispatch", () => {
           injectedSkillSources: [],
           instructionMode: "append",
         },
-        target: { mode: "auto", expectedTurnId: "turn-1" },
+        target: {
+          mode: "auto",
+          expectedTurnId: "turn-1",
+          bindExpectedTurn: false,
+        },
       },
       harness.dispatchOptions(),
     );
@@ -1939,7 +1947,11 @@ describe("thread command dispatch", () => {
           injectedSkillSources: [],
           instructionMode: "append",
         },
-        target: { mode: "auto", expectedTurnId: "turn-old" },
+        target: {
+          mode: "auto",
+          expectedTurnId: "turn-old",
+          bindExpectedTurn: false,
+        },
       },
       harness.dispatchOptions(),
     );
@@ -2015,7 +2027,11 @@ describe("thread command dispatch", () => {
           injectedSkillSources: [],
           instructionMode: "append",
         },
-        target: { mode: "steer", expectedTurnId: "turn-old" },
+        target: {
+          mode: "steer",
+          expectedTurnId: "turn-old",
+          bindExpectedTurn: false,
+        },
       },
       harness.dispatchOptions(),
     );
@@ -2074,7 +2090,11 @@ describe("thread command dispatch", () => {
           injectedSkillSources: [],
           instructionMode: "append",
         },
-        target: { mode: "steer", expectedTurnId: "turn-old" },
+        target: {
+          mode: "steer",
+          expectedTurnId: "turn-old",
+          bindExpectedTurn: false,
+        },
       },
       harness.dispatchOptions(),
     );
@@ -2128,7 +2148,11 @@ describe("thread command dispatch", () => {
           injectedSkillSources: [],
           instructionMode: "append",
         },
-        target: { mode: "steer", expectedTurnId: null },
+        target: {
+          mode: "steer",
+          expectedTurnId: null,
+          bindExpectedTurn: false,
+        },
       },
       harness.dispatchOptions(),
     );
@@ -2137,6 +2161,186 @@ describe("thread command dispatch", () => {
     expect(harness.runtimeState.ranTurnText).toBe("send without active turn");
     expect(harness.runtimeState.ranTurnClientRequestId).toBe(requestId);
     expect(harness.runtimeState.steeredTurnId).toBeUndefined();
+  });
+
+  describe("turn.submit bound to its expected turn", () => {
+    function boundSubmit(
+      target: Extract<HostDaemonCommand, { type: "turn.submit" }>["target"],
+      text: string,
+    ): Extract<HostDaemonCommand, { type: "turn.submit" }> {
+      return {
+        bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
+        type: "turn.submit",
+        environmentId: "env-1",
+        threadId: "thread-1",
+        requestId: nextClientRequestId(),
+        input: [textPromptInput(text)],
+        options: {
+          model: "gpt-5",
+          serviceTier: "default",
+          reasoningLevel: "medium",
+          providerOptions: {},
+          permissionMode: "full",
+          permissionScope: "full",
+          approvalReviewer: null,
+          permissionEscalation: null,
+        },
+        resumeContext: {
+          bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
+          workspaceContext: {
+            workspacePath: "/tmp/env-1",
+          },
+          projectId: "project-1",
+          providerId: "fake",
+          providerThreadId: "provider-1",
+          instructions: "Be a helpful coding agent.",
+          dynamicTools: [],
+          contributedEnv: [],
+          injectedSkillSources: [],
+          instructionMode: "append",
+        },
+        target,
+      };
+    }
+
+    it("refuses an auto submit whose expected turn is not the live turn instead of steering the live turn", async () => {
+      const harness = createHarness();
+      const steeredTurnIds: string[] = [];
+      await harness.manager.ensureEnvironment({
+        environmentId: "env-1",
+        workspacePath: "/tmp/env-1",
+      });
+      harness.threadControls.setActiveTurn("thread-1", "turn-admin");
+      harness.runtime.steerTurn = async (args) => {
+        steeredTurnIds.push(args.expectedTurnId);
+        return { status: "steered" };
+      };
+
+      const dispatched = dispatchCommand(
+        boundSubmit(
+          {
+            mode: "auto",
+            expectedTurnId: "turn-checked",
+            bindExpectedTurn: true,
+          },
+          "bound notice",
+        ),
+        harness.dispatchOptions(),
+      );
+
+      await expect(dispatched).rejects.toMatchObject({
+        code: "turn_binding_mismatch",
+      });
+      expect(steeredTurnIds).toEqual([]);
+      expect(harness.runtimeState.ranTurnClientRequestId).toBeUndefined();
+    });
+
+    it("refuses a bound auto submit with no expected turn while another turn is live", async () => {
+      const harness = createHarness();
+      await harness.manager.ensureEnvironment({
+        environmentId: "env-1",
+        workspacePath: "/tmp/env-1",
+      });
+      harness.threadControls.setActiveTurn("thread-1", "turn-admin");
+
+      await expect(
+        dispatchCommand(
+          boundSubmit(
+            { mode: "auto", expectedTurnId: null, bindExpectedTurn: true },
+            "bound send",
+          ),
+          harness.dispatchOptions(),
+        ),
+      ).rejects.toMatchObject({ code: "turn_binding_mismatch" });
+      expect(harness.runtimeState.steeredTurnId).toBeUndefined();
+      expect(harness.runtimeState.ranTurnClientRequestId).toBeUndefined();
+    });
+
+    it("refuses instead of re-steering a newer turn when a bound steer goes stale", async () => {
+      const harness = createHarness();
+      const steeredTurnIds: string[] = [];
+      await harness.manager.ensureEnvironment({
+        environmentId: "env-1",
+        workspacePath: "/tmp/env-1",
+      });
+      harness.threadControls.setActiveTurn("thread-1", "turn-checked");
+      harness.runtime.steerTurn = async (args) => {
+        steeredTurnIds.push(args.expectedTurnId);
+        if (args.expectedTurnId === "turn-admin") {
+          return { status: "steered" };
+        }
+        harness.threadControls.setActiveTurn("thread-1", "turn-admin");
+        return { status: "stale", activeTurnId: "turn-admin" };
+      };
+
+      await expect(
+        dispatchCommand(
+          boundSubmit(
+            {
+              mode: "steer",
+              expectedTurnId: "turn-checked",
+              bindExpectedTurn: true,
+            },
+            "bound steer",
+          ),
+          harness.dispatchOptions(),
+        ),
+      ).rejects.toMatchObject({ code: "turn_binding_mismatch" });
+      expect(steeredTurnIds).toEqual(["turn-checked"]);
+      expect(harness.runtimeState.ranTurnClientRequestId).toBeUndefined();
+    });
+
+    it("steers the expected turn when it is still live", async () => {
+      const harness = createHarness();
+      await harness.manager.ensureEnvironment({
+        environmentId: "env-1",
+        workspacePath: "/tmp/env-1",
+      });
+      harness.threadControls.setActiveTurn("thread-1", "turn-checked");
+
+      const result = await dispatchCommand(
+        boundSubmit(
+          {
+            mode: "auto",
+            expectedTurnId: "turn-checked",
+            bindExpectedTurn: true,
+          },
+          "bound notice",
+        ),
+        harness.dispatchOptions(),
+      );
+
+      expect(result).toEqual({ trace: { spans: [] } });
+      expect(harness.runtimeState.steeredTurnId).toBe("turn-checked");
+    });
+
+    it("starts a new turn for a bound submit when no turn is live", async () => {
+      const harness = createHarness();
+      await harness.manager.ensureEnvironment({
+        environmentId: "env-1",
+        workspacePath: "/tmp/env-1",
+      });
+      harness.threadControls.setProviderSession("thread-1", {
+        providerId: "fake",
+        providerThreadId: "provider-1",
+      });
+      const command = boundSubmit(
+        {
+          mode: "auto",
+          expectedTurnId: "turn-checked",
+          bindExpectedTurn: true,
+        },
+        "bound after settle",
+      );
+
+      const result = await dispatchCommand(command, harness.dispatchOptions());
+
+      expect(result).toEqual({ trace: { spans: [] } });
+      expect(harness.runtimeState.ranTurnClientRequestId).toBe(
+        command.requestId,
+      );
+      expect(harness.runtimeState.steeredTurnId).toBeUndefined();
+    });
   });
 
   it("lazily resumes a missing thread runtime before turn.submit", async () => {

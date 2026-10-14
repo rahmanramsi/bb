@@ -521,7 +521,7 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
       execution,
       input: [],
       permissionEscalation: "deny",
-      target: { mode: "auto", expectedTurnId: null },
+      target: { mode: "auto", expectedTurnId: null, bindExpectedTurn: false },
       thread,
     });
     const result = await runLiveHostCommand(deps, {

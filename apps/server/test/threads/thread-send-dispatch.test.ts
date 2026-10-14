@@ -897,11 +897,19 @@ describe("startup queue waits", () => {
       ).toEqual([
         expect.objectContaining({
           inputGroups: [pluginInput, input],
-          target: { mode: "auto", expectedTurnId: "turn-ready" },
+          target: {
+            mode: "auto",
+            expectedTurnId: "turn-ready",
+            bindExpectedTurn: false,
+          },
         }),
         expect.objectContaining({
           input: secondInput,
-          target: { mode: "auto", expectedTurnId: "turn-ready" },
+          target: {
+            mode: "auto",
+            expectedTurnId: "turn-ready",
+            bindExpectedTurn: false,
+          },
         }),
       ]);
       expect(
@@ -1004,6 +1012,7 @@ describe("startup queue waits", () => {
           target: {
             mode: "auto",
             expectedTurnId: "turn-system-notice-ready",
+            bindExpectedTurn: false,
           },
         }),
       ]);

@@ -34,7 +34,10 @@ import {
   type DbTransaction,
 } from "@bb/db";
 import { assertNever } from "@bb/core-ui";
-import { COMPETING_TURN_ERROR_CODE } from "@bb/host-daemon-contract";
+import {
+  COMPETING_TURN_ERROR_CODE,
+  TURN_BINDING_MISMATCH_ERROR_CODE,
+} from "@bb/host-daemon-contract";
 import {
   type ProvisioningTranscriptEntry,
   type SystemThreadInterruptedReason,
@@ -109,6 +112,7 @@ import {
 import { cancelAbandonedProviderCreations } from "./thread-environment-providers.js";
 import { scheduleThreadProvisioningAdvance } from "./thread-provisioning.js";
 import { isPreStartThreadStatus } from "./thread-status.js";
+import { requeueTurnSubmitRefusedForBindingInTransaction } from "./turn-authority.js";
 import { settleDanglingBackgroundTasksForStoppedThreadInTransaction } from "./background-task-reconciliation.js";
 import { abortPluginToolCallsForThreads } from "../plugins/plugin-tool-calls.js";
 
@@ -858,6 +862,10 @@ function settleThreadCommandFailure(
       args.report.errorCode === COMPETING_TURN_ERROR_CODE &&
       getActiveTurnId(args.deps, thread.id) !== null
     ) {
+      return emptyCommandResultSideEffects();
+    }
+    if (args.report.errorCode === TURN_BINDING_MISMATCH_ERROR_CODE) {
+      requeueTurnSubmitRefusedForBindingInTransaction(args.deps, args.command);
       return emptyCommandResultSideEffects();
     }
   }
