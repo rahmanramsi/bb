@@ -56,9 +56,19 @@ export const automationRpcContract = defineRpcContract({
     input: projectAutomationInputSchema,
     output: automationResponseSchema,
   },
+  automations_pause_script: {
+    input: projectAutomationInputSchema,
+    output: automationResponseSchema,
+    experimental_requiredRole: "admin",
+  },
   automations_resume: {
     input: projectAutomationInputSchema,
     output: automationResponseSchema,
+  },
+  automations_resume_script: {
+    input: projectAutomationInputSchema,
+    output: automationResponseSchema,
+    experimental_requiredRole: "admin",
   },
   automations_run: {
     input: runAutomationInputSchema,
@@ -126,9 +136,25 @@ export function createRpcHandlers(service: AutomationService) {
       return service.delete(input);
     },
     automations_pause(input: z.output<typeof projectAutomationInputSchema>) {
+      if (isScriptAutomation(input)) {
+        throw scriptAdminRequired("automations_pause");
+      }
+      return service.pause(input);
+    },
+    automations_pause_script(
+      input: z.output<typeof projectAutomationInputSchema>,
+    ) {
       return service.pause(input);
     },
     automations_resume(input: z.output<typeof projectAutomationInputSchema>) {
+      if (isScriptAutomation(input)) {
+        throw scriptAdminRequired("automations_resume");
+      }
+      return service.resume(input);
+    },
+    automations_resume_script(
+      input: z.output<typeof projectAutomationInputSchema>,
+    ) {
       return service.resume(input);
     },
     automations_run(input: z.output<typeof runAutomationInputSchema>) {

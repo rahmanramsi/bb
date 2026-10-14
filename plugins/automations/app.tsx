@@ -317,23 +317,23 @@ function useRuns(
 
 function useMutations() {
   const rpc = useRpc<typeof automationRpcContract>();
-  type MutationMethod =
-    | "automations_pause"
-    | "automations_resume"
-    | "automations_delete";
-  const call = useCallback(
-    (method: MutationMethod, route: DetailRoute) => rpc.call(method, route),
-    [rpc],
-  );
   return {
-    pause: (route: DetailRoute) => call("automations_pause", route),
-    resume: (route: DetailRoute) => call("automations_resume", route),
+    pause: (route: DetailRoute, mode: AutomationRunMode) =>
+      rpc.call(
+        mode === "script" ? "automations_pause_script" : "automations_pause",
+        route,
+      ),
+    resume: (route: DetailRoute, mode: AutomationRunMode) =>
+      rpc.call(
+        mode === "script" ? "automations_resume_script" : "automations_resume",
+        route,
+      ),
     run: (route: DetailRoute, mode: AutomationRunMode) =>
       rpc.call(
         mode === "script" ? "automations_run_script" : "automations_run",
         route,
       ),
-    delete: (route: DetailRoute) => call("automations_delete", route),
+    delete: (route: DetailRoute) => rpc.call("automations_delete", route),
     update: (route: DetailRoute, agent: AgentExecutionUpdate) =>
       rpc.call("automations_update", { ...route, agent }),
   };
@@ -407,10 +407,10 @@ function OverviewView({
   const [deleting, setDeleting] = useState(false);
 
   const changeEnabled = useCallback(
-    async (enabled: boolean, route: DetailRoute) => {
+    async (enabled: boolean, route: DetailRoute, mode: AutomationRunMode) => {
       const method = enabled ? "resume" : "pause";
       try {
-        await mutations[method](route);
+        await mutations[method](route, mode);
       } catch (rpcError: unknown) {
         toast.error(`Failed to ${method} automation: ${errorText(rpcError)}`);
       }
@@ -678,7 +678,9 @@ function DetailView({
       editing={requiresPrompt || editingRequested}
       onToggle={(checked) => {
         const method = checked ? "resume" : "pause";
-        runAction(method, () => mutations[method](route));
+        runAction(method, () =>
+          mutations[method](route, readableAutomation.execution.mode),
+        );
       }}
       onEdit={openEdit}
       onCancelEdit={requiresPrompt ? onBack : () => setEditingRequested(false)}

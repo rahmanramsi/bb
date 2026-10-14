@@ -262,6 +262,7 @@ export function OverviewRow({
   onEnabledChange: (
     enabled: boolean,
     route: AutomationDetailRoute,
+    mode: AutomationRunMode,
   ) => Promise<void>;
   onRunNow: (
     route: AutomationDetailRoute,
@@ -317,9 +318,11 @@ export function OverviewRow({
           label={`${automation.enabled ? "Disable" : "Enable"} ${automation.name}`}
           onCheckedChange={(enabled) => {
             setTogglePending(true);
-            void onEnabledChange(enabled, route).finally(() =>
-              setTogglePending(false),
-            );
+            void onEnabledChange(
+              enabled,
+              route,
+              automation.execution.mode,
+            ).finally(() => setTogglePending(false));
           }}
         />
       }
@@ -468,6 +471,7 @@ export function AutomationOverviewView({
   onEnabledChange: (
     enabled: boolean,
     route: AutomationDetailRoute,
+    mode: AutomationRunMode,
   ) => Promise<void>;
   onRunNow: (
     route: AutomationDetailRoute,
