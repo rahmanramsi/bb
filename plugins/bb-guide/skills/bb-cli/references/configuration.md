@@ -85,6 +85,13 @@ or supply `--password-file PATH`, then sign in with `bb login`.
 the current user's PATs. New token values are shown once. All these commands
 accept `--json`.
 
+In the multi-mode app, open the user menu in the navigation rail to sign out
+or open Settings → Account. Everyone manages their own personal access
+tokens; admins also manage users and invites. Copy new tokens and invite
+links before selecting Done. Share invite links yourself; bb does not send
+invite emails. The link opens an account registration page. Local mode does
+not show these controls. Thread lists and headers show creators in multi mode.
+
 Roles are guardrails for a trusted team. A member who runs an agent effectively
 has shell access to its host. In multi mode, each turn supplies a signed
 seven-day `BB_TOKEN` to the agent shell through the launch environment. It

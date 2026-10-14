@@ -6,7 +6,12 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBbDesktopApi } from "@/test/bb-desktop-test-utils";
 import { resetNativeShellForTests } from "@/lib/native-shell";
-import { appSurfaceRequestInit, getAppSurface } from "./app-surface";
+import {
+  appSurfaceRequestInit,
+  getAppSurface,
+  fetchWithAppSurface,
+  AUTHENTICATION_REQUIRED_EVENT,
+} from "./app-surface";
 
 const mobileHandshake: NativeShellHandshake = {
   bridgeVersion: 1,
@@ -83,4 +88,39 @@ describe("app surface request metadata", () => {
       "mobile",
     );
   });
+});
+
+describe("expired browser authentication", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    resetNativeShellForTests();
+  });
+
+  it.each([
+    { path: "/api/v1/threads", status: 401, refresh: true },
+    { path: "/api/v1/auth/tokens", status: 401, refresh: true },
+    { path: "/api/v1/auth/invites", status: 401, refresh: true },
+    { path: "/api/v1/auth/sign-in", status: 401, refresh: false },
+    { path: "/api/v1/auth/session", status: 401, refresh: false },
+    { path: "/api/v1/auth/invites/accept", status: 401, refresh: false },
+    { path: "/api/v1/threads", status: 403, refresh: false },
+  ])(
+    "refreshes the session only for protected unauthorized requests: $path, $status",
+    async ({ path, status, refresh }) => {
+      const browserWindow = Object.assign(new EventTarget(), {
+        location: { origin: "http://localhost" },
+      });
+      vi.stubGlobal("window", browserWindow);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(new Response(null, { status })),
+      );
+      const listener = vi.fn();
+      browserWindow.addEventListener(AUTHENTICATION_REQUIRED_EVENT, listener);
+      const response = await fetchWithAppSurface(path);
+      expect(response.status).toBe(status);
+      expect(listener).toHaveBeenCalledTimes(refresh ? 1 : 0);
+    },
+  );
 });

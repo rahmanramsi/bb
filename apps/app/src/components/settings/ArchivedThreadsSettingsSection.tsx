@@ -1,3 +1,4 @@
+import { ThreadCreator } from "@/components/thread/ThreadCreator";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { ThreadListEntry } from "@bb/domain";
@@ -263,6 +264,7 @@ export function ArchivedThreadsSettingsSection() {
                     >
                       <span className="flex min-w-0 items-center gap-2 text-sm">
                         <ThreadTitle title={getThreadDisplayTitle(thread)} />
+                        <ThreadCreator userId={thread.createdByUserId} />
                         {thread.parentThreadId !== null ? (
                           <Pill variant="outline" className="shrink-0">
                             <span className="inline-flex items-center gap-1 align-middle">

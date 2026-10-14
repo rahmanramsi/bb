@@ -6,6 +6,7 @@ import {
 import { Icon, type IconName } from "@bb/shared-ui/icon";
 import { ThreadStatusGlyph } from "@/components/thread/ThreadStatusGlyph";
 import { ThreadTitle } from "@/components/thread/ThreadTitleMentions";
+import { ThreadCreator } from "@/components/thread/ThreadCreator";
 import { useChildThreads, useThreads } from "@/hooks/queries/thread-queries";
 import { getThreadRoutePath } from "@/lib/route-paths";
 import { getThreadDisplayTitle } from "@/lib/thread-title";
@@ -48,7 +49,12 @@ export function RelatedThreadsSection({
                   )}
                 </span>
               }
-              name={<ThreadTitle title={title} />}
+              name={
+                <span className="flex min-w-0 items-center gap-2">
+                  <ThreadTitle title={title} />
+                  <ThreadCreator userId={relatedThread.createdByUserId} />
+                </span>
+              }
               title={title}
               target={{
                 kind: "link",

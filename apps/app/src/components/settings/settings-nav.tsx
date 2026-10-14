@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useAuth } from "@/hooks/useAuth";
 import { matchPath, useLocation } from "react-router-dom";
 import { useHostDaemon, useLocalHostDaemonAccess } from "@/hooks/useHostDaemon";
 import { usePluginSlots, type PluginFileOpenerSlot } from "@/lib/plugin-slots";
@@ -33,21 +34,39 @@ export function useSettingsNavSections(
 ): readonly SettingsNavSection[] {
   const { hasDaemon } = useHostDaemon();
   const { accessState } = useLocalHostDaemonAccess();
+  const auth = useAuth();
+  const multi = auth?.authMode === "multi";
+  const member = multi && auth.user?.role !== "admin";
 
   return useMemo(
     () =>
       SETTINGS_NAV_SECTIONS.filter(
         (section) =>
-          section.id !== "files" ||
-          hasDaemon ||
-          accessState !== "unavailable" ||
-          fileOpeners.length > 0,
+          (section.id !== "account" || multi) &&
+          (!member ||
+            ![
+              "general",
+              "providers",
+              "ai-services",
+              "machines",
+              "environment-variables",
+              "updates",
+              "plugins",
+              "marketplaces",
+              "experiments",
+              "community",
+            ].includes(section.id)) &&
+          (section.id !== "files" ||
+            hasDaemon ||
+            accessState !== "unavailable" ||
+            fileOpeners.length > 0),
       ),
-    [accessState, fileOpeners.length, hasDaemon],
+    [accessState, fileOpeners.length, hasDaemon, multi, member],
   );
 }
 
 export function useSettingsNavState(): SettingsNavState {
+  const auth = useAuth();
   const location = useLocation();
   const { fileOpeners, settingsSections } = usePluginSlots();
   const sections = useSettingsNavSections(fileOpeners);
@@ -90,10 +109,13 @@ export function useSettingsNavState(): SettingsNavState {
               : "general";
 
   const installedPlugins = pluginListQuery.data?.plugins ?? [];
-  const pluginEntries = buildPluginSettingsEntries({
-    installedPlugins,
-    settingsSections,
-  });
+  const pluginEntries =
+    auth?.authMode === "multi" && auth.user?.role !== "admin"
+      ? []
+      : buildPluginSettingsEntries({
+          installedPlugins,
+          settingsSections,
+        });
 
   return {
     activePluginId,

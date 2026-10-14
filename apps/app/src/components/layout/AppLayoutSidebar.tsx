@@ -8,6 +8,7 @@ import { SettingsSidebar } from "@/components/settings/SettingsSidebar";
 import { ResourceSidebar } from "@/components/tools/ResourceSidebar";
 import { useSidebar } from "@/components/ui/sidebar.js";
 import { useMobileRecentsThreadReveal } from "@/views/useMobileRecentsThreadReveal";
+import { UserMenu } from "@/components/auth/UserMenu";
 
 export type AppLayoutSidebarMode = "app" | "settings" | "plugins" | "skills";
 
@@ -42,10 +43,13 @@ export function AppLayoutSidebar({
         <AppNavRail isAppMode={mode === "app"} customize={customize} />
       )}
       railFooter={
-        <NavRailSettingsButton
-          isSettingsActive={mode === "settings"}
-          settingsRoutePath={settingsRoutePath}
-        />
+        <div className="flex w-full flex-col items-center gap-1">
+          <UserMenu />
+          <NavRailSettingsButton
+            isSettingsActive={mode === "settings"}
+            settingsRoutePath={settingsRoutePath}
+          />
+        </div>
       }
       alternateBody={
         renderedMode === "settings" ? (

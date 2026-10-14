@@ -1855,6 +1855,21 @@ environment, then restart.
 whether the server still needs its first account (`needsBootstrap`), and the
 signed-in user, if any.
 
+In multi mode, the app shows **Create your admin account** on a fresh server
+and **Sign in to bb** afterward. Open the user menu in the navigation rail to
+sign out or open **Settings → Account**. Everyone can create and revoke their
+own personal access tokens there. Admins also manage users and invites. Copy
+a new token or invite link before selecting **Done**; its value appears once.
+Share invite links yourself. Creating an invite does not send email.
+
+Invite links open `/invite?token=…` and register an account with the invited
+role. An invite restricted to an email requires that address. If you are
+already signed in, sign out before accepting an invite for another account.
+Thread lists and headers show each creator in multi mode. Local mode keeps
+the existing interface without sign-in, account controls, or creator labels.
+The app hides administrative settings for members; the server enforces the
+same role restrictions for API, SDK, and CLI callers.
+
 On a fresh `multi` server the first account registered with
 `POST /api/v1/auth/sign-up` becomes an admin. After that, sign-up requires an
 `inviteToken` from `POST /api/v1/auth/invites` (`{"role": "member" | "admin",

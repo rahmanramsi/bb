@@ -1,4 +1,5 @@
 import { getPanelTabHistoryKey } from "@/components/secondary-panel/recentlyClosedPanelTabs";
+import { ThreadCreator } from "@/components/thread/ThreadCreator";
 import { appendQuoteAndAttachmentsToDraft } from "@bb/client-core";
 import { queueSplitDownload } from "@/lib/split-prefetch";
 import { createCoreComposerActions } from "@/lib/plugin-composer-handle";
@@ -2321,6 +2322,7 @@ function ThreadDetailViewInternal(
     ) : undefined;
   const timelineHeader = (
     <ThreadDetailHeader
+      creator={<ThreadCreator userId={thread.createdByUserId} />}
       actionsMenu={({
         includeResponsiveActions,
         requestRename,

@@ -1,3 +1,4 @@
+import { ThreadCreator } from "@/components/thread/ThreadCreator";
 import {
   useCallback,
   useEffect,
@@ -588,6 +589,7 @@ function ThreadSearchPaletteRow({ row }: { row: PaletteThreadSearchRow }) {
             {row.relativeTime}
           </span>
         )}
+        <ThreadCreator userId={row.thread.createdByUserId} />
         <ThreadSearchPaletteStatus row={row} />
       </span>
     </span>

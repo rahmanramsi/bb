@@ -1,4 +1,6 @@
 import { PluginUpdateJobsHost } from "./components/plugin/PluginUpdateJobsHost";
+import { AuthGate } from "./components/auth/AuthGate";
+import { AdminSettingsGate } from "./components/auth/AdminSettingsGate";
 import { LazyThreadDetailView } from "./views/thread-detail/LazyThreadDetailView";
 import { LazyRootComposeView } from "./views/LazyRootComposeView";
 import { useRouteState } from "./hooks/useRouteState";
@@ -321,7 +323,11 @@ export function AppRoutes() {
           <Route path={SETTINGS_PLUGIN_ROUTE_PATH} element={<SettingsView />} />
           <Route
             path={SETTINGS_MACHINE_ROUTE_PATH}
-            element={<MachineSettingsView />}
+            element={
+              <AdminSettingsGate>
+                <MachineSettingsView />
+              </AdminSettingsGate>
+            }
           />
           <Route
             path={SETTINGS_PROJECT_ROUTE_PATH}
@@ -462,6 +468,14 @@ function PluginsRoute() {
 }
 
 export function App() {
+  return (
+    <AuthGate>
+      <AuthenticatedApp />
+    </AuthGate>
+  );
+}
+
+function AuthenticatedApp() {
   useWebSocket();
   useDesktopThemeSync();
   useAppTheme();
