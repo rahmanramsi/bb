@@ -711,6 +711,27 @@ describe("multi-user authentication", () => {
     await expect(api.sdk.projects.list()).resolves.toEqual([]);
   });
 
+  it("keeps plugin logs to admins", async () => {
+    server = await startTestServer({ authMode: "multi" });
+    await installWirePlugin(server);
+    const team = await bootstrapTeam();
+    const probe: Probe = {
+      method: "GET",
+      path: "/api/v1/plugins/wire/logs?tail=10",
+    };
+
+    const member = await send(probe, {
+      authorization: `Bearer ${team.memberToken}`,
+    });
+    expect(member.status).toBe(403);
+    expect(JSON.stringify(await member.json())).not.toContain("lines");
+    const admin = await send(probe, {
+      authorization: `Bearer ${team.adminToken}`,
+    });
+    expect(admin.status).toBe(200);
+    expect(await admin.json()).toMatchObject({ ok: true, lines: [] });
+  });
+
   it("returns 403 to members on admin-only actions and lets admins through", async () => {
     server = await startTestServer({ authMode: "multi" });
     await installWirePlugin(server);

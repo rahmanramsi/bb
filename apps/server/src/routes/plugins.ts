@@ -657,6 +657,7 @@ export function registerPluginRoutes(
   });
 
   app.get("/plugins/:id/logs", async (context) => {
+    assertAdmin(context);
     const rawTail = Number(context.req.query("tail") ?? "100");
     const tail = Number.isFinite(rawTail)
       ? Math.min(Math.max(Math.trunc(rawTail), 1), 10_000)

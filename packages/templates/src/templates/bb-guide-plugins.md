@@ -386,6 +386,7 @@ added/updated/unchanged counts.
   bb plugin config <id> [set <key> <value> | unset <key>]
                                  Show or change a plugin's declared settings
   bb plugin logs <id> [-n N] [-f]  Print (or follow) a plugin's bb.log output
+                                 (admins only in multi-user mode)
   bb plugin run <id> [args...]   Run a plugin command explicitly (also works when core owns its name)
   bb plugin token <id> [--rotate]  Print the token for auth:"token" HTTP
                                  routes; --rotate generates a new token,

@@ -172,7 +172,9 @@
     types. Reload the plugin after configuring (`bb plugin reload <id>`).
   - `bb plugin token <id>` — print a short-lived bearer token for that plugin.
   - List, reload, enable, disable, config, and remove support `--json`.
-  - `bb plugin logs <id> [-n N] [-f]` — the plugin's `bb.log` output.
+  - `bb plugin logs <id> [-n N] [-f]` — the plugin's `bb.log` output. In
+    multi-user mode only admins can read plugin logs; members get
+    `admin_required`.
   - `bb plugin run <id> [args...]` — explicit form; collisions log an activation
     warning and are annotated by `bb plugin list`.
   - `bb plugin new <name>` — scaffold a todo-list plugin (`server.ts`,

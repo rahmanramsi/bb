@@ -843,7 +843,8 @@ in both directions. The new adapter adds agent options in the model picker
 composer, agent questions as question cards, sign-in
 guidance, and the official ACP registry: its settings page lists the
 registry's agents with an Add button, and `bb acp registry`, `bb acp add
-<agent-id>` and `bb acp remove <agent-id>` do the same from the CLI. Adding
+<agent-id>` and `bb acp remove <agent-id>` do the same from the CLI. In
+multi-user mode only admins can add or remove registry agents. Adding
 one writes a `customAgents` entry that runs the registry's `npx` or `uvx`
 package on the thread's host, so the host needs Node.js or uv. Agents the
 registry ships only as a downloadable binary are listed but must be installed
@@ -1605,7 +1606,8 @@ Plugin state lives under the data dir:
 <dataDir>/plugins/<id>/data.db     Per-plugin SQLite database
 <dataDir>/plugins/<id>/secrets/    Secret settings and the plugin HTTP token
 <dataDir>/plugins/<id>/logs/       bb.log output (plugin.log, JSONL, rotated
-                                   at 5MB; read with `bb plugin logs <id>`)
+                                   at 5MB; read with `bb plugin logs <id>`,
+                                   admins only in multi-user mode)
 <dataDir>/plugins/git/, npm/       Managed installs for git:/npm: sources
 <dataDir>/marketplaces/staging/    Throwaway checkouts a git: marketplace
                                    refresh reads its manifest from, deleted
