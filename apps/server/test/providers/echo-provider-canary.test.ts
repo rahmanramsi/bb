@@ -17,6 +17,7 @@ import {
   type ThreadEvent,
   type ToolCallRequest,
   type ToolCallResponse,
+  LOCAL_OWNER_USER_ID,
 } from "@bb/domain";
 import { groupHostDaemonEvents } from "@bb/host-daemon-contract";
 import { resolveBuiltinPluginRootPath } from "../../src/services/plugins/builtin-registry.js";
@@ -188,7 +189,11 @@ describe("echo-provider canary: plugin install → server command → runtime �
     expect(artifact, "the plugin's bb.host artifact was built").toBeDefined();
     if (artifact === undefined) throw new Error("unreachable");
 
-    await harness.pluginService.updateSettings(PLUGIN_ID, { shout: true });
+    await harness.pluginService.updateSettings(
+      PLUGIN_ID,
+      { shout: true },
+      LOCAL_OWNER_USER_ID,
+    );
 
     const registration = harness.deps.providerRegistry.get(PROVIDER_ID);
     expect(registration?.info).toMatchObject({

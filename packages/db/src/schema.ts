@@ -522,6 +522,40 @@ export const pluginSettings = sqliteTable(
   (table) => [primaryKey({ columns: [table.pluginId, table.key] })],
 );
 
+export const pluginUserKv = sqliteTable(
+  "plugin_user_kv",
+  {
+    pluginId: text("plugin_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    value: text("value").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.pluginId, table.userId, table.key] }),
+    index("plugin_user_kv_user_idx").on(table.userId),
+  ],
+);
+
+export const pluginUserSettings = sqliteTable(
+  "plugin_user_settings",
+  {
+    pluginId: text("plugin_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    value: text("value").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.pluginId, table.userId, table.key] }),
+    index("plugin_user_settings_user_idx").on(table.userId),
+  ],
+);
+
 export const pluginSchedules = sqliteTable(
   "plugin_schedules",
   {

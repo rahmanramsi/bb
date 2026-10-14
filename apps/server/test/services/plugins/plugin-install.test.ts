@@ -448,6 +448,7 @@ describe("plugin install flows", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -1039,6 +1040,7 @@ describe("plugin install flows", () => {
         hub: {
           getDaemonSessionIdForHost: () => null,
           notifyPluginSignal: () => 0,
+          notifyUserSystem: () => {},
           notifySystem: () => {},
         },
         logger,
@@ -1137,6 +1139,7 @@ describe("plugin install flows", () => {
         hub: {
           getDaemonSessionIdForHost: () => null,
           notifyPluginSignal: () => 0,
+          notifyUserSystem: () => {},
           notifySystem: () => {},
         },
         logger,

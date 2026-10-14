@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getLatestThreadSequence, getThread } from "@bb/db";
-import { turnScope } from "@bb/domain";
+import { turnScope, LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { applyLoggedThreadLifecycleEvent } from "../../../src/services/threads/lifecycle-outcome.js";
 import {
   seedEvent,
@@ -86,9 +86,13 @@ describe("hero plugin: agent-enrichment", () => {
     const insensitive = await runDocs(["search", "CONVENTIONAL COMMITS"]);
     expect(insensitive.stdout).toContain("conventions.md");
 
-    await harness.pluginService.updateSettings("agent-enrichment", {
-      caseSensitive: true,
-    });
+    await harness.pluginService.updateSettings(
+      "agent-enrichment",
+      {
+        caseSensitive: true,
+      },
+      LOCAL_OWNER_USER_ID,
+    );
     const sensitive = await runDocs(["search", "CONVENTIONAL COMMITS"]);
     expect(sensitive.exitCode).toBe(0);
     expect(sensitive.stdout).toContain("No matches");
@@ -144,12 +148,16 @@ describe("hero plugin: slack-bot", () => {
       expect(entry.statusDetail).toContain("bb plugin config slack-bot");
 
       const signingSecret = "test-signing-secret";
-      await server.pluginService.updateSettings("slack-bot", {
-        botToken: "xoxb-test-token",
-        signingSecret,
-        channelId: "C0GENERAL",
-        project: project.id,
-      });
+      await server.pluginService.updateSettings(
+        "slack-bot",
+        {
+          botToken: "xoxb-test-token",
+          signingSecret,
+          channelId: "C0GENERAL",
+          project: project.id,
+        },
+        LOCAL_OWNER_USER_ID,
+      );
       await server.pluginService.reload("slack-bot");
       expect(
         server.pluginService.list().find((p) => p.id === "slack-bot")?.status,

@@ -31,6 +31,9 @@ import {
   normalizeMentionProviderRegistration,
   normalizePluginAgentConfiguration,
   normalizeRealtimePayload,
+  normalizeRealtimeUserId,
+  isUserScopedSetting,
+  partitionSettingsUpdate,
   normalizeRpcJsonResult,
   normalizeRpcRegistration,
   publishRpcMethod,
@@ -249,6 +252,8 @@ export interface FakeRealtimeSignal {
   channel: string;
   /** JSON-round-tripped, like the WS broadcast; `undefined` → `null`. */
   payload: unknown;
+  /** Present when the publish targeted one user's clients. */
+  experimental_userId?: string;
 }
 
 export interface ExperimentalFakeHostRpcCall {
@@ -372,12 +377,29 @@ export interface FakePluginBehaviorDrivers {
    */
   setSettings(values: Record<string, PluginSettingValue | null>): Promise<void>;
   /**
+   * Apply a user's own save of `experimental_scope: "user"` settings, the way
+   * bb's settings page saves them for the signed-in user. Rejects team
+   * fields and unknown users; `onChange` listeners do not fire.
+   */
+  experimental_setUserSettings(
+    userId: string,
+    values: Record<string, PluginSettingValue | null>,
+  ): Promise<void>;
+  /**
+   * Remove a user the way bb's account removal does: their
+   * `storage.experimental_forUser` rows and per-user settings are deleted
+   * and the id stops naming a user.
+   */
+  experimental_removeUser(userId: string): void;
+  /**
    * Invoke a registered rpc method with host semantics: input/output schemas,
    * strict JSON result normalization, and structured failure codes. Rejects
    * with the same message/code/issues the frontend client surfaces. The
    * handler sees `options.experimental_caller` as its caller, `{ kind:
    * "client" }` by default; pass `{ kind: "plugin", pluginId }` to act as
-   * another plugin calling through `bb.sdk.plugins.callRpc`. The caller is an
+   * another plugin calling through `bb.sdk.plugins.callRpc`.
+   * `experimental_callerUserId` defaults to `"usr_local_owner"` for client
+   * callers and `null` for plugin callers, like the host. The caller is an
    * admin unless `options.experimental_callerRole` is `"member"`, in which
    * case admin-only methods reject with code `forbidden`.
    */
@@ -387,13 +409,15 @@ export interface FakePluginBehaviorDrivers {
     options?: {
       experimental_caller?: ExperimentalPluginRpcCaller;
       experimental_callerRole?: "admin" | "member";
+      experimental_callerUserId?: string | null;
     },
   ): Promise<unknown>;
   /**
    * Invoke the plugin's CLI command with host semantics: the result's
    * exitCode must be a number, stdout/stderr default to "", and a throwing
    * run() becomes `{ exitCode: 1, stderr: "bb <name> failed: …" }`.
-   * `ctx.experimental_callerRole` defaults to `"admin"`.
+   * `ctx.experimental_callerRole` defaults to `"admin"` and
+   * `ctx.experimental_callerUserId` to `"usr_local_owner"`.
    */
   runCli(
     argv: string[],
@@ -534,6 +558,11 @@ export interface CreateFakePluginHostOptions {
    * the descriptor default on read, like the host.
    */
   settings?: Record<string, PluginSettingValue>;
+  /**
+   * Ids that name users, for `storage.experimental_forUser` and per-user
+   * settings. Defaults to `["usr_local_owner"]`, the local owner.
+   */
+  experimental_userIds?: readonly string[];
   /** Initial `bb.sdk` stubs; extend later via `harness.sdk.stub`. */
   sdk?: FakeSdkOverrides;
   /** Static manifest skill ids available to configure() in this fake host. */
@@ -571,10 +600,14 @@ export interface FakePluginHost {
 function readSettingsValues(
   descriptors: PluginSettingDescriptors,
   stored: Map<string, PluginSettingValue>,
+  userStored?: Map<string, PluginSettingValue>,
 ): Record<string, PluginSettingValue | undefined> {
   const values: Record<string, PluginSettingValue | undefined> = {};
   for (const [key, descriptor] of Object.entries(descriptors)) {
-    values[key] = coerceStoredPluginSettingValue(descriptor, stored.get(key));
+    values[key] = coerceStoredPluginSettingValue(
+      descriptor,
+      isUserScopedSetting(descriptor) ? userStored?.get(key) : stored.get(key),
+    );
   }
   return values;
 }
@@ -638,7 +671,12 @@ interface FakePluginPersistentState {
   kvRows: Map<string, string>;
   storageRoot: string;
   storedSettings: Map<string, PluginSettingValue>;
+  userIds: Set<string>;
+  userKvRows: Map<string, Map<string, string>>;
+  userSettings: Map<string, Map<string, PluginSettingValue>>;
 }
+
+const FAKE_LOCAL_OWNER_USER_ID = "usr_local_owner";
 
 const fakeHostDisposers = new WeakMap<
   FakePluginHarness,
@@ -663,6 +701,11 @@ function createFakePluginHostInternal(
       storedSettings: new Map<string, PluginSettingValue>(
         Object.entries(options.settings ?? {}),
       ),
+      userIds: new Set(
+        options.experimental_userIds ?? [FAKE_LOCAL_OWNER_USER_ID],
+      ),
+      userKvRows: new Map(),
+      userSettings: new Map(),
     } satisfies FakePluginPersistentState);
   const pluginId = options.pluginId ?? "test-plugin";
   const declaredIconNames = new Set(
@@ -692,40 +735,63 @@ function createFakePluginHostInternal(
   };
 
   // --- storage ---
+  function createKv(rows: () => Map<string, string>): PluginKvStorage {
+    return {
+      async get(key) {
+        assertLive();
+        const raw = rows().get(key);
+        if (raw === undefined) return undefined;
+        return JSON.parse(raw);
+      },
+      async set(key, value) {
+        assertLive();
+        const json = JSON.stringify(value);
+        if (json === undefined) {
+          throw new Error(`kv value for "${key}" is not JSON-serializable`);
+        }
+        const bytes = Buffer.byteLength(json, "utf8");
+        if (bytes > KV_VALUE_MAX_BYTES) {
+          throw new Error(
+            `kv value for "${key}" is ${bytes} bytes; the limit is ${KV_VALUE_MAX_BYTES} (256KB). ` +
+              `Store large data in storage.database() instead.`,
+          );
+        }
+        rows().set(key, json);
+      },
+      async delete(key) {
+        assertLive();
+        rows().delete(key);
+      },
+      async list(prefix) {
+        assertLive();
+        return [...rows().keys()]
+          .filter((key) => prefix === undefined || key.startsWith(prefix))
+          .sort();
+      },
+    };
+  }
+
   const kvRows = persistentState.kvRows;
-  const kv: PluginKvStorage = {
-    async get(key) {
-      assertLive();
-      const raw = kvRows.get(key);
-      if (raw === undefined) return undefined;
-      return JSON.parse(raw);
-    },
-    async set(key, value) {
-      assertLive();
-      const json = JSON.stringify(value);
-      if (json === undefined) {
-        throw new Error(`kv value for "${key}" is not JSON-serializable`);
-      }
-      const bytes = Buffer.byteLength(json, "utf8");
-      if (bytes > KV_VALUE_MAX_BYTES) {
-        throw new Error(
-          `kv value for "${key}" is ${bytes} bytes; the limit is ${KV_VALUE_MAX_BYTES} (256KB). ` +
-            `Store large data in storage.database() instead.`,
-        );
-      }
-      kvRows.set(key, json);
-    },
-    async delete(key) {
-      assertLive();
-      kvRows.delete(key);
-    },
-    async list(prefix) {
-      assertLive();
-      return [...kvRows.keys()]
-        .filter((key) => prefix === undefined || key.startsWith(prefix))
-        .sort();
-    },
-  };
+  const kv = createKv(() => kvRows);
+
+  function assertKnownUser(userId: string): void {
+    if (!persistentState.userIds.has(userId)) {
+      throw new Error(`unknown user "${userId}"`);
+    }
+  }
+
+  function userRows<Value>(
+    table: Map<string, Map<string, Value>>,
+    userId: string,
+  ): Map<string, Value> {
+    assertKnownUser(userId);
+    let rows = table.get(userId);
+    if (rows === undefined) {
+      rows = new Map();
+      table.set(userId, rows);
+    }
+    return rows;
+  }
 
   const storageRoot = persistentState.storageRoot;
 
@@ -747,6 +813,13 @@ function createFakePluginHostInternal(
       assertLive();
       runPluginStorageMigrations(database, statements);
     },
+    experimental_forUser(userId) {
+      assertLive();
+      assertKnownUser(userId);
+      return {
+        kv: createKv(() => userRows(persistentState.userKvRows, userId)),
+      };
+    },
   };
 
   // --- settings ---
@@ -759,10 +832,52 @@ function createFakePluginHostInternal(
   > = [];
   const storedSettings = persistentState.storedSettings;
 
+  function settingsScopeErrors(
+    values: Record<string, unknown>,
+    scope: "team" | "user",
+  ): string[] {
+    const { team, user } = partitionSettingsUpdate(settingsDescriptors, values);
+    const misplaced = Object.keys(scope === "team" ? user : team).filter(
+      (key) => settingsDescriptors[key] !== undefined,
+    );
+    return misplaced.map((key) =>
+      scope === "team"
+        ? `setting "${key}" is a per-user setting; only the user changes it`
+        : `setting "${key}" is a team setting`,
+    );
+  }
+
+  async function setUserSettingsValues(
+    userId: string,
+    values: Record<string, unknown>,
+  ): Promise<void> {
+    const errors = [
+      ...settingsScopeErrors(values, "user"),
+      ...validateSettingsUpdate(settingsDescriptors, values),
+    ];
+    if (errors.length > 0) {
+      throw new Error(errors.join("; "));
+    }
+    const stored = userRows(persistentState.userSettings, userId);
+    for (const [key, value] of Object.entries(values)) {
+      if (value === null) stored.delete(key);
+      else if (
+        typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "boolean"
+      ) {
+        stored.set(key, value);
+      }
+    }
+  }
+
   async function setSettingsValues(
     values: Record<string, unknown>,
   ): Promise<void> {
-    const errors = validateSettingsUpdate(settingsDescriptors, values);
+    const errors = [
+      ...settingsScopeErrors(values, "team"),
+      ...validateSettingsUpdate(settingsDescriptors, values),
+    ];
     if (errors.length > 0) {
       throw new Error(errors.join("; "));
     }
@@ -812,7 +927,10 @@ function createFakePluginHostInternal(
           for (const [key, value] of Object.entries(values)) {
             rawValues[key] = value;
           }
-          const errors = validateSettingsUpdate(validated, rawValues);
+          const errors = [
+            ...settingsScopeErrors(rawValues, "team"),
+            ...validateSettingsUpdate(validated, rawValues),
+          ];
           if (errors.length > 0) {
             throw new Error(errors.join("; "));
           }
@@ -826,6 +944,14 @@ function createFakePluginHostInternal(
           );
         },
       };
+    },
+    async experimental_getForUser(userId) {
+      assertLive();
+      return readSettingsValues(
+        settingsDescriptors,
+        storedSettings,
+        userRows(persistentState.userSettings, userId),
+      );
     },
   };
 
@@ -878,11 +1004,13 @@ function createFakePluginHostInternal(
   // --- realtime ---
   const realtimeSignals: FakeRealtimeSignal[] = [];
   const realtime: PluginRealtime = {
-    publish(channel, payload) {
+    publish(channel, payload, publishOptions) {
       assertLive();
+      const userId = normalizeRealtimeUserId(publishOptions);
       realtimeSignals.push({
         channel,
         payload: normalizeRealtimePayload(channel, payload),
+        ...(userId === null ? {} : { experimental_userId: userId }),
       });
     },
   };
@@ -1786,7 +1914,20 @@ function createFakePluginHostInternal(
       await setSettingsValues(values);
     },
 
+    async experimental_setUserSettings(userId, values) {
+      await setUserSettingsValues(userId, values);
+    },
+
+    experimental_removeUser(userId) {
+      persistentState.userIds.delete(userId);
+      persistentState.userKvRows.delete(userId);
+      persistentState.userSettings.delete(userId);
+    },
+
     async callRpc(method, input, options = {}) {
+      const caller: ExperimentalPluginRpcCaller = options.experimental_caller ?? {
+        kind: "client",
+      };
       const record = rpcHandlers.get(method);
       if (!record) {
         return throwRpcError({
@@ -1816,9 +1957,13 @@ function createFakePluginHostInternal(
       let result: unknown;
       try {
         result = await record.handler(validatedInput as never, {
-          experimental_caller: options.experimental_caller ?? {
-            kind: "client",
-          },
+          experimental_caller: caller,
+          experimental_callerUserId:
+            options.experimental_callerUserId !== undefined
+              ? options.experimental_callerUserId
+              : caller.kind === "plugin"
+                ? null
+                : FAKE_LOCAL_OWNER_USER_ID,
         });
       } catch (error) {
         return throwRpcError(rpcHandlerError(error, errorMessage(error)));
@@ -1840,6 +1985,7 @@ function createFakePluginHostInternal(
       try {
         const result = await registration.run(argv, {
           experimental_callerRole: "admin",
+          experimental_callerUserId: FAKE_LOCAL_OWNER_USER_ID,
           ...ctx,
         });
         if (typeof result?.exitCode !== "number") {

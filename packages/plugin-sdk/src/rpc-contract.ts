@@ -121,6 +121,16 @@ export type ExperimentalPluginRpcCaller =
 /** Second argument of every rpc handler. */
 export interface ExperimentalPluginRpcHandlerContext {
   readonly experimental_caller: ExperimentalPluginRpcCaller;
+  /**
+   * The authenticated user the request acts for, taken from the request's
+   * credential by the server: never from the request body, so a client
+   * cannot name another user. `null` when no user is the caller: another
+   * plugin calling through `bb.sdk.plugins.callRpc`, or bb invoking the
+   * handler itself. In local mode it is the local owner. Pass it to
+   * `bb.storage.experimental_forUser`, `bb.settings.experimental_getForUser`,
+   * and `bb.realtime.publish`'s `experimental_userId`.
+   */
+  readonly experimental_callerUserId: string | null;
 }
 
 export type PluginRpcHandlers<Contract extends PluginRpcContract> = {

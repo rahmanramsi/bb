@@ -1910,8 +1910,12 @@ on a machine effectively has shell access to that machine.
 Some state belongs to each user rather than to the server. Each user has their
 own thread read and unread state, pinned threads and pin order, UI preferences
 (`/api/v1/preferences/ui`), appearance (theme and favicon color), and prompt
-history. Changing them affects only that user, and realtime updates for them
-reach only that user's connected apps. A user who has never opened a thread
+history. The Thread list plugin's sidebar layout (organization, sort, section
+order, collapsed groups, row actions) is also per user, and so is any plugin
+setting the plugin marks per user, which members may change for themselves.
+Changing them affects only that user, and realtime updates for them reach only
+that user's connected apps. Removing a user deletes their per-user plugin data
+and settings. A user who has never opened a thread
 sees it as read up to its creation. Projects, threads, and everything else stay
 shared. Admins list users with `GET /api/v1/users` (`bb user list`).
 Authenticated clients use `GET /api/v1/users/directory` to resolve attribution: threads record `createdByUserId`, queued

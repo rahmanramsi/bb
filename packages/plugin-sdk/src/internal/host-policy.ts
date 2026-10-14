@@ -190,6 +190,7 @@ export const SETTING_KEY_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const settingsBaseFields = {
   label: z.string().min(1),
   description: z.string().min(1).optional(),
+  experimental_scope: z.enum(["team", "user"]).optional(),
 };
 
 const stringSettingSchemaSchema = z.custom<StandardSchemaV1<string, string>>(
@@ -224,6 +225,14 @@ const settingDescriptorSchema = z.discriminatedUnion("type", [
       {
         message: "a secret setting cannot be experimental_multiline",
         path: ["experimental_multiline"],
+      },
+    )
+    .refine(
+      (descriptor) =>
+        !(descriptor.secret === true && descriptor.experimental_scope === "user"),
+      {
+        message: 'a secret setting cannot have experimental_scope "user"',
+        path: ["experimental_scope"],
       },
     ),
   z
@@ -351,6 +360,33 @@ function settingSchemaError<T extends string | number | boolean>(
     const detail = error instanceof Error ? error.message : String(error);
     return `schema for setting "${key}" failed: ${detail}`;
   }
+}
+
+export function isUserScopedSetting(
+  descriptor: PluginSettingDescriptor,
+): boolean {
+  return descriptor.experimental_scope === "user";
+}
+
+/**
+ * Split a settings update into team-scoped and user-scoped fields. Keys with
+ * no descriptor stay with the team fields so validation reports them.
+ */
+export function partitionSettingsUpdate(
+  descriptors: PluginSettingDescriptors,
+  values: Record<string, unknown>,
+): { team: Record<string, unknown>; user: Record<string, unknown> } {
+  const team: Record<string, unknown> = {};
+  const user: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(values)) {
+    const descriptor = descriptors[key];
+    if (descriptor !== undefined && isUserScopedSetting(descriptor)) {
+      user[key] = value;
+    } else {
+      team[key] = value;
+    }
+  }
+  return { team, user };
 }
 
 /** Validate a settings update. `null` means unset. */
@@ -2969,6 +3005,19 @@ export function normalizeRealtimePayload(
     );
   }
   return JSON.parse(json);
+}
+
+export function normalizeRealtimeUserId(options: unknown): string | null {
+  if (options === undefined) return null;
+  if (typeof options !== "object" || options === null) {
+    throw new Error("realtime publish options must be an object");
+  }
+  const userId: unknown = Reflect.get(options, "experimental_userId");
+  if (userId === undefined) return null;
+  if (typeof userId !== "string" || userId.length === 0) {
+    throw new Error("realtime experimental_userId must be a non-empty string");
+  }
+  return userId;
 }
 
 export function validateBackgroundServiceRegistration(

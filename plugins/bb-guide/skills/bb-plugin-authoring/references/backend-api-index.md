@@ -6,6 +6,8 @@ Read the installed declarations for exact current signatures.
 
 ## `@get-bb/plugin-sdk`
 
+- `ExperimentalPluginRealtimePublishOptions`
+- `ExperimentalPluginUserStorage`
 - `PLUGIN_CLI_OUTPUT_MAX_BYTES`
 - `defineRpcContract`
 - `experimental_defineHostEntry`
@@ -74,6 +76,7 @@ Read the installed declarations for exact current signatures.
 - `ExperimentalProviderModelPickerValue`
 - `ExperimentalVoiceInputTextareaProps`
 - `JsonValue`
+- `PluginSettingScope`
 - `ReadonlyJsonValue` — deep-readonly JSON, e.g. `context.pluginMetadata` values
 - `MarkdownProps`
 - `NewThreadComposerProps`

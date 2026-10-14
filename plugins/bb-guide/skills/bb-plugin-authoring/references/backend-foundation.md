@@ -107,6 +107,35 @@ to the browser. `experimental_set` accepts only the fields defined by that
 handle, accepts `null` to unset one, fires `onChange`, and returns the handle's
 effective values.
 
+A non-secret descriptor with `experimental_scope: "user"` holds one value per
+signed-in user. Any user, members included, changes only their own value on
+the settings page or with `bb plugin config`; team fields stay admin-only.
+`get()` returns the default for such a field, and `experimental_set` rejects
+it. Read a user's values with `bb.settings.experimental_getForUser(userId)`,
+which returns every defined field as that user sees it. Per-user writes do not
+fire `onChange`. A removed user's values are deleted with the account.
+
+```ts
+const prefs = bb.settings.define({
+  density: {
+    type: "select",
+    label: "Density",
+    options: ["compact", "cozy"],
+    default: "cozy",
+    experimental_scope: "user",
+  },
+});
+bb.rpc.register(contract, {
+  async density(_input, context) {
+    if (context.experimental_callerUserId === null) throw new Error("users only");
+    const values = await bb.settings.experimental_getForUser(
+      context.experimental_callerUserId,
+    );
+    return { density: values.density };
+  },
+});
+```
+
 ### bb.storage
 
 - `bb.storage.kv` — namespaced JSON key-value rows in bb.db:
@@ -119,6 +148,12 @@ effective values.
 - `bb.storage.migrate(db, statements)` — statement index = migration id;
   unapplied statements run in one transaction. **Append-only**: never
   reorder or edit shipped statements, only push new ones.
+- `bb.storage.experimental_forUser(userId).kv` — the same kv interface and
+  limits, private to one user and deleted when that user is removed. It
+  throws for an id that names no user. Pass the authenticated caller's id
+  (`context.experimental_callerUserId` in RPC handlers,
+  `ctx.experimental_callerUserId` in CLI commands), never an id a client
+  sent. The plugin database stays shared; key its rows by user yourself.
 
 ```ts
 const db = bb.storage.database();

@@ -876,7 +876,10 @@ describe("public host management", () => {
         "revokeMachine",
         revokeRecord,
         { machineId: "machine-cloud-remove" },
-        { kind: "client" },
+        {
+          experimental_caller: { kind: "client" },
+          experimental_callerUserId: null,
+        },
       );
     });
   }, 30_000);

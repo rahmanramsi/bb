@@ -400,7 +400,9 @@ function AutosavingPluginSetting({
       labelBadge={
         descriptor.type === "string" && descriptor.secret === true
           ? "secret"
-          : undefined
+          : descriptor.experimental_scope === "user"
+            ? "personal"
+            : undefined
       }
       controlPlacement={
         descriptor.type === "boolean"

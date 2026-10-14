@@ -1642,8 +1642,8 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
       getLoopbackBaseUrl: () => boundLoopbackBaseUrl,
       getServiceToken: () => boundServiceToken,
       rpcCaller: rpcCallers.issue(row.id),
-      publishSignal: (channel, payload) => {
-        deps.hub.notifyPluginSignal(row.id, channel, payload);
+      publishSignal: (channel, payload, userId) => {
+        deps.hub.notifyPluginSignal(row.id, channel, payload, userId);
       },
       settingsChanged: () => {
         deps.onSettingsChanged?.(row.id);
