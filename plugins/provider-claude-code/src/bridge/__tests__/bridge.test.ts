@@ -5650,6 +5650,75 @@ describe("canonical model context-window hint", () => {
     }
   });
 
+  it("runs each turn with that turn's BB_TOKEN and keeps the session while it is unchanged", async () => {
+    const bridge = createBridgeJsonRpcTestHarness(handleLine);
+    const queries: ControlledClaudeQuery[] = [];
+    queryMock.mockImplementation(() => {
+      const query = createControlledClaudeQuery();
+      queries.push(query);
+      return query;
+    });
+    const threadId = "thread-turn-credentials";
+    const options = (token: string | null) => ({
+      ...canonicalOptions,
+      envVars: {
+        BB_THREAD_ID: threadId,
+        ...(token === null ? {} : { BB_TOKEN: token }),
+      },
+    });
+
+    try {
+      bridge.sendRequest(1, "thread/start", {
+        threadId,
+        cwd: "/tmp/worktree",
+        instructionMode: "append",
+        options: options("token-a"),
+      });
+      const providerThreadId = getProviderThreadIdFromResult(
+        await bridge.waitForResponse(1),
+      );
+
+      const tokensSeenByTurn: Array<string | undefined> = [];
+      for (const [index, token] of [
+        "token-a",
+        "token-a",
+        null,
+        "token-b",
+      ].entries()) {
+        const id = index + 2;
+        bridge.sendRequest(id, "turn/start", {
+          ...canonicalTurnParams({
+            threadId,
+            providerThreadId,
+            input: [{ type: "text", text: `turn ${id}`, mentions: [] }],
+          }),
+          options: options(token),
+        });
+        await bridge.flushWork();
+        await expect(readNextPromptText(getLatestQueryCall())).resolves.toBe(
+          `turn ${id}`,
+        );
+        await bridge.waitForResponse(id);
+        tokensSeenByTurn.push(getLatestQueryOptions().env?.BB_TOKEN);
+        queries.at(-1)?.emit(createSuccessfulResultMessage(providerThreadId));
+        await bridge.flushWork();
+      }
+
+      expect(tokensSeenByTurn).toEqual([
+        "token-a",
+        "token-a",
+        undefined,
+        "token-b",
+      ]);
+      expect(queries).toHaveLength(3);
+      expect(queries[0]?.close).toHaveBeenCalledOnce();
+      expect(queries[1]?.close).toHaveBeenCalledOnce();
+    } finally {
+      queries.forEach((query) => query.finish());
+      bridge.restore();
+    }
+  });
+
   it("uses Fable's Claude Code capacity through a custom API endpoint", async () => {
     const bridge = createBridgeJsonRpcTestHarness(handleLine);
     const queries: ControlledClaudeQuery[] = [];
