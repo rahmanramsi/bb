@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThreadEvent } from "@bb/domain";
+import { z } from "zod";
 import { promptTextInput } from "./test/prompt-input.js";
 import { UNSOLICITED_TURN_THREAD_ID_ENV } from "./test/bridges/unsolicited-turn-bridge.js";
 import {
@@ -662,6 +663,74 @@ describe("createAgentRuntime command contracts", () => {
     ).rejects.toThrow(/does not support service tiers/);
     expect(record.last("thread/start")).toBeUndefined();
     await runtime.shutdown();
+  });
+
+  it("forwards each turn's own thread credential, including its removal", async () => {
+    const events: ThreadEvent[] = [];
+    const { record, runtime } = createContractRuntime({
+      onEvent: (event) => events.push(event),
+    });
+    const credential = (token: string) => [
+      {
+        name: "BB_TOKEN",
+        value: token,
+        source: { core: "thread-auth" as const },
+        reason: "thread credential",
+      },
+    ];
+
+    try {
+      await runtime.startThread({
+        environmentId: "env-1",
+        threadId: "t1",
+        projectId: "p1",
+        providerId: "fake",
+        contributedEnv: credential("token-a"),
+        options: fullRuntimeOptions,
+      });
+      const turns = [
+        credential("token-a"),
+        [],
+        credential("token-b"),
+        credential("token-b"),
+      ];
+      for (const [index, contributedEnv] of turns.entries()) {
+        await runtime.runTurn({
+          clientRequestId: `creq_22222222${"abcd"[index]}v`,
+          threadId: "t1",
+          input: [promptTextInput({ text: "hello" })],
+          options: fullRuntimeOptions,
+          contributedEnv,
+        });
+        await vi.waitFor(() =>
+          expect(
+            events.filter((event) => event.type === "turn/completed"),
+          ).toHaveLength(index + 1),
+        );
+      }
+
+      const forwardedTokens = record
+        .read()
+        .filter((request) => request.method === "turn/start")
+        .map((request) => {
+          const params = z
+            .object({
+              options: z.object({
+                envVars: z.record(z.string(), z.string()),
+              }),
+            })
+            .parse(request.params);
+          return params.options.envVars.BB_TOKEN ?? null;
+        });
+      expect(forwardedTokens).toEqual([
+        "token-a",
+        null,
+        "token-b",
+        "token-b",
+      ]);
+    } finally {
+      await runtime.shutdown();
+    }
   });
 
   it("interrupts an active turn on stop and releases an idle thread", async () => {
