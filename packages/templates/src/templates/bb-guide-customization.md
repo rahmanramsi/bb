@@ -104,11 +104,14 @@ Roles are guardrails for a trusted team. A member who runs an agent effectively
 has shell access to its host. In multi mode, each turn supplies a signed
 seven-day `BB_TOKEN` to the agent shell through the launch environment. It
 authenticates as the user who sent the turn, or as the thread creator for
-turns no user sent, with that user's current role. It stops authenticating if
-that user is removed and is masked in runtime environment displays. Turns with
-neither a sending user nor a remaining creator, including threads created
-before multi mode, get no `BB_TOKEN`. In local mode, shells need no
-credential.
+turns no user sent or that a plugin or other service credential sent, with
+that user's current role. A thread that a plugin creates under a parent, fork
+source, or lifecycle owner thread is attributed to that thread's creator; a
+user's own thread is always attributed to that user. It stops authenticating
+if that user is removed and is masked in runtime environment displays. Turns
+with neither a sending user nor a remaining creator, including threads created
+before multi mode and threads a plugin creates without a parent, get no
+`BB_TOKEN`. In local mode, shells need no credential.
 
 Plugin RPC methods and commands that change server-wide settings, such as
 `bb concurrency-limit global 0` or `bb pool routing claude`, are admin-only and

@@ -107,6 +107,12 @@ export async function issueThreadShellToken(
   return `${SHELL_TOKEN_PREFIX}${payload}.${signature}`;
 }
 
+export function isSystemUserId(userId: string): boolean {
+  return (
+    userId === LOCAL_OWNER_USER_ID || userId === MACHINE_AUTH_SYSTEM_USER_ID
+  );
+}
+
 export class UserAuthError extends Error {
   constructor(
     readonly status: 401 | 403 | 404 | 409 | 429,

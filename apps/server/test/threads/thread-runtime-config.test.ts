@@ -20,6 +20,7 @@ import type { DiscoveredSkill } from "@bb/host-daemon-contract";
 import { setPluginAgentContributions } from "../../src/services/plugins/plugin-agent-contributions.js";
 import { readSkillTreeManifest } from "../../src/services/skills/injected-skills.js";
 import type { PluginAgentToolContribution } from "../../src/services/plugins/plugin-service.js";
+import { MACHINE_AUTH_SYSTEM_USER_ID } from "../../src/services/machine-auth.js";
 import { resolveThreadRuntimeCommandConfig } from "../../src/services/threads/thread-runtime-config.js";
 import {
   buildExecutionOptions,
@@ -1152,7 +1153,7 @@ describe("thread runtime config", () => {
     });
   });
 
-  it("issues the turn author's shell credential in multi mode and never falls back to a system user", async () => {
+  it("issues the turn author's shell credential in multi mode, falls back to a human creator for system authors, and never to a system user", async () => {
     await withTestHarness(async (harness) => {
       const hostId = "host-auth";
       seedHostSession(harness.deps, { id: hostId });
@@ -1218,6 +1219,9 @@ describe("thread runtime config", () => {
       };
 
       expect(await shellPrincipal("usr_admin_creator", null)).toBeNull();
+      expect(
+        await shellPrincipal("usr_member_author", LOCAL_OWNER_USER_ID),
+      ).toBeNull();
       harness.deps.config.authMode = "multi";
       expect(await shellPrincipal("usr_admin_creator", null)).toMatchObject({
         userId: "usr_admin_creator",
@@ -1231,6 +1235,21 @@ describe("thread runtime config", () => {
       expect(
         await shellPrincipal(LOCAL_OWNER_USER_ID, "usr_member_author"),
       ).toMatchObject({ userId: "usr_member_author", role: "member" });
+      for (const systemAuthor of [
+        LOCAL_OWNER_USER_ID,
+        MACHINE_AUTH_SYSTEM_USER_ID,
+      ]) {
+        expect(
+          await shellPrincipal("usr_member_author", systemAuthor),
+        ).toMatchObject({ userId: "usr_member_author", role: "member" });
+        expect(
+          await shellPrincipal(LOCAL_OWNER_USER_ID, systemAuthor),
+        ).toBeNull();
+        expect(
+          await shellPrincipal(MACHINE_AUTH_SYSTEM_USER_ID, systemAuthor),
+        ).toBeNull();
+        expect(await shellPrincipal(null, systemAuthor)).toBeNull();
+      }
     });
   });
 
