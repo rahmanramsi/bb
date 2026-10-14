@@ -158,7 +158,9 @@ export function registerTokenCommands(
     .description("Manage your personal access tokens");
   command
     .command("create <name>")
-    .description("Create a token and print it once")
+    .description(
+      "Create a token and print it once; refused for a member-capped BB_TOKEN",
+    )
     .option("--json", "Print machine-readable JSON output")
     .action(
       action(async (name: string, opts: JsonOptions) => {

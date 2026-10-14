@@ -90,8 +90,9 @@ invites without tokens; `bb invite revoke ID` invalidates one. New users run
 `bb invite accept TOKEN --email EMAIL --name NAME` and enter their password,
 or supply `--password-file PATH`, then sign in with `bb login`.
 `bb token create NAME`, `bb token list`, and `bb token revoke ID` manage only
-the current user's PATs. New token values are shown once. All these commands
-accept `--json`.
+the current user's PATs. New token values are shown once. A member-capped
+`BB_TOKEN` cannot create a PAT: `POST /api/v1/auth/tokens` answers 403
+`credential_role_capped`. All these commands accept `--json`.
 
 In the multi-mode app, open the user menu in the navigation rail to sign out
 or open Settings → Account. Everyone manages their own personal access
@@ -107,7 +108,11 @@ turn a user sent, it authenticates as that user with their current role. For a
 turn no user sent, or that a plugin or other service credential sent, it
 authenticates as the thread creator only if the creator exists and is a member
 when the turn starts, and it stays capped at member even if that user is later
-promoted to admin. Such turns in a thread whose creator is an admin, a removed
+promoted to admin. The cap carries over to work the capped token requests: a
+thread, fork, sent, queued, scheduled, retried, or edited message it authors
+gets a capped `BB_TOKEN` for that user, and a queued message it edits becomes
+capped. Tokens and sessions the user creates by signing in keep their current
+role. Such turns in a thread whose creator is an admin, a removed
 user, or nobody get no `BB_TOKEN`, so plugin-driven work never runs with admin
 authority. A thread that a plugin creates under a parent, fork source, or
 lifecycle owner thread is attributed to that thread's creator for display; the

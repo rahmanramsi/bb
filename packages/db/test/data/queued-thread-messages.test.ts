@@ -137,6 +137,7 @@ describe("queued thread messages", () => {
     const before = getQueuedThreadMessage(db, first.id);
 
     const result = updateQueuedThreadMessage(db, noopNotifier, {
+      editorRoleCeiling: null,
       content: textInput("edited in place"),
       expectedUpdatedAt: before?.updatedAt ?? -1,
       id: first.id,
@@ -177,6 +178,7 @@ describe("queued thread messages", () => {
 
     expect(
       updateQueuedThreadMessage(db, noopNotifier, {
+        editorRoleCeiling: null,
         content: textInput("first edit"),
         expectedUpdatedAt: queuedMessage.updatedAt,
         id: queuedMessage.id,
@@ -185,6 +187,7 @@ describe("queued thread messages", () => {
     ).toBe("updated");
     expect(
       updateQueuedThreadMessage(db, noopNotifier, {
+        editorRoleCeiling: null,
         content: textInput("stale edit"),
         expectedUpdatedAt: queuedMessage.updatedAt,
         id: queuedMessage.id,
@@ -215,6 +218,7 @@ describe("queued thread messages", () => {
       });
 
       const result = updateQueuedThreadMessage(db, noopNotifier, {
+        editorRoleCeiling: null,
         content: altInput,
         expectedUpdatedAt: queuedMessage.updatedAt,
         id: queuedMessage.id,
@@ -250,6 +254,7 @@ describe("queued thread messages", () => {
 
     expect(
       updateQueuedThreadMessage(db, noopNotifier, {
+        editorRoleCeiling: null,
         content: altInput,
         expectedUpdatedAt: queuedMessage.updatedAt,
         id: queuedMessage.id,
@@ -1378,6 +1383,42 @@ describe("queued thread messages", () => {
     ]);
   });
 
+  it("rejects grouped prefixes that mix author role ceilings", () => {
+    const { db, thread } = setup();
+    const queued = (
+      authorRoleCeiling: "member" | null,
+      content: PromptInput[],
+    ) =>
+      createQueuedThreadMessage(db, noopNotifier, {
+        threadId: thread.id,
+        content,
+        authorRoleCeiling,
+        model: "gpt-5",
+        reasoningLevel: "medium",
+        permissionMode: "full",
+        serviceTier: "default",
+        waitingOn: null,
+        sendAt: null,
+        payload: { kind: "inline" },
+        systemNotice: null,
+      });
+    const firstQueuedMessage = queued(null, defaultInput);
+    const secondQueuedMessage = queued("member", altInput);
+
+    const result = setQueuedThreadMessageGroupBoundary({
+      db,
+      notifier: noopNotifier,
+      threadId: thread.id,
+      expectedGroupedPrefixQueuedMessageIds: [
+        firstQueuedMessage.id,
+        secondQueuedMessage.id,
+      ],
+      groupBoundaryQueuedMessageId: secondQueuedMessage.id,
+    });
+
+    expect(result.kind).toBe("invalid_sender");
+  });
+
   it("rejects grouped prefixes that mix sender attribution", () => {
     const { db, thread } = setup();
     const firstQueuedMessage = createQueuedThreadMessage(db, noopNotifier, {
@@ -1981,6 +2022,7 @@ describe("queued thread messages", () => {
       );
 
       const saved = updateQueuedThreadMessage(db, noopNotifier, {
+        editorRoleCeiling: null,
         content: textInput("SAVED EDIT"),
         expectedUpdatedAt: edited.updatedAt,
         id: edited.id,

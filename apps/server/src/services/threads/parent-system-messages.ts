@@ -268,6 +268,7 @@ async function queueActiveParentSystemMessage(
         execution: args.execution,
         payload: { kind: "inline" },
         senderThreadId: null,
+        authorRoleCeiling: null,
         authorUserId: null,
         origin: null,
         originPluginId: null,
@@ -304,6 +305,7 @@ async function queueActiveParentSystemMessage(
     hostId: args.environment.hostId,
   });
   const preparedCommand = await prepareTurnSubmitCommandPayload(deps, {
+    authorRoleCeiling: null,
     authorUserId: null,
     thread: args.thread,
     input: args.input,
@@ -367,6 +369,7 @@ async function queueReadyParentSystemMessage(
   const requestId = createClientTurnRequestId();
 
   const command = await prepareReadyThreadTurnCommand(deps, {
+    authorRoleCeiling: null,
     authorUserId: null,
     thread: args.thread,
     fork: null,
@@ -550,6 +553,7 @@ async function deliverParentSystemMessageWithContextGuard(
   );
   if (
     await dispatchTurnDuringReprovision({
+      authorRoleCeiling: null,
       authorUserId: null,
       deps,
       environment,

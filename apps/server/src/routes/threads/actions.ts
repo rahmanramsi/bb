@@ -33,6 +33,7 @@ import type { AppDeps } from "../../types.js";
 import { ApiError } from "../../errors.js";
 import {
   requirePrincipal,
+  requireTurnAuthor,
   requireThreadViewerId,
 } from "../../request-context.js";
 import {
@@ -160,6 +161,7 @@ async function compactThreadContext(
 
   const environment = await requireThreadCommandEnvironment(deps, { thread });
   await sendThreadMessage(deps, {
+    authorRoleCeiling: null,
     authorUserId: null,
     environment,
     payload: {
@@ -260,9 +262,8 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
 
   post(routes.send, async (context, payload) => {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
-    const authorUserId = requirePrincipal(context).userId;
     const response = await acceptThreadSendRequest(deps, {
-      authorUserId,
+      ...requireTurnAuthor(context),
       payload,
       thread,
     });
@@ -275,7 +276,7 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
       thread,
     });
     const result = await editThreadMessage(deps, {
-      authorUserId: requirePrincipal(context).userId,
+      ...requireTurnAuthor(context),
       environment,
       payload,
       thread,
@@ -287,7 +288,7 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
     ensureThreadIsWritable(thread);
     const result = await retryFailedTurn(deps, {
-      authorUserId: requirePrincipal(context).userId,
+      ...requireTurnAuthor(context),
       request: payload,
       thread,
     });
@@ -297,7 +298,7 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
   post(routes.createQueuedMessage, async (context, payload) => {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
     const queuedMessage = await createQueuedMessageForThread(deps, {
-      authorUserId: requirePrincipal(context).userId,
+      ...requireTurnAuthor(context),
       payload,
       thread,
     });
@@ -363,6 +364,7 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
     });
     const result = updateQueuedThreadMessage(deps.db, deps.hub, {
       content: input,
+      editorRoleCeiling: requirePrincipal(context).roleCeiling,
       expectedUpdatedAt: payload.expectedUpdatedAt,
       id: context.req.param("queuedMessageId"),
       threadId: thread.id,
@@ -512,7 +514,7 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
       { threadId: thread.id },
     );
     const preparedRuntimeCommand = await prepareTurnSubmitCommandPayload(deps, {
-      authorUserId: requirePrincipal(context).userId,
+      ...requireTurnAuthor(context),
       environment,
       execution,
       input: [],

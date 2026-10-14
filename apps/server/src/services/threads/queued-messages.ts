@@ -22,6 +22,7 @@ import {
 import {
   flattenPromptInputGroups,
   queuedMessageSystemNoticeSchema,
+  type RoleCeiling,
 } from "@bb/domain";
 import type {
   PromptInput,
@@ -189,6 +190,7 @@ async function requireReadyQueuedMessageEnvironment(
 }
 
 export interface CreateQueuedMessageForThreadArgs {
+  authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   payload: CreateQueuedMessageRequest;
   thread: ThreadRecord;
@@ -252,6 +254,7 @@ export async function createQueuedMessageForThread(
           threadId: thread.id,
           content: input,
           senderThreadId,
+          authorRoleCeiling: args.authorRoleCeiling,
           authorUserId: args.authorUserId,
           model: execution.model,
           reasoningLevel: execution.reasoningLevel,
@@ -531,6 +534,7 @@ async function sendClaimedQueuedMessageForIdleProviderThread(
     hostId: environment.hostId,
   });
   const preparedCommand = await prepareTurnSubmitCommandPayload(deps, {
+    authorRoleCeiling: args.queuedMessages[0]!.authorRoleCeiling,
     authorUserId: queuedMessage.authorUserId,
     environment,
     execution,
@@ -709,6 +713,7 @@ async function sendClaimedQueuedMessageForThread(
   const lead = args.queuedMessages[0]!;
   const outcome = await attemptDispatch(deps, {
     thread: args.thread,
+    authorRoleCeiling: lead.authorRoleCeiling,
     authorUserId: lead.authorUserId,
     payload: {
       ...sendQueuedMessagePayload(

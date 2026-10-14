@@ -19,7 +19,13 @@ import {
   authVerifications,
   type DbConnection,
 } from "@bb/db";
-import { LOCAL_OWNER_USER_ID, userRoleSchema, type UserRole } from "@bb/domain";
+import {
+  LOCAL_OWNER_USER_ID,
+  roleCeilingValues,
+  userRoleSchema,
+  type RoleCeiling,
+  type UserRole,
+} from "@bb/domain";
 import type {
   AuthUser,
   PersonalAccessTokenSummary,
@@ -52,6 +58,7 @@ export type PrincipalKind = "user" | "local" | "machine";
 export interface RequestPrincipal {
   kind: PrincipalKind;
   role: UserRole;
+  roleCeiling: RoleCeiling | null;
   userId: string;
 }
 
@@ -63,12 +70,14 @@ export interface AuthenticatedCredential {
 export const LOCAL_OWNER_PRINCIPAL: RequestPrincipal = {
   kind: "local",
   role: "admin",
+  roleCeiling: null,
   userId: LOCAL_OWNER_USER_ID,
 };
 
 const SERVICE_PRINCIPAL: RequestPrincipal = {
   kind: "machine",
   role: "admin",
+  roleCeiling: null,
   userId: LOCAL_OWNER_USER_ID,
 };
 
@@ -89,7 +98,7 @@ const shellTokenPayloadSchema = z
   .object({
     userId: z.string().min(1),
     expiresAt: z.number().int().positive(),
-    roleCeiling: z.literal("member").optional(),
+    roleCeiling: z.enum(roleCeilingValues).optional(),
   })
   .strict();
 const SHELL_TOKEN_PREFIX = "bbshell_";
@@ -97,7 +106,7 @@ const SHELL_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export async function issueThreadShellToken(
   dataDir: string,
-  args: { userId: string; roleCeiling: "member" | null },
+  args: { userId: string; roleCeiling: RoleCeiling | null },
 ): Promise<string> {
   const secret = (
     await readFile(join(dataDir, AUTH_SECRET_FILE_NAME), "utf8")
@@ -500,7 +509,9 @@ export async function createUserAuthService(
     kind: PrincipalKind,
   ): RequestPrincipal | null {
     const user = getUser(userId);
-    return user === null ? null : { kind, role: user.role, userId: user.id };
+    return user === null
+      ? null
+      : { kind, role: user.role, roleCeiling: null, userId: user.id };
   }
 
   function needsBootstrap(): boolean {
@@ -695,7 +706,7 @@ export async function createUserAuthService(
           return credentialFor(shellPrincipal, () => expiresAt > Date.now());
         }
         return {
-          principal: { ...shellPrincipal, role: roleCeiling },
+          principal: { ...shellPrincipal, role: roleCeiling, roleCeiling },
           isActive: async () =>
             getUser(shellPrincipal.userId) !== null && expiresAt > Date.now(),
         };

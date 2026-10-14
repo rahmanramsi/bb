@@ -345,6 +345,7 @@ describe("plugin mention providers (bb.ui.registerMentionProvider)", () => {
     const { environment, thread } = seedColdIdleThreadFixture(harness, 1);
 
     await sendThreadMessage(harness.deps, {
+      authorRoleCeiling: null,
       authorUserId: LOCAL_OWNER_USER_ID,
       environment,
       payload: {
@@ -402,6 +403,7 @@ describe("plugin mention providers (bb.ui.registerMentionProvider)", () => {
     const { environment, thread } = seedColdIdleThreadFixture(harness, 11);
 
     await sendThreadMessage(harness.deps, {
+      authorRoleCeiling: null,
       authorUserId: LOCAL_OWNER_USER_ID,
       environment,
       payload: {
@@ -498,6 +500,7 @@ describe("plugin mention providers (bb.ui.registerMentionProvider)", () => {
 
     await expect(
       sendThreadMessage(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
@@ -545,6 +548,7 @@ describe("plugin mention providers (bb.ui.registerMentionProvider)", () => {
     await harness.pluginService.setEnabled("mentions", false);
     await expect(
       sendThreadMessage(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
@@ -567,6 +571,7 @@ describe("plugin mention providers (bb.ui.registerMentionProvider)", () => {
 
     await expect(
       sendThreadMessage(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
@@ -585,6 +590,7 @@ describe("plugin mention providers (bb.ui.registerMentionProvider)", () => {
 
     await expect(
       sendThreadMessage(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {

@@ -82,6 +82,7 @@ function startThread(
   args: { projectId: string; hostId: string; prompt: string },
 ) {
   return createThreadFromRequest(harness.deps, {
+    createdByRoleCeiling: null,
     createdByUserId: LOCAL_OWNER_USER_ID,
     environment: {
       type: "provider",
@@ -292,6 +293,7 @@ describe("environment path claim release", () => {
           message: "unused",
         }));
         const request = createThreadFromRequest(harness.deps, {
+          createdByRoleCeiling: null,
           createdByUserId: LOCAL_OWNER_USER_ID,
           environment: { type: "reuse", environmentId: shared.id },
           input: textInput("reuse the workspace"),

@@ -33,6 +33,7 @@ import type {
   QueuedMessageWaitHolder,
   QueuedMessageWaitingOn,
   QueuedMessageWaitingOnKind,
+  RoleCeiling,
 } from "@bb/domain";
 import type {
   DbConnection,
@@ -58,6 +59,7 @@ export interface CreateQueuedThreadMessageInput {
   content: PromptInput[];
   senderThreadId?: string | null;
   authorUserId?: string | null;
+  authorRoleCeiling?: RoleCeiling | null;
   /**
    * How the dispatch this row is queued from was requested, and the plugin
    * that requested it, so a drained re-attempt carries the provenance its
@@ -90,6 +92,7 @@ export interface CreateQueuedThreadMessageInput {
 
 export interface UpdateQueuedThreadMessageInput {
   content: PromptInput[];
+  editorRoleCeiling: RoleCeiling | null;
   expectedUpdatedAt: number;
   id: string;
   threadId: string;
@@ -367,6 +370,7 @@ function queuedMessageGroupingEnvelopeMatches(
   return (
     firstQueuedMessage !== null &&
     queuedMessage.authorUserId === firstQueuedMessage.authorUserId &&
+    queuedMessage.authorRoleCeiling === firstQueuedMessage.authorRoleCeiling &&
     queuedMessage.senderThreadId === firstQueuedMessage.senderThreadId &&
     queuedMessage.model === firstQueuedMessage.model &&
     queuedMessage.reasoningLevel === firstQueuedMessage.reasoningLevel &&
@@ -412,7 +416,9 @@ export function listQueuedThreadMessages(
     .where(
       and(
         eq(queuedThreadMessages.threadId, threadId),
-        userId === undefined ? undefined : eq(queuedThreadMessages.authorUserId, userId),
+        userId === undefined
+          ? undefined
+          : eq(queuedThreadMessages.authorUserId, userId),
         isNull(queuedThreadMessages.claimedAt),
         isNull(queuedThreadMessages.claimToken),
       ),
@@ -559,7 +565,9 @@ function applyQueuedThreadMessageGroupBoundary(
     const hasMixedSender = groupedMessages.some(
       (queuedMessage) =>
         queuedMessage.senderThreadId !== firstQueuedMessage?.senderThreadId ||
-        queuedMessage.authorUserId !== firstQueuedMessage?.authorUserId,
+        queuedMessage.authorUserId !== firstQueuedMessage?.authorUserId ||
+        queuedMessage.authorRoleCeiling !==
+          firstQueuedMessage?.authorRoleCeiling,
     );
     if (hasMixedSender) {
       return { kind: "invalid_sender" };
@@ -650,6 +658,7 @@ export function createQueuedThreadMessageInTransaction(
       content: JSON.stringify(input.content),
       senderThreadId: input.senderThreadId ?? null,
       authorUserId: input.authorUserId ?? null,
+      authorRoleCeiling: input.authorRoleCeiling ?? null,
       origin: input.origin ?? null,
       originPluginId: input.originPluginId ?? null,
       requestedByInitiator: input.requestedBy?.initiator ?? null,
@@ -725,6 +734,9 @@ export function updateQueuedThreadMessage(
         .update(queuedThreadMessages)
         .set({
           content: JSON.stringify(input.content),
+          ...(input.editorRoleCeiling === null
+            ? {}
+            : { authorRoleCeiling: input.editorRoleCeiling }),
           editHeldUntil: null,
           updatedAt: Math.max(Date.now(), existing.updatedAt + 1),
         })

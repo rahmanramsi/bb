@@ -631,6 +631,7 @@ it.each(["metadata", "workspace"])(
         status: "starting",
       });
       const requested = requestThreadProvision(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         thread,
         environmentIntent: { type: "reuse", environmentId: environment.id },
@@ -738,11 +739,13 @@ it("rejects an older startup checkpoint after a new attempt has been persisted",
       titleProvided: true,
     };
     const first = requestThreadProvision(harness.deps, {
+      authorRoleCeiling: null,
       authorUserId: LOCAL_OWNER_USER_ID,
       ...args,
       input: textInput("first"),
     });
     const second = requestThreadProvision(harness.deps, {
+      authorRoleCeiling: null,
       authorUserId: LOCAL_OWNER_USER_ID,
       ...args,
       input: textInput("second"),
@@ -787,6 +790,7 @@ it("retries failed setup on the same environment without reallocating its worksp
     });
     expect(
       await dispatchTurnDuringReprovision({
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         deps: harness.deps,
         thread,
@@ -844,6 +848,7 @@ it.each(["success", "failure"])(
         status: "starting",
       });
       requestThreadProvision(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         thread,
         environmentIntent: { type: "reuse", environmentId: environment.id },
@@ -913,6 +918,7 @@ it("waits for the host to reconnect before recovering workspace setup", async ()
       status: "starting",
     });
     requestThreadProvision(harness.deps, {
+      authorRoleCeiling: null,
       authorUserId: LOCAL_OWNER_USER_ID,
       thread,
       environmentIntent: { type: "reuse", environmentId: environment.id },
@@ -964,6 +970,7 @@ it("resumes workspace setup when the same daemon reconnects", async () => {
       status: "starting",
     });
     requestThreadProvision(harness.deps, {
+      authorRoleCeiling: null,
       authorUserId: LOCAL_OWNER_USER_ID,
       thread,
       environmentIntent: { type: "reuse", environmentId: environment.id },
@@ -1043,6 +1050,7 @@ it("keeps workspace setup waiting while the host stays disconnected", async () =
       status: "starting",
     });
     requestThreadProvision(harness.deps, {
+      authorRoleCeiling: null,
       authorUserId: LOCAL_OWNER_USER_ID,
       thread,
       environmentIntent: { type: "reuse", environmentId: environment.id },
@@ -1103,6 +1111,7 @@ it.each(["pending", "starting"] as const)(
         });
       } else {
         requestThreadProvision(harness.deps, {
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           ...startup,
           thread,

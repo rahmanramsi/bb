@@ -395,6 +395,7 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
     }
     const thread = await createThreadFromRequest(deps, {
       ...payload,
+      createdByRoleCeiling: requirePrincipal(context).roleCeiling,
       createdByUserId: requirePrincipal(context).userId,
       origin: payload.origin,
     });
@@ -408,11 +409,10 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
   });
 
   post(routes.fork, async (context, payload) => {
-    const thread = await createThreadForkFromRequest(
-      deps,
-      payload,
-      requirePrincipal(context).userId,
-    );
+    const thread = await createThreadForkFromRequest(deps, payload, {
+      roleCeiling: requirePrincipal(context).roleCeiling,
+      userId: requirePrincipal(context).userId,
+    });
     return context.json(
       toThreadResponseFromThread(deps, {
         thread,

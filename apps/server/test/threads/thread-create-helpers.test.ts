@@ -121,6 +121,8 @@ describe("createThreadRecord", () => {
               ...mode,
               environment: { type: "reuse", environmentId: "env_unused" },
               sectionId: section.section.id,
+              authorRoleCeiling: null,
+              createdByRoleCeiling: null,
               authorUserId: LOCAL_OWNER_USER_ID,
               createdByUserId: LOCAL_OWNER_USER_ID,
               pinned: true,
@@ -186,6 +188,8 @@ describe("createThreadRecord", () => {
         createThreadRecord(deps, {
           environmentId: environment.id,
           request: {
+            authorRoleCeiling: null,
+            createdByRoleCeiling: null,
             authorUserId: LOCAL_OWNER_USER_ID,
             createdByUserId: LOCAL_OWNER_USER_ID,
             environment: {

@@ -6,7 +6,7 @@ import {
   type RequestAppSurface,
 } from "@bb/config/app-surface";
 import type { Context } from "hono";
-import { TEAM_THREAD_VIEWER_ID } from "@bb/domain";
+import { TEAM_THREAD_VIEWER_ID, type RoleCeiling } from "@bb/domain";
 import { ApiError } from "./errors.js";
 import type { RequestPrincipal } from "./services/user-auth.js";
 
@@ -54,6 +54,17 @@ export function requirePrincipal(context: PrincipalReader): RequestPrincipal {
     throw new ApiError(401, "unauthorized", "Unauthorized");
   }
   return principal;
+}
+
+export function requireTurnAuthor(context: PrincipalReader): {
+  authorRoleCeiling: RoleCeiling | null;
+  authorUserId: string;
+} {
+  const principal = requirePrincipal(context);
+  return {
+    authorRoleCeiling: principal.roleCeiling,
+    authorUserId: principal.userId,
+  };
 }
 
 export function requireThreadViewerId(context: PrincipalReader): string {

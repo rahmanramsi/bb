@@ -168,6 +168,7 @@ describe("thread plugin metadata in agent configuration", () => {
       );
 
       const startCommand = await buildThreadStartCommand(server.deps, {
+        authorRoleCeiling: null,
         authorUserId: null,
         environment,
         execution,
@@ -195,6 +196,7 @@ describe("thread plugin metadata in agent configuration", () => {
         threadId: thread.id,
       });
       const submitCommand = await prepareTurnSubmitCommandPayload(server.deps, {
+        authorRoleCeiling: null,
         authorUserId: null,
         environment,
         execution,
@@ -322,6 +324,7 @@ describe("thread plugin metadata in agent configuration", () => {
 
       await expect(
         createThreadFromRequest(harness.deps, {
+          createdByRoleCeiling: null,
           createdByUserId: LOCAL_OWNER_USER_ID,
           environment: {
             type: "host",

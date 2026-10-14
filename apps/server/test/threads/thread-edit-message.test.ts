@@ -304,6 +304,7 @@ describe("editThreadMessage", () => {
 
       await expect(
         editThreadMessage(harness.deps, {
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
@@ -355,6 +356,7 @@ describe("editThreadMessage", () => {
 
       await expect(
         editThreadMessage(harness.deps, {
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
@@ -385,6 +387,7 @@ describe("editThreadMessage", () => {
       });
 
       const editPromise = editThreadMessage(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
@@ -423,6 +426,7 @@ describe("editThreadMessage", () => {
 
       await expect(
         editThreadMessage(harness.deps, {
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
@@ -520,6 +524,7 @@ describe("editThreadMessage", () => {
       });
 
       const editPromise = editThreadMessage(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
@@ -589,6 +594,7 @@ describe("editThreadMessage", () => {
 
         await expect(
           editThreadMessage(harness.deps, {
+            authorRoleCeiling: null,
             authorUserId: LOCAL_OWNER_USER_ID,
             environment,
             thread,
@@ -663,6 +669,7 @@ describe("editThreadMessage", () => {
         permissionMode: "full" as const,
       };
       const editPromise = editThreadMessage(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
@@ -734,6 +741,7 @@ describe("editThreadMessage", () => {
       await reportQueuedCommandSuccess(harness, discard, {});
       await expect(
         editThreadMessage(harness.deps, {
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
@@ -776,12 +784,14 @@ describe("editThreadMessage", () => {
       };
 
       const firstEdit = editThreadMessage(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
         payload,
       });
       const secondEdit = editThreadMessage(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
@@ -854,6 +864,7 @@ describe("editThreadMessage", () => {
         });
         const operationId = `edit-op-${providerId}-${name.replaceAll(" ", "-")}`;
         const editPromise = editThreadMessage(harness.deps, {
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
@@ -930,6 +941,7 @@ describe("editThreadMessage", () => {
         throw new Error("Expected stopped Pi thread");
       }
       const editPromise = editThreadMessage(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread: stoppedThread,
@@ -981,6 +993,7 @@ describe("editThreadMessage", () => {
 
       await expect(
         editThreadMessage(harness.deps, {
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
@@ -1011,6 +1024,7 @@ describe("editThreadMessage", () => {
       });
 
       const editPromise = editThreadMessage(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
@@ -1049,6 +1063,7 @@ describe("editThreadMessage", () => {
       });
 
       const editPromise = editThreadMessage(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
@@ -1091,6 +1106,7 @@ describe("editThreadMessage", () => {
       });
 
       const editPromise = editThreadMessage(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
@@ -1157,6 +1173,7 @@ describe("editThreadMessage", () => {
         systemNotice: null,
       });
       const editPromise = editThreadMessage(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
@@ -1187,6 +1204,7 @@ describe("editThreadMessage", () => {
     await withTestHarness(async (harness) => {
       const { environment, thread } = seedEditableThread(harness);
       const editPromise = editThreadMessage(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
@@ -1266,6 +1284,7 @@ describe("editThreadMessage", () => {
         });
       try {
         const editPromise = editThreadMessage(harness.deps, {
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
@@ -1304,6 +1323,7 @@ describe("editThreadMessage", () => {
     await withTestHarness(async (harness) => {
       const { environment, thread } = seedEditableThread(harness);
       const editPromise = editThreadMessage(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
@@ -1371,6 +1391,7 @@ describe("editThreadMessage", () => {
         const before = listEvents(harness.db, { threadId: thread.id });
         await expect(
           editThreadMessage(harness.deps, {
+            authorRoleCeiling: null,
             authorUserId: LOCAL_OWNER_USER_ID,
             environment,
             thread,
@@ -1411,6 +1432,7 @@ describe("editThreadMessage", () => {
       });
       const before = listEvents(harness.db, { threadId: thread.id });
       const editing = editThreadMessage(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
@@ -1476,6 +1498,7 @@ describe("editThreadMessage", () => {
 
       await expect(
         editThreadMessage(harness.deps, {
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
@@ -1524,6 +1547,7 @@ describe("editThreadMessage", () => {
 
       await expect(
         editThreadMessage(harness.deps, {
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
@@ -1556,6 +1580,7 @@ describe("editThreadMessage", () => {
 
         await expect(
           editThreadMessage(harness.deps, {
+            authorRoleCeiling: null,
             authorUserId: LOCAL_OWNER_USER_ID,
             environment,
             thread,
@@ -1581,6 +1606,7 @@ describe("editThreadMessage", () => {
         firstTurnId: legacyCodexTurnId,
       });
       const editPromise = editThreadMessage(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         thread,
@@ -1620,6 +1646,7 @@ describe("editThreadMessage", () => {
 
         await expect(
           editThreadMessage(harness.deps, {
+            authorRoleCeiling: null,
             authorUserId: LOCAL_OWNER_USER_ID,
             environment,
             thread,
@@ -1646,6 +1673,7 @@ describe("editThreadMessage", () => {
         });
         const originalEvents = listEvents(harness.db, { threadId: thread.id });
         const editPromise = editThreadMessage(harness.deps, {
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,
@@ -1690,6 +1718,7 @@ describe("editThreadMessage", () => {
 
       await expect(
         editThreadMessage(harness.deps, {
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           thread,

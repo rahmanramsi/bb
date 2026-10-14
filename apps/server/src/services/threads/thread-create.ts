@@ -478,6 +478,7 @@ async function createPendingThreadAndAttemptFirstDispatch(
     );
     await attemptDispatch(deps, {
       thread,
+      authorRoleCeiling: args.request.authorRoleCeiling,
       authorUserId: args.request.authorUserId,
       payload: {
         input: args.request.input,
@@ -734,6 +735,7 @@ export async function createThreadFromRequest(
   }
   const request: ThreadCreateServiceRequest = {
     ...requestRest,
+    authorRoleCeiling: requestInput.createdByRoleCeiling,
     authorUserId: requestInput.createdByUserId,
     createdByUserId: resolveThreadCreatorUserId(deps, {
       ancestorThread:

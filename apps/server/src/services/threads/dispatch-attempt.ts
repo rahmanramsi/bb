@@ -24,6 +24,7 @@ import {
   type ThreadCreateOrigin,
   type ThreadQueuedMessage,
   TEAM_THREAD_VIEWER_ID,
+  type RoleCeiling,
 } from "@bb/domain";
 import type { SendMessageRequest } from "@bb/server-contract";
 import type {
@@ -228,6 +229,7 @@ export type DispatchAttemptSource =
 
 export interface DispatchAttemptArgs {
   thread: ThreadRecord;
+  authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   payload: SendMessageRequest & { inputGroups?: PromptInput[][] };
   source: DispatchAttemptSource;
@@ -370,6 +372,7 @@ async function runDispatchAttempt(
     input: payload.input,
     execution,
     senderThreadId,
+    authorRoleCeiling: args.authorRoleCeiling,
     authorUserId: args.authorUserId,
     origin: args.origin,
     originPluginId: args.originPluginId,
@@ -514,6 +517,7 @@ async function runDispatchAttempt(
 
     if (firstDispatch) {
       admitted.value = await admitPendingThread(deps, {
+        authorRoleCeiling: args.authorRoleCeiling,
         authorUserId: args.authorUserId,
         claimed,
         payload: resolvedPayload,
@@ -615,6 +619,7 @@ async function runDispatchAttempt(
   const environment = await requireThreadCommandEnvironment(deps, { thread });
   try {
     await sendThreadMessage(deps, {
+      authorRoleCeiling: args.authorRoleCeiling,
       authorUserId: args.authorUserId,
       environment,
       payload: resolvedPayload,
@@ -697,6 +702,7 @@ function consumeClaimedRows(
 }
 
 interface AdmitPendingThreadArgs {
+  authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   claimed: ClaimedQueuedThreadMessageRow[] | null;
   payload: SendMessageRequest & { inputGroups?: PromptInput[][] };
@@ -783,6 +789,7 @@ async function admitPendingThread(
         const starting = getThread(tx, args.thread.id);
         if (starting === null) throw new PendingThreadAdmissionLost();
         requestThreadProvision(deps, {
+          authorRoleCeiling: args.authorRoleCeiling,
           authorUserId: args.authorUserId,
           thread: starting,
           environmentIntent: startContext.environmentIntent,

@@ -49,6 +49,7 @@ describe("thread provisioning state", () => {
     const context = requestThreadProvision(
       { db, hub },
       {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         thread,
         environmentIntent: {
