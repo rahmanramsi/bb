@@ -156,6 +156,7 @@ export function rewindMultiUser(db: DbConnection): void {
     ["user", "role"],
     ["threads", "created_by_user_id"],
     ["prompt_history_entries", "user_id"],
+    ["queued_thread_messages", "author_role_ceiling"],
     ["queued_thread_messages", "author_user_id"],
     ["pending_interactions", "resolved_by_user_id"],
   ] as const) {

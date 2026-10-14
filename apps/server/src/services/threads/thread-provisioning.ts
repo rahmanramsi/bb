@@ -15,6 +15,7 @@ import {
   type ThreadRecord,
   type ThreadTurnInitiator,
   type TurnRequestTarget,
+  type RoleCeiling,
 } from "@bb/domain";
 import type { StartedOnBehalfOf } from "@bb/domain";
 import type { AppDeps } from "../../types.js";
@@ -57,6 +58,7 @@ import { recordAcceptedPromptHistoryEntry } from "../prompt-history.js";
 import { NotificationBuffer } from "../lib/notification-buffer.js";
 
 interface RequestThreadProvisionArgs {
+  authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   environmentIntent: ThreadProvisionEnvironmentIntent;
   execution: ResolvedThreadExecutionOptions;
@@ -69,6 +71,7 @@ interface RequestThreadProvisionArgs {
 }
 
 interface RequestThreadTargetReprovisionArgs {
+  authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   beforeRequestAppendInTransaction?: (args: { tx: DbTransaction }) => void;
   environment: EnvironmentRow;
@@ -267,6 +270,7 @@ async function startThreadIfEnvironmentReady(
   }
 
   await requestThreadStart(deps, {
+    authorRoleCeiling: null,
     authorUserId: null,
     thread: args.thread,
     environment: {

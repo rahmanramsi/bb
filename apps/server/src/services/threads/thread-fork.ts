@@ -1,6 +1,6 @@
 import { getEnvironment, getThread } from "@bb/db";
 import type { EnvironmentRow } from "@bb/db";
-import type { PromptInput, ThreadRecord } from "@bb/domain";
+import type { PromptInput, RoleCeiling, ThreadRecord } from "@bb/domain";
 import type { ForkThreadRequest } from "@bb/server-contract";
 import type { LoggedPendingInteractionWorkSessionDeps } from "../../types.js";
 import { ApiError } from "../../errors.js";
@@ -62,7 +62,7 @@ function requireSourceEnvironment(
 export async function createThreadForkFromRequest(
   deps: ThreadForkDeps,
   request: ForkThreadRequest,
-  createdByUserId: string | null,
+  creator: { roleCeiling: RoleCeiling | null; userId: string | null },
 ) {
   const sourceThread = requireForkSourceThread(deps, request.sourceThreadId);
   requireForkCapableProvider(deps, sourceThread);
@@ -77,7 +77,8 @@ export async function createThreadForkFromRequest(
   return createThreadFromRequest(
     deps,
     {
-      createdByUserId,
+      createdByRoleCeiling: creator.roleCeiling,
+      createdByUserId: creator.userId,
       environment: request.environment ?? {
         type: "reuse",
         environmentId: sourceEnvironment.id,

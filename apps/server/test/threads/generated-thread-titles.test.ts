@@ -247,6 +247,7 @@ describe("generated thread titles", () => {
       });
       const input = textInput("Stop during metadata inference before setup");
       requestThreadProvision(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environmentIntent: {
           type: "provider",
@@ -458,6 +459,7 @@ describe("generated thread titles", () => {
 
       const input = textInput("Continue this fork and generate a useful title");
       const fork = await createThreadFromRequest(harness.deps, {
+        createdByRoleCeiling: null,
         createdByUserId: LOCAL_OWNER_USER_ID,
         environment: { type: "reuse", environmentId: environment.id },
         input,
@@ -584,6 +586,7 @@ describe("generated thread titles", () => {
       });
 
       requestThreadProvision(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environmentIntent: {
           type: "reuse",
@@ -696,6 +699,7 @@ describe("generated thread titles", () => {
       });
 
       requestThreadProvision(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environmentIntent: {
           type: "reuse",

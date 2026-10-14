@@ -111,6 +111,13 @@ export function registerAuthRoutes(app: Hono, deps: AuthRouteDeps): void {
 
   post(routes.createToken, async (context, payload) => {
     const principal = requirePrincipal(context);
+    if (principal.roleCeiling !== null) {
+      throw new ApiError(
+        403,
+        "credential_role_capped",
+        "A role-capped credential cannot create personal access tokens; sign in to create one",
+      );
+    }
     const created = await deps.userAuth.createPersonalAccessToken({
       name: payload.name,
       userId: principal.userId,

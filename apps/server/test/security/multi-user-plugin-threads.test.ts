@@ -119,6 +119,7 @@ async function shellUserId(
   const [queued] = listQueuedThreadMessages(harness.db, threadId);
   if (queued === undefined) throw new Error("first message not queued");
   const config = await resolveThreadRuntimeCommandConfig(harness.deps, {
+    authorRoleCeiling: null,
     authorUserId: queued.authorUserId,
     environment: {
       hostId: fixture.host.id,
@@ -150,6 +151,7 @@ async function shellToken(
   const thread = getThread(harness.db, threadId);
   if (thread === null) throw new Error("thread not found");
   const config = await resolveThreadRuntimeCommandConfig(harness.deps, {
+    authorRoleCeiling: null,
     authorUserId,
     environment: {
       hostId: fixture.host.id,
@@ -236,6 +238,7 @@ describe("plugin-created threads in multi mode", () => {
       const thread = getThread(harness.db, origin.id);
       if (thread === null) throw new Error("thread not found");
       const config = await resolveThreadRuntimeCommandConfig(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: servicePrincipal?.userId ?? null,
         environment: {
           hostId: fixture.host.id,

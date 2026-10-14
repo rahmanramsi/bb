@@ -1002,6 +1002,7 @@ export async function prepareReadyThreadTurnCommand(
   );
   if (providerThreadId) {
     const preparedCommand = await prepareTurnSubmitCommandPayload(deps, {
+      authorRoleCeiling: args.authorRoleCeiling,
       authorUserId: args.authorUserId,
       environment: args.environment,
       execution: args.execution,

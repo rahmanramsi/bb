@@ -18,6 +18,7 @@ import type {
   ThreadRecord,
   ThreadCreateOrigin,
   ThreadQueuedMessage,
+  RoleCeiling,
 } from "@bb/domain";
 import { ApiError } from "../../errors.js";
 import {
@@ -65,6 +66,7 @@ export interface QueuedDispatchMessage {
   input: PromptInput[];
   execution: ResolvedThreadExecutionOptions;
   senderThreadId: string | null;
+  authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   /**
    * The provenance of the dispatch being queued, written onto the row so the
@@ -126,6 +128,7 @@ export function recordQueuedMessageWait(
           threadId: args.thread.id,
           content: args.message.input,
           senderThreadId: args.message.senderThreadId,
+          authorRoleCeiling: args.message.authorRoleCeiling,
           authorUserId: args.message.authorUserId,
           origin: args.message.origin,
           originPluginId: args.message.originPluginId,

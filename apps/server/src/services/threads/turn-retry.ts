@@ -1,5 +1,5 @@
 import { hasQueuedRetryOfTurnRequest } from "@bb/db";
-import { permissionModeSchema } from "@bb/domain";
+import { permissionModeSchema, type RoleCeiling } from "@bb/domain";
 import type {
   ClientTurnRequestId,
   PermissionMode,
@@ -84,6 +84,7 @@ function requireFailedTurn(
 }
 
 export interface RetryFailedTurnArgs {
+  authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   thread: ThreadRecord;
   request: RetryTurnRequest;
@@ -210,6 +211,7 @@ export async function retryFailedTurn(
     const attempt = chain.attemptNumber + 1;
     const outcome = await attemptDispatch(deps, {
       thread,
+      authorRoleCeiling: args.authorRoleCeiling,
       authorUserId: args.authorUserId,
       payload: {
         // A retry never steers: it re-runs a turn, so a thread that is busy

@@ -15,7 +15,7 @@ import { startedOnBehalfOfInitiatorValues } from "@bb/domain/started-on-behalf-o
 import { threadCreateOriginValues } from "@bb/domain/thread-create-origin";
 import { threadOriginKindValues } from "@bb/domain/thread-origin-kind";
 import { threadVisibilityValues } from "@bb/domain/thread-visibility";
-import { userRoleValues } from "@bb/domain/user-role";
+import { roleCeilingValues, userRoleValues } from "@bb/domain/user-role";
 import type {
   EnvironmentProviderSelection,
   JsonValue,
@@ -1077,6 +1077,9 @@ export const queuedThreadMessages = sqliteTable(
     senderThreadId: text("sender_thread_id"),
     authorUserId: text("author_user_id").references(() => authUsers.id, {
       onDelete: "set null",
+    }),
+    authorRoleCeiling: text("author_role_ceiling", {
+      enum: roleCeilingValues,
     }),
     // How the dispatch this row was queued from was requested, and the plugin
     // that requested it. On the row rather than read from the request, so a

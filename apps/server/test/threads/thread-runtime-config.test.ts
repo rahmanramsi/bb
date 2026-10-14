@@ -217,6 +217,7 @@ describe("thread runtime config", () => {
         };
 
         const startCommand = await buildThreadStartCommand(harness.deps, {
+          authorRoleCeiling: null,
           authorUserId: null,
           environment,
           execution,
@@ -244,6 +245,7 @@ describe("thread runtime config", () => {
         const submitCommand = await prepareTurnSubmitCommandPayload(
           harness.deps,
           {
+            authorRoleCeiling: null,
             authorUserId: null,
             environment,
             execution,
@@ -345,6 +347,7 @@ describe("thread runtime config", () => {
         } as const;
 
         const startCommand = await buildThreadStartCommand(harness.deps, {
+          authorRoleCeiling: null,
           authorUserId: null,
           environment,
           execution,
@@ -372,6 +375,7 @@ describe("thread runtime config", () => {
         const submitCommand = await prepareTurnSubmitCommandPayload(
           harness.deps,
           {
+            authorRoleCeiling: null,
             authorUserId: null,
             environment,
             execution,
@@ -821,6 +825,7 @@ describe("thread runtime config", () => {
       );
 
       const command = await buildThreadStartCommand(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: null,
         environment,
         execution,
@@ -887,6 +892,7 @@ describe("thread runtime config", () => {
           { threadId: thread.id },
         );
         return buildThreadStartCommand(harness.deps, {
+          authorRoleCeiling: null,
           authorUserId: null,
           environment,
           execution,
@@ -986,6 +992,7 @@ describe("thread runtime config", () => {
         providerId: "hooked",
       });
       const command = await buildThreadStartCommand(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: null,
         environment,
         execution: {
@@ -1058,6 +1065,7 @@ describe("thread runtime config", () => {
       ];
 
       const command = await buildThreadStartCommand(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: null,
         environment,
         execution: {
@@ -1089,6 +1097,7 @@ describe("thread runtime config", () => {
         providerId: "pi",
       });
       const piCommand = await buildThreadStartCommand(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: null,
         environment,
         execution: {
@@ -1199,6 +1208,7 @@ describe("thread runtime config", () => {
         authorUserId: string | null,
       ) => {
         const config = await resolveThreadRuntimeCommandConfig(harness.deps, {
+          authorRoleCeiling: null,
           authorUserId,
           environment: environmentInput,
           model: "test-model",
@@ -1329,6 +1339,7 @@ describe("thread runtime config", () => {
 
       const resolve = async () =>
         resolveThreadRuntimeCommandConfig(harness.deps, {
+          authorRoleCeiling: null,
           authorUserId: userId,
           environment: {
             hostId,
@@ -1407,6 +1418,7 @@ describe("thread runtime config", () => {
       const runtimeConfig = await resolveThreadRuntimeCommandConfig(
         harness.deps,
         {
+          authorRoleCeiling: null,
           authorUserId: null,
           thread,
           model: "test-model",
@@ -1491,7 +1503,13 @@ describe("thread runtime config", () => {
 
       const runtimeConfig = await resolveThreadRuntimeCommandConfig(
         harness.deps,
-        { authorUserId: null, thread, environment, model: "test-model" },
+        {
+          authorRoleCeiling: null,
+          authorUserId: null,
+          thread,
+          environment,
+          model: "test-model",
+        },
       );
 
       expect(runtimeConfig.instructions).toContain(
@@ -1540,7 +1558,13 @@ describe("thread runtime config", () => {
 
       const runtimeConfig = await resolveThreadRuntimeCommandConfig(
         harness.deps,
-        { authorUserId: null, thread, environment, model: "test-model" },
+        {
+          authorRoleCeiling: null,
+          authorUserId: null,
+          thread,
+          environment,
+          model: "test-model",
+        },
       );
 
       expect(runtimeConfig.instructions).not.toContain(
@@ -1602,7 +1626,13 @@ describe("thread runtime config", () => {
 
       const runtimeConfig = await resolveThreadRuntimeCommandConfig(
         harness.deps,
-        { authorUserId: null, thread, environment, model: "test-model" },
+        {
+          authorRoleCeiling: null,
+          authorUserId: null,
+          thread,
+          environment,
+          model: "test-model",
+        },
       );
 
       expect(runtimeConfig.injectedSkillSources).toContainEqual({
@@ -1674,7 +1704,13 @@ describe("thread runtime config", () => {
 
         const runtimeConfig = await resolveThreadRuntimeCommandConfig(
           harness.deps,
-          { authorUserId: null, thread, environment, model: "test-model" },
+          {
+            authorRoleCeiling: null,
+            authorUserId: null,
+            thread,
+            environment,
+            model: "test-model",
+          },
         );
 
         expect(runtimeConfig.injectedSkillSources).toContainEqual({
@@ -1741,6 +1777,7 @@ describe("thread runtime config", () => {
       const runtimeConfig = await resolveThreadRuntimeCommandConfig(
         harness.deps,
         {
+          authorRoleCeiling: null,
           authorUserId: null,
           thread,
           model: "test-model",
@@ -1854,6 +1891,7 @@ describe("thread runtime config", () => {
         const runtimeConfig = await resolveThreadRuntimeCommandConfig(
           harness.deps,
           {
+            authorRoleCeiling: null,
             authorUserId: null,
             thread,
             model: "test-model",
@@ -1938,6 +1976,7 @@ describe("thread runtime config", () => {
         const runtimeConfig = await resolveThreadRuntimeCommandConfig(
           harness.deps,
           {
+            authorRoleCeiling: null,
             authorUserId: null,
             thread,
             model: "test-model",

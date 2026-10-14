@@ -10,6 +10,7 @@ import {
   type ThreadRecord,
   type ThreadTurnInitiator,
   type EnvironmentStatus,
+  type RoleCeiling,
 } from "@bb/domain";
 import type {
   HostDaemonContributedEnvEntry,
@@ -56,6 +57,7 @@ export interface ThreadRuntimeCommandEnvironment {
 }
 
 interface ResolveThreadRuntimeCommandConfigArgs {
+  authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   environment: ThreadRuntimeCommandEnvironment;
   model: string;
@@ -124,9 +126,9 @@ export function resolvePermissionEscalation(
 function threadShellCredential(
   deps: LoggedWorkSessionDeps,
   args: ResolveThreadRuntimeCommandConfigArgs,
-): { userId: string; roleCeiling: "member" | null } | null {
+): { userId: string; roleCeiling: RoleCeiling | null } | null {
   if (args.authorUserId !== null && !isSystemUserId(args.authorUserId)) {
-    return { userId: args.authorUserId, roleCeiling: null };
+    return { userId: args.authorUserId, roleCeiling: args.authorRoleCeiling };
   }
   const creatorUserId = args.thread.createdByUserId;
   if (

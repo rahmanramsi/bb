@@ -112,6 +112,7 @@ function createHookedThread(
   },
 ) {
   return createThreadFromRequest(harness.deps, {
+    createdByRoleCeiling: null,
     createdByUserId: LOCAL_OWNER_USER_ID,
     environment: {
       type: "host",
@@ -224,6 +225,7 @@ describe("message.dispatch hook context", () => {
       };
 
       await createThreadFromRequest(harness.deps, {
+        createdByRoleCeiling: null,
         createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
           type: "host",
@@ -259,6 +261,7 @@ describe("message.dispatch hook context", () => {
 
       const sendAt = Date.now() + 60_000;
       const response = await acceptThreadSendRequest(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         payload: {
           input: textInput("scheduled draft"),
@@ -301,6 +304,7 @@ describe("message.dispatch hook context", () => {
       // provisioned at admission, so the hook decides about a thread that has
       // none — the exact state a per-host limiter must still see a host in.
       const thread = await createThreadFromRequest(harness.deps, {
+        createdByRoleCeiling: null,
         createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
           type: "host",
@@ -345,6 +349,7 @@ describe("pending admission races", () => {
       expect(stale.status).toBe("pending");
       const attempt = (text: string) =>
         attemptDispatch(harness.deps, {
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           thread: stale,
           payload: { input: textInput(text), mode: "start" },
@@ -592,6 +597,7 @@ describe("message.dispatch hook admission visibility", () => {
       });
 
       await acceptThreadSendRequest(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         payload: { input: textInput("first follow-up"), mode: "auto" },
         thread,
@@ -612,6 +618,7 @@ describe("message.dispatch hook admission visibility", () => {
       });
 
       await acceptThreadSendRequest(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         payload: { input: textInput("a steer"), mode: "steer" },
         thread: getThread(harness.db, thread.id)!,
@@ -667,6 +674,7 @@ describe("dispatch hooks and the no-hook path", () => {
 
       const error = await expectApiError(() =>
         acceptThreadSendRequest(harness.deps, {
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           payload: { input: textInput("actually, stop"), mode: "steer" },
           thread,
@@ -708,6 +716,7 @@ describe("message.dispatch hook message author", () => {
       });
 
       await acceptThreadSendRequest(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         payload: { input: textInput("typed by hand"), mode: "auto" },
         thread,
@@ -728,6 +737,7 @@ describe("message.dispatch hook message author", () => {
       const originalRequestId = createClientTurnRequestId();
 
       await attemptDispatch(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         thread,
         payload: { input: textInput("retried work"), mode: "auto" },
@@ -783,6 +793,7 @@ describe("message.dispatch hook message author", () => {
       });
 
       await acceptThreadSendRequest(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         payload: {
           input: textInput("sent by an agent"),
@@ -831,6 +842,7 @@ describe("message.dispatch hook message author", () => {
         });
 
         const spawned = await createThreadFromRequest(harness.deps, {
+          createdByRoleCeiling: null,
           createdByUserId: LOCAL_OWNER_USER_ID,
           environment: {
             type: "host",
@@ -892,6 +904,7 @@ describe("message.dispatch hook message author", () => {
       );
 
       const thread = await createThreadFromRequest(harness.deps, {
+        createdByRoleCeiling: null,
         createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
           type: "host",
@@ -934,6 +947,7 @@ describe("message.dispatch hook message author", () => {
       });
 
       await acceptThreadSendRequest(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         payload: { input: textInput("a follow-up"), mode: "auto" },
         thread,
@@ -972,6 +986,7 @@ describe("message.dispatch hook message author", () => {
       });
 
       await attemptDispatch(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         thread,
         payload: { input: textInput("spawned work"), mode: "auto" },
@@ -1244,6 +1259,7 @@ describe("message.dispatch hooks on the queue drain", () => {
       };
 
       await acceptThreadSendRequest(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         payload: {
           input: textInput("queued draft"),
@@ -1273,6 +1289,7 @@ describe("message.dispatch hooks on the queue drain", () => {
         status: "idle",
       });
       const queued = await createQueuedMessageForThread(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         payload: { input: textInput("queued work") },
         thread,
@@ -1317,6 +1334,7 @@ describe("message.dispatch hooks on the queue drain", () => {
         status: "idle",
       });
       const queued = await createQueuedMessageForThread(harness.deps, {
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         payload: { input: textInput("stay paused") },
         thread,

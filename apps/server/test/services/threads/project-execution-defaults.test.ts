@@ -42,6 +42,7 @@ describe("project execution defaults persistence", () => {
       });
 
       await createThreadFromRequest(harness.deps, {
+        createdByRoleCeiling: null,
         createdByUserId: LOCAL_OWNER_USER_ID,
         origin: "app",
         startedOnBehalfOf: null,
@@ -88,6 +89,7 @@ describe("project execution defaults persistence", () => {
       });
 
       await createThreadFromRequest(harness.deps, {
+        createdByRoleCeiling: null,
         createdByUserId: LOCAL_OWNER_USER_ID,
         origin: "app",
         startedOnBehalfOf: null,
@@ -157,6 +159,7 @@ describe("project execution defaults persistence", () => {
       });
 
       await createThreadFromRequest(harness.deps, {
+        createdByRoleCeiling: null,
         createdByUserId: LOCAL_OWNER_USER_ID,
         origin: "app",
         originKind: "fork",
