@@ -162,6 +162,39 @@ describe("queued thread messages", () => {
     });
   });
 
+  it("turns an edited system notice into an ordinary message by its editor", () => {
+    const { db, thread } = setup();
+    const notice = createQueuedThreadMessage(db, noopNotifier, {
+      threadId: thread.id,
+      content: defaultInput,
+      model: "gpt-5",
+      reasoningLevel: "medium",
+      permissionMode: "full",
+      serviceTier: "default",
+      waitingOn: { kind: "thread-busy" },
+      sendAt: null,
+      payload: { kind: "inline" },
+      systemNotice: { kind: "child-completed", subject: null },
+    });
+
+    const result = updateQueuedThreadMessage(db, noopNotifier, {
+      editorRoleCeiling: null,
+      editorUserId: null,
+      content: textInput("edited notice"),
+      expectedUpdatedAt: notice.updatedAt,
+      id: notice.id,
+      threadId: thread.id,
+    });
+
+    expect(result.kind).toBe("updated");
+    expect(getQueuedThreadMessage(db, notice.id)).toMatchObject({
+      authorRoleCeiling: null,
+      authorUserId: null,
+      content: JSON.stringify(textInput("edited notice")),
+      systemNotice: null,
+    });
+  });
+
   it("rejects a second update based on the same queued message version", () => {
     const { db, thread } = setup();
     const queuedMessage = createQueuedThreadMessage(db, noopNotifier, {

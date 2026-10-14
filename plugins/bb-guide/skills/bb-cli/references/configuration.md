@@ -125,6 +125,14 @@ as stopped because another author sent a message, and the send answers
 user or a plugin edits is attributed to the editor and runs with the editor's
 credential.
 
+Notices that bb sends a thread on its own, such as a child thread's outcome or
+a delivered tool result, carry no token. While the thread runs a turn with a
+different credential, a notice neither steers into that turn nor interrupts it:
+it waits in the queue and starts as a new turn once the running turn ends. Send
+now on a waiting notice answers that the thread is already running a turn.
+Editing a waiting notice turns it into an ordinary message by the editor, with
+the editor's credential.
+
 Plugin RPC methods and commands that change server-wide settings, such as
 `bb concurrency-limit global 0` or `bb pool routing claude`, are admin-only and
 fail for members with `admin_required`. Session cookies are `Secure` when

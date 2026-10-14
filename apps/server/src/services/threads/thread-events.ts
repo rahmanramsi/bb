@@ -255,6 +255,8 @@ function buildClientTurnRequestedEventArgs(
   recordTurnRequestAuthor({
     author: args.author,
     requestId: args.requestId,
+    startsTurn:
+      args.target.kind === "thread-start" || args.target.kind === "new-turn",
     threadId: args.threadId,
   });
   return {

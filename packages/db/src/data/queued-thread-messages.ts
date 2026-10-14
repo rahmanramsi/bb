@@ -735,10 +735,12 @@ export function updateQueuedThreadMessage(
         .update(queuedThreadMessages)
         .set({
           content: JSON.stringify(input.content),
-          ...(existing.authorUserId !== input.editorUserId
+          ...(existing.systemNotice !== null ||
+          existing.authorUserId !== input.editorUserId
             ? {
                 authorRoleCeiling: input.editorRoleCeiling,
                 authorUserId: input.editorUserId,
+                systemNotice: null,
               }
             : input.editorRoleCeiling === null
               ? {}
