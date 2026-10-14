@@ -860,10 +860,10 @@ describe("user administration", () => {
     await expect(
       admin.experimental_users.updateRole({ userId: "missing", role: "admin" }),
     ).rejects.toMatchObject({ status: 404 });
-    const shellToken = await issueThreadShellToken(
-      server.config.dataDir,
-      user.id,
-    );
+    const shellToken = await issueThreadShellToken(server.config.dataDir, {
+      userId: user.id,
+      roleCeiling: null,
+    });
     const shell = createNodeBbSdk({
       baseUrl: server.baseUrl,
       context: { authToken: shellToken },

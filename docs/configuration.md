@@ -1967,16 +1967,20 @@ accept `--json`.
 
 Roles are guardrails for a trusted team. A member who runs an agent effectively
 has shell access to its host. In multi mode, each turn supplies a signed
-seven-day `BB_TOKEN` to the agent shell through the launch environment. It
-authenticates as the user who sent the turn, or as the thread creator for
-turns no user sent or that a plugin or other service credential sent, with
-that user's current role. A thread that a plugin creates under a parent, fork
-source, or lifecycle owner thread is attributed to that thread's creator; a
-user's own thread is always attributed to that user. It stops authenticating
-if that user is removed and is masked in runtime environment displays. Turns
-with neither a sending user nor a remaining creator, including threads created
-before multi mode and threads a plugin creates without a parent, get no
-`BB_TOKEN`. In local mode, shells need no credential.
+seven-day `BB_TOKEN` to the agent shell through the launch environment. For a
+turn a user sent, it authenticates as that user with their current role. For a
+turn no user sent, or that a plugin or other service credential sent, it
+authenticates as the thread creator only if the creator exists and is a member
+when the turn starts, and it stays capped at member even if that user is later
+promoted to admin. Such turns in a thread whose creator is an admin, a removed
+user, or nobody get no `BB_TOKEN`, so plugin-driven work never runs with admin
+authority. A thread that a plugin creates under a parent, fork source, or
+lifecycle owner thread is attributed to that thread's creator for display; the
+attribution grants no authority beyond this rule. A user's own thread is always
+attributed to that user. The token stops authenticating if its user is removed
+and is masked in runtime environment displays. Threads created before multi
+mode and threads a plugin creates without a parent have no creator to fall back
+to. In local mode, shells need no credential.
 
 `GET /api/v1/me` returns the authenticated user. Admins update roles with
 `PUT /api/v1/users/:id/role` (`{"role":"admin"|"member"}`) and remove accounts

@@ -37,7 +37,11 @@ import {
 import { readWorkspaceAgentContext } from "./workspace-agent-context.js";
 import { resolveDeprecatedWorkspaceProvisionType } from "../environments/environment-response.js";
 import { markTurnTraceSpan } from "../system/turn-trace.js";
-import { isSystemUserId, issueThreadShellToken } from "../user-auth.js";
+import {
+  isSystemUserId,
+  issueThreadShellToken,
+  readUserRole,
+} from "../user-auth.js";
 
 const UPDATE_ENVIRONMENT_DIRECTORY_INSTRUCTIONS =
   "If the user asks you to move this thread to another checkout, worktree, or directory, make sure the target directory exists, then call `update_environment_directory` with its absolute path. After it succeeds, stop work in the current turn; future turns will run in the updated environment.";
@@ -117,13 +121,22 @@ export function resolvePermissionEscalation(
   return "ask";
 }
 
-function threadShellUserId(
+function threadShellCredential(
+  deps: LoggedWorkSessionDeps,
   args: ResolveThreadRuntimeCommandConfigArgs,
-): string | null {
-  for (const userId of [args.authorUserId, args.thread.createdByUserId]) {
-    if (userId !== null && !isSystemUserId(userId)) return userId;
+): { userId: string; roleCeiling: "member" | null } | null {
+  if (args.authorUserId !== null && !isSystemUserId(args.authorUserId)) {
+    return { userId: args.authorUserId, roleCeiling: null };
   }
-  return null;
+  const creatorUserId = args.thread.createdByUserId;
+  if (
+    creatorUserId === null ||
+    isSystemUserId(creatorUserId) ||
+    readUserRole(deps.db, creatorUserId) !== "member"
+  ) {
+    return null;
+  }
+  return { userId: creatorUserId, roleCeiling: "member" };
 }
 
 export async function resolveThreadRuntimeCommandConfig(
@@ -219,11 +232,11 @@ export async function resolveThreadRuntimeCommandConfig(
       )
         contributedEnv.splice(index, 1);
     }
-    const shellUserId = threadShellUserId(args);
-    if (shellUserId !== null) {
+    const shellCredential = threadShellCredential(deps, args);
+    if (shellCredential !== null) {
       const token = await issueThreadShellToken(
         deps.config.dataDir,
-        shellUserId,
+        shellCredential,
       );
       contributedEnv.push({
         name: "BB_TOKEN",
