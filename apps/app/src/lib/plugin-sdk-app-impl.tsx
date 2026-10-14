@@ -25,6 +25,7 @@ import { buildMarkdownMessageLinkRouting } from "@/components/ui/markdown-messag
 import type { MarkdownPreviewLinkHandler } from "@/components/ui/markdown-link";
 import { useThreadTimelineNavigation } from "@/components/thread/timeline/ThreadTimelineNavigationContext";
 import { usePluginId } from "@/components/plugin/plugin-context";
+import { useCurrentUser, useUserStorageKey } from "@/hooks/useAuth";
 import { useQuestionFormHost } from "@bb/shared-ui/question-form-host";
 import { definePluginApp } from "./plugin-app-definition";
 import {
@@ -83,6 +84,8 @@ export const pluginSdkAppImplementation = {
   experimental_ProviderIcon: ProviderIcon,
   useBbContext,
   experimental_usePluginId: usePluginId,
+  experimental_useCurrentUser: useCurrentUser,
+  experimental_useUserStorageKey: useUserStorageKey,
   experimental_useQuestionFormHost: useQuestionFormHost,
   useBbNavigate,
   experimental_useAppPanel,

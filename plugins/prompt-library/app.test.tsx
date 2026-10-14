@@ -9,7 +9,10 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import type { PluginComposerScope } from "@get-bb/plugin-sdk/app";
+import type {
+  ExperimentalCurrentUser,
+  PluginComposerScope,
+} from "@get-bb/plugin-sdk/app";
 import type {
   promptLibraryRpcContract,
   RecentPromptRow,
@@ -93,6 +96,7 @@ function render(
   options: {
     scope?: PluginComposerScope;
     draft?: string;
+    currentUser?: ExperimentalCurrentUser;
     starred?: StarredPromptRow[];
     recent?: RecentPromptRow[];
   } = {},
@@ -117,6 +121,9 @@ function render(
         text: options.draft ?? "",
       },
       rpc: { search, star, unstar, markUsed },
+      ...(options.currentUser === undefined
+        ? {}
+        : { experimental_currentUser: options.currentUser }),
     },
   );
   return { slot, search, star, unstar, markUsed };
@@ -201,6 +208,46 @@ describe("prompt library popup", () => {
 
     expect(slot.composer.draft.text).toBe("recent prompt");
     expect(markUsed).not.toHaveBeenCalled();
+  });
+
+  it("remembers the scope separately for each signed-in user", async () => {
+    const alex: ExperimentalCurrentUser = {
+      userId: "usr_alex",
+      displayName: "Alex",
+      email: "alex@example.com",
+      role: "admin",
+      effectiveRole: "admin",
+      roleCeiling: null,
+    };
+    const sam: ExperimentalCurrentUser = {
+      ...alex,
+      userId: "usr_sam",
+      displayName: "Sam",
+      role: "member",
+      effectiveRole: "member",
+    };
+    const first = render({ currentUser: alex });
+    await first.slot.findByRole("option", { name: /starred prompt/ });
+    fireEvent.keyDown(searchBox(first.slot), { key: "Tab" });
+    await waitFor(() =>
+      expect(first.search).toHaveBeenLastCalledWith(
+        expect.objectContaining({ scope: "thread" }),
+      ),
+    );
+    cleanup();
+
+    const other = render({ currentUser: sam });
+    await other.slot.findByRole("option", { name: /starred prompt/ });
+    expect(other.search).toHaveBeenLastCalledWith(
+      expect.objectContaining({ scope: "global" }),
+    );
+    cleanup();
+
+    const again = render({ currentUser: alex });
+    await again.slot.findByRole("option", { name: /starred prompt/ });
+    expect(again.search).toHaveBeenLastCalledWith(
+      expect.objectContaining({ scope: "thread" }),
+    );
   });
 
   it("searches as you type and remembers the scope per composer kind", async () => {

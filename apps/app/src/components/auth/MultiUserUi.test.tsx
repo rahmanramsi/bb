@@ -55,6 +55,8 @@ function session(
     needsBootstrap,
     principalKind:
       user === null ? null : authMode === "local" ? "local" : "user",
+    effectiveRole: user?.role ?? null,
+    roleCeiling: null,
   };
 }
 
@@ -330,6 +332,21 @@ describe("account visibility and actions", () => {
       }
     },
   );
+
+  it("treats an admin acting through a member-capped credential as a member", () => {
+    mount(
+      <SidebarProvider>
+        <SettingsSidebar isResizing={false} onResizeMouseDown={() => {}} />
+      </SidebarProvider>,
+      { ...session(admin), effectiveRole: "member", roleCeiling: "member" },
+      "/settings/account",
+    );
+    expect(screen.getByRole("link", { name: "Appearance" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Machines" })).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: "Installed plugins" }),
+    ).toBeNull();
+  });
 
   it("blocks a member opening machine settings directly", async () => {
     mount(

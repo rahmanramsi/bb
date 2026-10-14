@@ -268,6 +268,51 @@ describe("Docs nav panel", () => {
     ).toBeTruthy();
   });
 
+  it("offers Add vault to admins only and follows a live role change", async () => {
+    const member = {
+      userId: "usr_sam",
+      displayName: "Sam",
+      email: "sam@example.com",
+      role: "member",
+      effectiveRole: "member",
+      roleCeiling: null,
+    } as const;
+    const memberSlot = renderSlot(
+      navigationRegistration,
+      { subPath: "personal" },
+      {
+        rpc: { listNotes: () => listNotesResult([]) },
+        experimental_currentUser: member,
+      },
+    );
+    await memberSlot.findByRole("navigation", { name: "Notes" });
+    expect(memberSlot.queryByRole("button", { name: "Add vault" })).toBeNull();
+
+    await memberSlot.behavior.experimental_setCurrentUser({
+      ...member,
+      role: "admin",
+      effectiveRole: "admin",
+    });
+    expect(memberSlot.getByRole("button", { name: "Add vault" })).toBeTruthy();
+    memberSlot.unmount();
+
+    const cappedAdmin = renderSlot(
+      navigationRegistration,
+      { subPath: "personal" },
+      {
+        rpc: { listNotes: () => listNotesResult([]) },
+        experimental_currentUser: {
+          ...member,
+          role: "admin",
+          effectiveRole: "member",
+          roleCeiling: "member",
+        },
+      },
+    );
+    await cappedAdmin.findByRole("navigation", { name: "Notes" });
+    expect(cappedAdmin.queryByRole("button", { name: "Add vault" })).toBeNull();
+  });
+
   it("keeps one shared request across page and navigation Strict Mode replay", async () => {
     let requests = 0;
     const StrictDocsSurfaces = (props: { subPath: string }) => (

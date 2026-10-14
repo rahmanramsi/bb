@@ -1,6 +1,6 @@
 import { MobileAppSection } from "@/components/settings/MobileAppSection";
 import { AccountSettings } from "@/components/settings/AccountSettings";
-import { useAuth } from "@/hooks/useAuth";
+import { useActsAsMember, useAuth } from "@/hooks/useAuth";
 import { MachineEnvironmentSettings } from "@/components/settings/MachineEnvironmentSettings";
 import { MachineAccessSettings } from "@/components/settings/MachineAccessSettings";
 import { useMemo, useRef, useState, type ReactNode } from "react";
@@ -1159,6 +1159,7 @@ export function ExperimentsSettingsSection({
 
 export function SettingsView() {
   const auth = useAuth();
+  const member = useActsAsMember();
   const navigate = useNavigate();
   const themePreference = useThemePreference();
   const systemConfigQuery = useSystemConfig();
@@ -1191,8 +1192,7 @@ export function SettingsView() {
     useSettingsNavState();
   if (
     (activeSection === "account" && auth?.authMode !== "multi") ||
-    (auth?.authMode === "multi" &&
-      auth.user?.role !== "admin" &&
+    (member &&
       (activePluginId !== null ||
         !sections.some((section) => section.id === activeSection)))
   ) {

@@ -302,6 +302,8 @@ describe("multi-user authentication", () => {
       needsBootstrap: true,
       principalKind: null,
       user: null,
+      effectiveRole: null,
+      roleCeiling: null,
     });
   });
 

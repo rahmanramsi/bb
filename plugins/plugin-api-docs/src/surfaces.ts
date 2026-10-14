@@ -1052,6 +1052,8 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
           "PluginEnvironmentProviderAvailabilityContext",
           "PluginEnvironmentProviderAvailability",
           "PluginEnvironmentProviderCreateContext",
+          "PluginEnvironmentProviderCreateContext.experimental_requester",
+          "PluginEnvironmentProviderRequester",
           "PluginEnvironmentProviderRestoreContext",
           "PluginEnvironmentProviderCreateResult",
           "PluginEnvironmentProviderProgress",
@@ -1411,7 +1413,7 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
         bullets: [
           "Embed a thread, a new-thread prompt box, or a textarea with editable voice input",
           "Render Markdown, code, diffs, and file links, and copy text, the way bb does",
-          "Add or override app icons",
+          "Add or override app icons, and show admin-only controls only to admins",
           "Match bb's styling with no extra work",
         ],
         apiSymbols: [
@@ -1440,6 +1442,10 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
           "PluginCodeThemeState",
           "experimental_copyToClipboard",
           "ExperimentalClipboardContent",
+          "experimental_useCurrentUser",
+          "ExperimentalCurrentUser",
+          "ExperimentalUserRole",
+          "experimental_useUserStorageKey",
           "UrlLink",
           "UrlLinkProps",
           "experimental_FileLink",

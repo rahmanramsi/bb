@@ -10,6 +10,7 @@ import {
   definePluginApp,
   experimental_FileLink as FileLink,
   experimental_copyToClipboard,
+  experimental_useCurrentUser,
   useBbNavigate,
   useComposer,
   useRpc,
@@ -1670,7 +1671,7 @@ function Tree({
     targetOrder?: string[],
   ): void;
   onVaultChange(vaultId: string): void;
-  onAddVault(): void;
+  onAddVault: (() => void) | null;
 }) {
   const portalScopeProps = usePortalScopeProps();
   const [query, setQuery] = useState("");
@@ -1980,15 +1981,17 @@ function Tree({
               ))}
             </SelectContent>
           </Select>
-          <Button
-            className="size-8 shrink-0"
-            size="icon"
-            variant="ghost"
-            aria-label="Add vault"
-            onClick={onAddVault}
-          >
-            <HugeiconsIcon icon={PlusSignIcon} className="size-4" />
-          </Button>
+          {onAddVault === null ? null : (
+            <Button
+              className="size-8 shrink-0"
+              size="icon"
+              variant="ghost"
+              aria-label="Add vault"
+              onClick={onAddVault}
+            >
+              <HugeiconsIcon icon={PlusSignIcon} className="size-4" />
+            </Button>
+          )}
         </div>
         {hostUnavailable ? (
           <div
@@ -2041,6 +2044,8 @@ function NotesWorkspace({
     [navigate, onNavigate],
   );
   const route = parseRoute(subPath);
+  const canManageVaults =
+    experimental_useCurrentUser()?.effectiveRole === "admin";
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [folderName, setFolderName] = useState("");
   const [folderError, setFolderError] = useState<string | null>(null);
@@ -2233,7 +2238,7 @@ function NotesWorkspace({
               void moveFile(sourcePath, targetFolder, targetOrder)
             }
             onVaultChange={(value) => navigateTo(value)}
-            onAddVault={() => setVaultDialogOpen(true)}
+            onAddVault={canManageVaults ? () => setVaultDialogOpen(true) : null}
           />
         ) : filePath && /\.md$/i.test(filePath) ? (
           <NotePane

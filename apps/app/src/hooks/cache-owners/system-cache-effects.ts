@@ -42,7 +42,9 @@ import {
   threadPromptHistoryQueryKeyPrefix,
   threadSearchQueryKeyPrefix,
   threadsQueryKey,
+  userDirectoryQueryKey,
 } from "../queries/query-keys";
+import { AUTH_SESSION_QUERY_KEY } from "../useAuth";
 import { allThreadDefaultExecutionOptionsQueryKeyPrefix } from "../queries/thread-default-execution-options-query";
 import type { QueryClientArg } from "../cache-effect-types";
 import { clearCachedModelCatalogs } from "@/lib/model-catalog-cache";
@@ -252,6 +254,8 @@ function getServerReconnectInvalidationQueryKeys(): QueryKey[] {
     allSystemProvidersQueryKeyPrefix(),
     allSystemExecutionOptionsQueryKeyPrefix(),
     serverMoveStatusQueryKey(),
+    AUTH_SESSION_QUERY_KEY,
+    userDirectoryQueryKey(),
   ];
 }
 

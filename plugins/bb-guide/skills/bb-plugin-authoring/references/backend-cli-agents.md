@@ -110,7 +110,9 @@ RPC method contracts take the same `experimental_requiredRole: "admin"`, and
 the server answers members with HTTP 403 and code `forbidden`. A handler that
 needs an admin only for some inputs throws
 `experimental_PluginRpcForbiddenError` for the same reply, and points admins to
-a separate method marked `experimental_requiredRole: "admin"`.
+a separate method marked `experimental_requiredRole: "admin"`. In the app, hide
+the matching controls from members with `experimental_useCurrentUser()` from
+`@get-bb/plugin-sdk/app`.
 
 Agents discover plugin commands through the server-generated
 `plugin-commands` skill, which lists each command's `summary` and the

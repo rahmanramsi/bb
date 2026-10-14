@@ -82,6 +82,9 @@ including plugin commands. `bb whoami [--json]` shows the current user and
 the role the credential acts with: a member-capped `BB_TOKEN` reports
 `effectiveRole: "member"` and `roleCeiling: "member"` even after its user is
 promoted, and the text output names the cap and the account role.
+`GET /api/v1/auth/session` (SDK `experimental_auth.session`) reports the same
+`effectiveRole` and `roleCeiling`, both null while signed out; the app and
+plugin pages read the signed-in user from it.
 `bb logout [--json]` removes only that profile's saved login. It does not
 revoke the PAT or unset `BB_TOKEN`.
 
