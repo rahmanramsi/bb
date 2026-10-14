@@ -57,6 +57,7 @@ const SESSION_COOKIE_PREFIX = "bb";
 export type PrincipalKind = "user" | "local" | "machine";
 
 export interface RequestPrincipal {
+  delegatedPluginId: string | null;
   kind: PrincipalKind;
   role: UserRole;
   roleCeiling: RoleCeiling | null;
@@ -69,6 +70,7 @@ export interface AuthenticatedCredential {
 }
 
 export const LOCAL_OWNER_PRINCIPAL: RequestPrincipal = {
+  delegatedPluginId: null,
   kind: "local",
   role: "admin",
   roleCeiling: null,
@@ -76,6 +78,7 @@ export const LOCAL_OWNER_PRINCIPAL: RequestPrincipal = {
 };
 
 const SERVICE_PRINCIPAL: RequestPrincipal = {
+  delegatedPluginId: null,
   kind: "machine",
   role: "admin",
   roleCeiling: null,
@@ -104,6 +107,34 @@ const shellTokenPayloadSchema = z
   .strict();
 const SHELL_TOKEN_PREFIX = "bbshell_";
 const SHELL_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const PLUGIN_CALLER_TOKEN_PREFIX = "bbcaller_";
+export const PLUGIN_CALLER_CREDENTIAL_TTL_MS = 5 * 60 * 1000;
+const pluginCallerTokenPayloadSchema = z
+  .object({
+    id: z.string().min(1),
+    userId: z.string().min(1),
+    pluginId: z.string().min(1),
+    maxRole: userRoleSchema,
+    roleCeiling: z.enum(roleCeilingValues).nullable(),
+    expiresAt: z.number().int().positive(),
+  })
+  .strict();
+
+export interface PluginCallerCredentialArgs {
+  maxRole: UserRole;
+  pluginId: string;
+  roleCeiling: RoleCeiling | null;
+  userId: string;
+}
+
+export interface PluginCallerCredential {
+  readonly token: string;
+  revoke(): void;
+}
+
+function lowestRole(roles: readonly (UserRole | null)[]): UserRole {
+  return roles.includes("member") ? "member" : "admin";
+}
 
 export async function issueThreadShellToken(
   dataDir: string,
@@ -207,6 +238,9 @@ export interface UserAuthService {
   listPersonalAccessTokens(userId: string): PersonalAccessTokenSummary[];
   needsBootstrap(): boolean;
   authenticate(headers: Headers): Promise<AuthenticatedCredential | null>;
+  issuePluginCallerCredential(
+    args: PluginCallerCredentialArgs,
+  ): PluginCallerCredential;
   onAuthorizationChange(listener: () => void): () => void;
   resolvePrincipal(headers: Headers): Promise<RequestPrincipal | null>;
   revokePersonalAccessToken(args: { id: string; userId: string }): boolean;
@@ -518,7 +552,91 @@ export async function createUserAuthService(
     const user = getUser(userId);
     return user === null
       ? null
-      : { kind, role: user.role, roleCeiling: null, userId: user.id };
+      : {
+          delegatedPluginId: null,
+          kind,
+          role: user.role,
+          roleCeiling: null,
+          userId: user.id,
+        };
+  }
+
+  function readSignedPayload(body: string): unknown {
+    const parts = body.split(".");
+    if (parts.length !== 2) return null;
+    const [payload, signature] = parts;
+    const expected = createHmac("sha256", secret)
+      .update(payload)
+      .digest("base64url");
+    if (!timingSafeEqualStrings(expected, signature)) return null;
+    try {
+      return JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    } catch {
+      return null;
+    }
+  }
+
+  function signPayload(value: unknown): string {
+    const payload = Buffer.from(JSON.stringify(value)).toString("base64url");
+    const signature = createHmac("sha256", secret)
+      .update(payload)
+      .digest("base64url");
+    return `${payload}.${signature}`;
+  }
+
+  const livePluginCallerCredentials = new Map<string, number>();
+
+  function issuePluginCallerCredential(
+    issueArgs: PluginCallerCredentialArgs,
+  ): PluginCallerCredential {
+    const now = Date.now();
+    for (const [id, expiresAt] of livePluginCallerCredentials) {
+      if (expiresAt <= now) livePluginCallerCredentials.delete(id);
+    }
+    const id = randomBytes(16).toString("base64url");
+    const expiresAt = now + PLUGIN_CALLER_CREDENTIAL_TTL_MS;
+    livePluginCallerCredentials.set(id, expiresAt);
+    return {
+      token: `${PLUGIN_CALLER_TOKEN_PREFIX}${signPayload({
+        id,
+        userId: issueArgs.userId,
+        pluginId: issueArgs.pluginId,
+        maxRole: issueArgs.maxRole,
+        roleCeiling: issueArgs.roleCeiling,
+        expiresAt,
+      })}`,
+      revoke() {
+        if (livePluginCallerCredentials.delete(id)) notifyAuthorizationChange();
+      },
+    };
+  }
+
+  function authenticatePluginCaller(
+    body: string,
+  ): AuthenticatedCredential | null {
+    const parsed = pluginCallerTokenPayloadSchema.safeParse(
+      readSignedPayload(body),
+    );
+    if (!parsed.success) return null;
+    const payload = parsed.data;
+    const live = () =>
+      livePluginCallerCredentials.has(payload.id) &&
+      payload.expiresAt > Date.now();
+    if (!live()) return null;
+    const user = getUser(payload.userId);
+    if (user === null || isSystemUserId(user.id)) return null;
+    const accountRole = user.role;
+    return {
+      principal: {
+        delegatedPluginId: payload.pluginId,
+        kind: "user",
+        role: lowestRole([accountRole, payload.maxRole, payload.roleCeiling]),
+        roleCeiling: payload.roleCeiling,
+        userId: user.id,
+      },
+      isActive: async () =>
+        live() && getUser(payload.userId)?.role === accountRole,
+    };
   }
 
   function needsBootstrap(): boolean {
@@ -688,23 +806,15 @@ export async function createUserAuthService(
       if (timingSafeEqualStrings(token, serviceToken)) {
         return { principal: SERVICE_PRINCIPAL, isActive: async () => true };
       }
+      if (token.startsWith(PLUGIN_CALLER_TOKEN_PREFIX)) {
+        return authenticatePluginCaller(
+          token.slice(PLUGIN_CALLER_TOKEN_PREFIX.length),
+        );
+      }
       if (token.startsWith(SHELL_TOKEN_PREFIX)) {
-        const parts = token.slice(SHELL_TOKEN_PREFIX.length).split(".");
-        if (parts.length !== 2) return null;
-        const [payload, signature] = parts;
-        const expected = createHmac("sha256", secret)
-          .update(payload)
-          .digest("base64url");
-        if (!timingSafeEqualStrings(expected, signature)) return null;
-        let value: unknown;
-        try {
-          value = JSON.parse(
-            Buffer.from(payload, "base64url").toString("utf8"),
-          );
-        } catch {
-          return null;
-        }
-        const parsed = shellTokenPayloadSchema.safeParse(value);
+        const parsed = shellTokenPayloadSchema.safeParse(
+          readSignedPayload(token.slice(SHELL_TOKEN_PREFIX.length)),
+        );
         if (!parsed.success || parsed.data.expiresAt <= Date.now()) return null;
         const expiresAt = parsed.data.expiresAt;
         const roleCeiling = parsed.data.roleCeiling ?? null;
@@ -1015,6 +1125,7 @@ export async function createUserAuthService(
     listPersonalAccessTokens,
     needsBootstrap,
     authenticate,
+    issuePluginCallerCredential,
     onAuthorizationChange,
     resolvePrincipal,
     revokePersonalAccessToken,

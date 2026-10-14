@@ -127,10 +127,9 @@ const prefs = bb.settings.define({
 });
 bb.rpc.register(contract, {
   async density(_input, context) {
-    if (context.experimental_callerUserId === null) throw new Error("users only");
-    const values = await bb.settings.experimental_getForUser(
-      context.experimental_callerUserId,
-    );
+    const caller = context.experimental_caller;
+    if (caller.kind !== "client") throw new Error("users only");
+    const values = await bb.settings.experimental_getForUser(caller.userId);
     return { density: values.density };
   },
 });
@@ -151,9 +150,8 @@ bb.rpc.register(contract, {
 - `bb.storage.experimental_forUser(userId).kv` — the same kv interface and
   limits, private to one user and deleted when that user is removed. It
   throws for an id that names no user. Pass the authenticated caller's id
-  (`context.experimental_callerUserId` in RPC handlers,
-  `ctx.experimental_callerUserId` in CLI commands), never an id a client
-  sent. The plugin database stays shared; key its rows by user yourself.
+  (`experimental_caller.userId` of a `client` caller in any entry point's
+  context), never an id a client sent. The plugin database stays shared; key its rows by user yourself.
 
 ```ts
 const db = bb.storage.database();

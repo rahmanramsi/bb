@@ -105,7 +105,8 @@ export default async function plugin(bb: BbPluginApi) {
   });
 
   bb.rpc.register(sideChatRpcContract, {
-    async createSideChat({ sourceThreadId, sourceSeqEnd, anchorText }) {
+    async createSideChat({ sourceThreadId, sourceSeqEnd, anchorText }, ctx) {
+      const sdk = bb.sdk.experimental_asCaller(ctx);
       const seedText = resolveReplySeedText(anchorText);
       const forkArgs = {
         lifecycleOwnerThreadId: sourceThreadId,
@@ -125,7 +126,7 @@ export default async function plugin(bb: BbPluginApi) {
           : {}),
       };
       try {
-        const fork = await bb.sdk.threads.fork({
+        const fork = await sdk.threads.fork({
           ...forkArgs,
           ...(sourceSeqEnd !== undefined ? { sourceSeqEnd } : {}),
         });
@@ -135,7 +136,7 @@ export default async function plugin(bb: BbPluginApi) {
         if (sourceSeqEnd === undefined || !isSessionUnavailableError(error)) {
           throw error;
         }
-        const fork = await bb.sdk.threads.fork(forkArgs);
+        const fork = await sdk.threads.fork(forkArgs);
         enqueue(fork.id, fork.createdAt);
         return { threadId: fork.id };
       }

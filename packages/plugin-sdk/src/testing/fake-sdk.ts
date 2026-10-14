@@ -1,5 +1,5 @@
 import { validatePluginMetadata } from "@bb/domain";
-import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { BbPluginApi, ExperimentalPluginCaller } from "@get-bb/plugin-sdk";
 
 type BbSdk = BbPluginApi["sdk"];
 
@@ -7,6 +7,11 @@ type BbSdk = BbPluginApi["sdk"];
 export interface FakeSdkCall {
   path: string;
   args: unknown[];
+  /**
+   * The caller a `bb.sdk.experimental_asCaller(ctx)` client acted as; absent
+   * for calls through `bb.sdk` itself, which act as the plugin.
+   */
+  experimental_caller?: ExperimentalPluginCaller;
 }
 
 /**
@@ -138,6 +143,7 @@ function normalizeCallArgs(
 export function createFakeSdk(options: {
   pluginId: string;
   overrides?: FakeSdkOverrides;
+  resolveCaller?: (context: unknown) => ExperimentalPluginCaller;
 }): { sdk: BbSdk; harness: FakeSdkHarness } {
   const calls: FakeSdkCall[] = [];
   const stubs = new Map<string, (...args: unknown[]) => unknown>();
@@ -154,14 +160,33 @@ export function createFakeSdk(options: {
   }
   addOverrides("", options.overrides ?? {});
 
-  function invoke(path: string, rawArgs: unknown[]): unknown {
+  function invoke(
+    path: string,
+    rawArgs: unknown[],
+    caller: ExperimentalPluginCaller | null,
+  ): unknown {
+    if (path === "experimental_asCaller") {
+      if (caller !== null) {
+        throw new Error(
+          "bb.sdk.experimental_asCaller is not available on a caller-bound SDK",
+        );
+      }
+      if (options.resolveCaller === undefined) {
+        throw new Error("bb.sdk.experimental_asCaller is not available here");
+      }
+      return root(options.resolveCaller(rawArgs[0]));
+    }
     let args: unknown[];
     try {
       args = normalizeCallArgs(options.pluginId, path, rawArgs);
     } catch (error) {
       return Promise.reject(error);
     }
-    calls.push({ path, args });
+    calls.push(
+      caller === null
+        ? { path, args }
+        : { path, args, experimental_caller: caller },
+    );
     const stub = stubs.get(path);
     if (!stub) {
       throw new Error(
@@ -172,23 +197,39 @@ export function createFakeSdk(options: {
     return stub(...args);
   }
 
-  const nodes = new Map<string, unknown>();
+  const nodesByCaller = new Map<
+    ExperimentalPluginCaller | null,
+    Map<string, unknown>
+  >();
   /** Callable-and-traversable proxy: `sdk.threads.spawn(...)` and `sdk.subscribe(...)` both work. */
-  function node(path: string): unknown {
+  function node(
+    path: string,
+    caller: ExperimentalPluginCaller | null,
+  ): unknown {
+    let nodes = nodesByCaller.get(caller);
+    if (nodes === undefined) {
+      nodes = new Map();
+      nodesByCaller.set(caller, nodes);
+    }
     const cached = nodes.get(path);
     if (cached) return cached;
     const created = new Proxy(function () {}, {
       get(_target, prop) {
         // Not thenable: an accidentally awaited node must not hang.
         if (typeof prop !== "string" || prop === "then") return undefined;
-        return node(path === "" ? prop : `${path}.${prop}`);
+        return node(path === "" ? prop : `${path}.${prop}`, caller);
       },
       apply(_target, _thisArg, args: unknown[]) {
-        return invoke(path, args);
+        return invoke(path, args, caller);
       },
     });
     nodes.set(path, created);
     return created;
+  }
+  function root(caller: ExperimentalPluginCaller | null): BbSdk {
+    // The proxy is the genuinely unknowable boundary: it answers any BbSdk
+    // shape at runtime, and the type is re-imposed here once.
+    return node("", caller) as BbSdk;
   }
 
   const harness: FakeSdkHarness = {
@@ -203,7 +244,5 @@ export function createFakeSdk(options: {
     },
   };
 
-  // The proxy is the genuinely unknowable boundary: it answers any BbSdk
-  // shape at runtime, and the type is re-imposed here once.
-  return { sdk: node("") as BbSdk, harness };
+  return { sdk: root(null), harness };
 }

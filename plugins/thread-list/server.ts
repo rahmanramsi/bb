@@ -198,20 +198,20 @@ function rpcStore(
   bb: BbPluginApi,
   context: ExperimentalPluginRpcHandlerContext,
 ): ReturnType<typeof createPreferenceStore> {
-  if (context.experimental_callerUserId === null) {
+  if (context.experimental_caller.kind !== "client") {
     throw new Error(USER_REQUIRED_MESSAGE);
   }
-  return createPreferenceStore(bb, context.experimental_callerUserId);
+  return createPreferenceStore(bb, context.experimental_caller.userId);
 }
 
 function cliStore(
   bb: BbPluginApi,
   ctx: PluginCliContext,
 ): ReturnType<typeof createPreferenceStore> {
-  if (ctx.experimental_callerUserId === undefined) {
+  if (ctx.experimental_caller?.kind !== "client") {
     throw new PluginCliError(USER_REQUIRED_MESSAGE, { code: "user_required" });
   }
-  return createPreferenceStore(bb, ctx.experimental_callerUserId);
+  return createPreferenceStore(bb, ctx.experimental_caller.userId);
 }
 
 export default async function threadListPlugin(bb: BbPluginApi) {

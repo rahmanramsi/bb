@@ -19,6 +19,12 @@ import {
   UPDATE_ENVIRONMENT_DIRECTORY_TOOL_NAME,
 } from "../services/threads/thread-environment-directory.js";
 import { requireAuthenticatedDaemonSession } from "./session-state.js";
+import {
+  pluginCallerForPrincipal,
+  pluginCallerForTurnAuthor,
+} from "../services/plugins/plugin-invocation.js";
+import { LOCAL_OWNER_PRINCIPAL } from "../services/user-auth.js";
+import { readRunningTurnAuthorCredential } from "../services/threads/turn-authority.js";
 
 const textEncoder = new TextEncoder();
 
@@ -88,6 +94,16 @@ export function registerInternalToolCallRoutes(app: Hono, deps: AppDeps): void {
 
       const pluginTool = findPluginAgentTool(payload.tool);
       if (pluginTool) {
+        const identity =
+          deps.config.authMode === "local"
+            ? pluginCallerForPrincipal(deps.db, LOCAL_OWNER_PRINCIPAL, null)
+            : pluginCallerForTurnAuthor(
+                deps.db,
+                readRunningTurnAuthorCredential(deps, {
+                  thread,
+                  turnId: payload.turnId,
+                }),
+              );
         const roundTrip = new AbortController();
         const response = requirePluginToolCallRegistry().run({
           pluginId: pluginTool.pluginId,
@@ -106,6 +122,7 @@ export function registerInternalToolCallRoutes(app: Hono, deps: AppDeps): void {
                 projectId: thread.projectId,
                 signal,
               },
+              identity,
             }),
           onDetachedResult: (result) =>
             deliverDetachedToolResult(deps, {

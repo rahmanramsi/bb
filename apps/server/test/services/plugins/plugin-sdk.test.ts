@@ -12,7 +12,7 @@ import {
   migrate,
   type DbConnection,
 } from "@bb/db";
-import { PERSONAL_PROJECT_ID } from "@bb/domain";
+import { LOCAL_OWNER_USER_ID, PERSONAL_PROJECT_ID } from "@bb/domain";
 import type { Logger } from "@bb/logger";
 import { createAiServiceRegistry } from "../../../src/services/ai/ai-service-registry.js";
 import {
@@ -1027,7 +1027,7 @@ describe("plugin bb.sdk against a running server", () => {
     }
   });
 
-  it("tells rpc handlers which plugin called them and treats every other caller as a client", async () => {
+  it("tells rpc handlers which plugin called them and treats every local-mode request as the local owner", async () => {
     const server = await startTestServer();
     const workDir = await mkdtemp(join(tmpdir(), "bb-plugin-rpc-caller-"));
     try {
@@ -1046,7 +1046,14 @@ describe("plugin bb.sdk against a running server", () => {
       }
       const callerSchema = z.union([
         z.object({ kind: z.literal("plugin"), pluginId: z.string() }),
-        z.object({ kind: z.literal("client") }),
+        z.object({
+          kind: z.literal("client"),
+          userId: z.string(),
+          role: z.enum(["admin", "member"]),
+          roleCeiling: z.literal("member").nullable(),
+          effectiveRole: z.enum(["admin", "member"]),
+        }),
+        z.object({ kind: z.literal("system") }),
       ]);
       const whoami = vi.fn(
         (
@@ -1084,7 +1091,13 @@ describe("plugin bb.sdk against a running server", () => {
       );
       expect(await cli.json()).toEqual({
         ok: true,
-        result: { kind: "client" },
+        result: {
+          kind: "client",
+          userId: LOCAL_OWNER_USER_ID,
+          role: "admin",
+          roleCeiling: null,
+          effectiveRole: "admin",
+        },
       });
 
       const callsBeforeSpoof = whoami.mock.calls.length;

@@ -61,6 +61,7 @@ import type {
 } from "../backend-contract.js";
 import type { JsonValue } from "../json-value.js";
 import type {
+  ExperimentalPluginCaller,
   ExperimentalPluginRpcHandlerContext,
   PluginRpcError,
   PluginRpcMethodContract,
@@ -2056,7 +2057,10 @@ function rejectStaleAgentToolFields(toolName: string, tool: object): void {
     if (renamed !== undefined) {
       throw new Error(`registerTool: ${renamed} (tool "${toolName}")`);
     }
-    if (key.startsWith("experimental_")) {
+    if (
+      key.startsWith("experimental_") &&
+      key !== "experimental_requiredRole"
+    ) {
       unknownKeys.push(key);
     }
   }
@@ -2848,13 +2852,34 @@ export function runPluginStorageMigrations(
   })();
 }
 
+function readRouteRequiredRole(
+  opts: { experimental_requiredRole?: unknown } | undefined,
+  label: string,
+): "admin" | null {
+  const requiredRole = opts?.experimental_requiredRole;
+  if (requiredRole === undefined) return null;
+  if (requiredRole !== "admin") {
+    throw new Error(
+      `invalid experimental_requiredRole ${JSON.stringify(requiredRole)} for ${label} — use "admin" or omit it`,
+    );
+  }
+  return requiredRole;
+}
+
 export function normalizeHttpRouteRegistration(
   method: string,
   path: string,
   handler: unknown,
-  opts: { auth?: PluginHttpAuthMode } | undefined,
+  opts:
+    | { auth?: PluginHttpAuthMode; experimental_requiredRole?: "admin" }
+    | undefined,
   existingRoutes: readonly { method: string; path: string }[],
-): { method: string; path: string; auth: PluginHttpAuthMode } {
+): {
+  method: string;
+  path: string;
+  auth: PluginHttpAuthMode;
+  requiredRole: "admin" | null;
+} {
   const normalizedMethod = String(method).toUpperCase();
   if (!PLUGIN_HTTP_METHODS.has(normalizedMethod)) {
     throw new Error(
@@ -2886,15 +2911,22 @@ export function normalizeHttpRouteRegistration(
       `http route ${normalizedMethod} ${path} is already registered`,
     );
   }
-  return { method: normalizedMethod, path, auth };
+  return {
+    method: normalizedMethod,
+    path,
+    auth,
+    requiredRole: readRouteRequiredRole(opts, `${normalizedMethod} ${path}`),
+  };
 }
 
 export function normalizeWebSocketRouteRegistration(
   path: string,
   handler: unknown,
-  opts: { auth?: PluginHttpAuthMode } | undefined,
+  opts:
+    | { auth?: PluginHttpAuthMode; experimental_requiredRole?: "admin" }
+    | undefined,
   existingRoutes: readonly { path: string }[],
-): { path: string; auth: PluginHttpAuthMode } {
+): { path: string; auth: PluginHttpAuthMode; requiredRole: "admin" | null } {
   if (typeof path !== "string" || !path.startsWith("/")) {
     throw new Error(
       `websocket route path must be a string starting with "/", got ${JSON.stringify(path)}`,
@@ -2912,7 +2944,11 @@ export function normalizeWebSocketRouteRegistration(
   if (existingRoutes.some((route) => route.path === path)) {
     throw new Error(`websocket route ${path} is already registered`);
   }
-  return { path, auth };
+  return {
+    path,
+    auth,
+    requiredRole: readRouteRequiredRole(opts, `websocket ${path}`),
+  };
 }
 
 type RpcRegistrationRecord = {
@@ -3148,6 +3184,7 @@ export function normalizeAgentToolRegistration(args: {
     description: string;
     instructions?: string;
     presentation?: PluginRowPresentation;
+    experimental_requiredRole?: "admin";
     parameters: unknown;
     execute(
       params: never,
@@ -3159,6 +3196,7 @@ export function normalizeAgentToolRegistration(args: {
   description: string;
   presentation: PluginRowPresentation | null;
   instructions: string | null;
+  requiredRole: "admin" | null;
   inputSchema: unknown;
   parse: AgentToolParse;
   execute: AgentToolExecute;
@@ -3263,6 +3301,7 @@ export function normalizeAgentToolRegistration(args: {
       tool.instructions !== undefined && tool.instructions.trim().length > 0
         ? tool.instructions
         : null,
+    requiredRole: readRouteRequiredRole(tool, `tool "${name}"`),
     inputSchema,
     parse,
     execute: (tool.execute as AgentToolExecute).bind(tool),
@@ -3761,4 +3800,53 @@ export function normalizeRpcJsonResult(
   }
 
   return visit(value, "$result");
+}
+
+export function pluginCallerAuthority(
+  caller: ExperimentalPluginCaller,
+): "admin" | "member" {
+  return caller.kind === "client" ? caller.effectiveRole : "admin";
+}
+
+export function pluginRequiredRoleRefusal(
+  requiredRole: "admin" | null,
+  authority: "admin" | "member",
+  label: string,
+): string | null {
+  return requiredRole === "admin" && authority !== "admin"
+    ? `${label} requires a server admin`
+    : null;
+}
+
+export const PLUGIN_SETTINGS_WRITE_FORBIDDEN_MESSAGE =
+  "settings.experimental_set requires a server admin caller";
+
+export function pluginAsCallerRefusal(
+  context: unknown,
+  isLiveCaller: (caller: object) => boolean,
+):
+  | { ok: true; caller: Extract<ExperimentalPluginCaller, { kind: "client" }> }
+  | {
+      ok: false;
+      message: string;
+    } {
+  const caller =
+    typeof context === "object" && context !== null
+      ? Reflect.get(context, "experimental_caller")
+      : undefined;
+  if (typeof caller !== "object" || caller === null || !isLiveCaller(caller)) {
+    return {
+      ok: false,
+      message:
+        "bb.sdk.experimental_asCaller needs the context bb passed to a handler of this plugin that is still running",
+    };
+  }
+  const known = caller as ExperimentalPluginCaller;
+  if (known.kind !== "client") {
+    return {
+      ok: false,
+      message: `bb.sdk.experimental_asCaller cannot act as a ${known.kind} caller`,
+    };
+  }
+  return { ok: true, caller: known };
 }

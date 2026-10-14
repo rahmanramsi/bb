@@ -20,6 +20,7 @@ import {
 } from "../services/system/provider-installations.js";
 import { resolveBridgeLaunchForProviderId } from "../services/system/provider-bridge-launch.js";
 import type { PluginService } from "../services/plugins/plugin-service.js";
+import { SYSTEM_PLUGIN_CALLER } from "../services/plugins/plugin-invocation.js";
 import { COMMAND_TIMEOUT_MS } from "../constants.js";
 import { ApiError } from "../errors.js";
 import {
@@ -122,7 +123,7 @@ async function revokeConnectMachineCredential(
       "revokeMachine",
       handler.value,
       { machineId },
-      { experimental_caller: { kind: "client" }, experimental_callerUserId: null },
+      SYSTEM_PLUGIN_CALLER,
     );
     if (!result.ok) throw new Error(result.error.message);
   } catch (error) {
