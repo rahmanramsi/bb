@@ -39,7 +39,9 @@ const rpcMethods = [
   "automations_update_script",
   "automations_delete",
   "automations_pause",
+  "automations_pause_script",
   "automations_resume",
+  "automations_resume_script",
   "automations_run",
   "automations_run_script",
   "automations_runs",
@@ -1819,6 +1821,149 @@ describe("automations server plugin harness", () => {
         MEMBER,
       );
       expect(run.exitCode).toBe(0);
+
+      await harness.dispose();
+    });
+
+    it("refuses member pause and resume of script automations and leaves the schedule unchanged", async () => {
+      const { harness } = await bootAutomationsPlugin();
+      const pausedScript = await createScriptAutomationAsAdmin(harness);
+      const paused = await harness.runCli([
+        "pause",
+        pausedScript.id,
+        "--project",
+        PROJECT_ID,
+      ]);
+      expect(paused.exitCode).toBe(0);
+      const activeScript = await createScriptAutomationAsAdmin(harness);
+      const readAutomation = async (automationId: string) =>
+        automationDetailResponseSchema.parse(
+          await harness.callRpc("automations_get", {
+            projectId: PROJECT_ID,
+            automationId,
+          }),
+        );
+      const pausedBefore = await readAutomation(pausedScript.id);
+      const activeBefore = await readAutomation(activeScript.id);
+      expect(pausedBefore).toMatchObject({ enabled: false, nextRunAt: null });
+      expect(activeBefore.enabled).toBe(true);
+
+      await expect(
+        harness.callRpc(
+          "automations_resume",
+          { projectId: PROJECT_ID, automationId: pausedScript.id },
+          MEMBER,
+        ),
+      ).rejects.toThrow("Script automations require an admin");
+      await expect(
+        harness.callRpc(
+          "automations_pause",
+          { projectId: PROJECT_ID, automationId: activeScript.id },
+          MEMBER,
+        ),
+      ).rejects.toThrow("Script automations require an admin");
+      for (const [method, automationId] of [
+        ["automations_resume_script", pausedScript.id],
+        ["automations_pause_script", activeScript.id],
+      ] as const) {
+        await expect(
+          harness.callRpc(
+            method,
+            { projectId: PROJECT_ID, automationId },
+            MEMBER,
+          ),
+        ).rejects.toThrow("requires an admin");
+      }
+      for (const argv of [
+        ["resume", pausedScript.id, "--project", PROJECT_ID],
+        ["pause", activeScript.id, "--project", PROJECT_ID],
+      ]) {
+        const result = await harness.runCli(argv, MEMBER);
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain("requires a server admin");
+      }
+
+      const pausedAfter = await readAutomation(pausedScript.id);
+      expect(pausedAfter.enabled).toBe(false);
+      expect(pausedAfter.nextRunAt).toBe(pausedBefore.nextRunAt);
+      const activeAfter = await readAutomation(activeScript.id);
+      expect(activeAfter.enabled).toBe(true);
+      expect(activeAfter.nextRunAt).toBe(activeBefore.nextRunAt);
+      for (const automationId of [pausedScript.id, activeScript.id]) {
+        expect(
+          automationRunListResponseSchema.parse(
+            await harness.callRpc("automations_runs", {
+              projectId: PROJECT_ID,
+              automationId,
+            }),
+          ).runs,
+        ).toHaveLength(0);
+      }
+
+      for (const command of ["pause", "resume"]) {
+        const help = await harness.runCli([command, "--help"], MEMBER);
+        expect(help.exitCode).toBe(0);
+        expect(help.stdout).toContain("--project");
+      }
+
+      await harness.dispose();
+    });
+
+    it("lets admins pause and resume script automations over RPC and CLI", async () => {
+      const { harness } = await bootAutomationsPlugin();
+      const script = await createScriptAutomationAsAdmin(harness);
+      const target = { projectId: PROJECT_ID, automationId: script.id };
+
+      await expect(
+        harness.callRpc("automations_pause_script", target),
+      ).resolves.toMatchObject({ enabled: false, nextRunAt: null });
+      const resumed = automationResponseSchema.parse(
+        await harness.callRpc("automations_resume_script", target),
+      );
+      expect(resumed.enabled).toBe(true);
+      expect(resumed.nextRunAt).toBe(script.nextRunAt);
+
+      const pausedCli = await harness.runCli([
+        "pause",
+        script.id,
+        "--project",
+        PROJECT_ID,
+      ]);
+      expect(pausedCli.exitCode).toBe(0);
+      const resumedCli = await harness.runCli([
+        "resume",
+        script.id,
+        "--project",
+        PROJECT_ID,
+        "--json",
+      ]);
+      expect(resumedCli.exitCode).toBe(0);
+      expect(
+        automationResponseSchema.parse(JSON.parse(resumedCli.stdout ?? ""))
+          .enabled,
+      ).toBe(true);
+
+      await harness.dispose();
+    });
+
+    it("keeps pause and resume of agent automations available to members", async () => {
+      const { harness } = await bootAutomationsPlugin();
+      const agent = await createAgentAutomation(harness);
+      const target = { projectId: PROJECT_ID, automationId: agent.id };
+
+      await expect(
+        harness.callRpc("automations_pause", target, MEMBER),
+      ).resolves.toMatchObject({ enabled: false });
+      await expect(
+        harness.callRpc("automations_resume", target, MEMBER),
+      ).resolves.toMatchObject({ enabled: true });
+      for (const command of ["pause", "resume"]) {
+        const result = await harness.runCli(
+          [command, agent.id, "--project", PROJECT_ID],
+          MEMBER,
+        );
+        expect(result.exitCode).toBe(0);
+      }
 
       await harness.dispose();
     });

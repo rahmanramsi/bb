@@ -13,4 +13,4 @@ Agents get the `automations` skill and the `bb automation` command: `create`, `l
 
 Scripts run on the machine that hosts the bb server. New standard-project scripts use that host's project source when available; Personal and projects without one run in the plugin's shared script storage. Existing scripts run there until changed. A script can instead select an absolute server-host path, and its detail view shows the resolved directory. Agent runs use the providers you already have installed.
 
-On a multi-user server only admins can create, update, or run script automations, because scripts run with the bb server's own environment. Members can create, edit, and run agent automations.
+On a multi-user server only admins can create, update, run, pause, or resume script automations, because scripts run with the bb server's own environment. Members can create, edit, run, pause, and resume agent automations, and can delete either kind.

@@ -53,7 +53,9 @@ source when one exists; Personal and projects without one run in the plugin's
 shared script storage directory. Existing scripts without a saved policy also
 run there. `--working-directory` selects `automation-storage`, `project`, or an
 absolute server-host
-path. A missing selected directory fails the run. A failed process reports the
+path. A missing selected directory fails the run. On a multi-user server only
+admins can create, update, run, pause, or resume script automations; members
+get `admin_required` and can still manage agent automations. A failed process reports the
 exit code and sanitized first non-empty stderr line in the `Detail` column.
 
 `update` can combine name, schedule, and execution changes. A complete agent

@@ -162,8 +162,8 @@ First-party callers: Concurrency limit, Account Pooler, bb connect, bb account,
 Storage retention, Keep Awake, Modal Sandbox, Custom instructions, MCP, Docs,
 and ACP providers (new adapter) mark their server-wide configuration, credential,
 enrollment, vault, and bulk cleanup operations. Automations gates script-mode
-create, update, and run, which execute on the server host, with separate
-admin-only RPC methods and `experimental_assertCliAdmin`. Before stabilizing,
+create, update, run, pause, and resume, which control code that executes on
+the server host, with separate admin-only RPC methods and `experimental_assertCliAdmin`. Before stabilizing,
 audit whether plugin HTTP routes, WebSocket
 routes, and agent tools need the same role, whether `experimental_caller`
 should also carry the role, and whether RPC discovery should publish it.

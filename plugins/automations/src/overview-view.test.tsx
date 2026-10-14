@@ -294,6 +294,34 @@ describe("AutomationOverviewView", () => {
     expect(screen.queryByRole("menuitem", { name: "Run now" })).toBeNull();
   });
 
+  it("passes the execution mode when toggling an automation from its row", () => {
+    const onEnabledChange = vi.fn(async () => {});
+    render(
+      <AutomationOverviewView
+        entries={INSTALLED_AUTOMATIONS}
+        error={null}
+        onRetry={() => {}}
+        onOpenDetail={() => {}}
+        onEnabledChange={onEnabledChange}
+        onRunNow={async () => {}}
+        onDelete={() => {}}
+        onCreateViaChat={() => {}}
+        activeMode="installed"
+        onModeChange={() => {}}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Disable Nightly digest" }),
+    );
+
+    expect(onEnabledChange).toHaveBeenCalledWith(
+      false,
+      { projectId: "proj_1", automationId: "auto_1" },
+      "agent",
+    );
+  });
+
   it("uses the shared row menu to request deletion", async () => {
     const onOpenDetail = vi.fn();
     const onDelete = vi.fn();

@@ -65,8 +65,8 @@ Existing scripts without a saved policy also run there. Select
 automation-storage, project, or an absolute server-host path with
 --working-directory. An unavailable selected directory fails the run.
 
-On a multi-user server only admins can create, update, or run script
-automations. Members can manage agent automations.`;
+On a multi-user server only admins can create, update, run, pause, or resume
+script automations. Members can manage agent automations.`;
 
 const JSON_OPTION = {
   type: "boolean",
@@ -1230,10 +1230,14 @@ export function registerAutomationCli(args: {
           options: { project: PROJECT_OPTION, json: JSON_OPTION },
           run: (input, ctx) =>
             attempt(async () => {
-              const updated = service.pause({
+              const target = {
                 projectId: requireProjectId(input.options.project, ctx),
                 automationId: input.positionals.automationId,
-              });
+              };
+              if (service.runMode(target) === "script") {
+                experimental_assertCliAdmin(ctx, "Pausing a script automation");
+              }
+              const updated = service.pause(target);
               return {
                 exitCode: 0,
                 stdout: input.options.json
@@ -1248,10 +1252,17 @@ export function registerAutomationCli(args: {
           options: { project: PROJECT_OPTION, json: JSON_OPTION },
           run: (input, ctx) =>
             attempt(async () => {
-              const updated = service.resume({
+              const target = {
                 projectId: requireProjectId(input.options.project, ctx),
                 automationId: input.positionals.automationId,
-              });
+              };
+              if (service.runMode(target) === "script") {
+                experimental_assertCliAdmin(
+                  ctx,
+                  "Resuming a script automation",
+                );
+              }
+              const updated = service.resume(target);
               return {
                 exitCode: 0,
                 stdout: input.options.json
