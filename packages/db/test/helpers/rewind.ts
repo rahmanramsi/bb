@@ -55,3 +55,27 @@ export function dropMarketplaceSourceGitSubdirectoryColumn(
     );
   }
 }
+
+export function rewindMultiUser(db: DbConnection): void {
+  db.$client.exec(`
+    DROP TABLE IF EXISTS thread_user_state;
+    DROP TABLE IF EXISTS user_settings;
+    DROP TABLE IF EXISTS session;
+    DROP TABLE IF EXISTS account;
+    DROP TABLE IF EXISTS verification;
+  `);
+  for (const [table, column] of [
+    ["user", "role"],
+    ["threads", "created_by_user_id"],
+    ["prompt_history_entries", "user_id"],
+    ["queued_thread_messages", "author_user_id"],
+    ["pending_interactions", "resolved_by_user_id"],
+  ] as const) {
+    const columns = db.$client
+      .prepare<[], { name: string }>(`PRAGMA table_info(${table})`)
+      .all();
+    if (columns.some((existing) => existing.name === column)) {
+      db.$client.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+    }
+  }
+}

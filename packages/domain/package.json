@@ -29,6 +29,11 @@
       "types": "./src/thread-origin-kind.ts",
       "default": "./src/thread-origin-kind.ts"
     },
+    "./user-role": {
+      "source": "./src/user-role.ts",
+      "types": "./src/user-role.ts",
+      "default": "./src/user-role.ts"
+    },
     "./thread-visibility": {
       "source": "./src/thread-visibility.ts",
       "types": "./src/thread-visibility.ts",

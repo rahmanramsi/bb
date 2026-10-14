@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
-import { PERSONAL_PROJECT_ID, type PromptInput } from "@bb/domain";
+import {
+  LOCAL_OWNER_USER_ID,
+  PERSONAL_PROJECT_ID,
+  type PromptInput,
+} from "@bb/domain";
 import {
   createConnection,
   createQueuedThreadMessage,
@@ -14,6 +18,7 @@ import {
   dropIdleLifecycleIndexes,
   rewindThreadPruningWork,
   dropMarketplaceSourceGitSubdirectoryColumn,
+  rewindMultiUser,
   dropQueuedMessageEditHeldUntilColumn,
 } from "./helpers/rewind.js";
 
@@ -101,8 +106,14 @@ it.each([false, true])(
       }
 
       const queueBefore = db.$client
-        .prepare("SELECT * FROM queued_thread_messages ORDER BY id")
-        .all();
+        .prepare<[], Record<string, unknown>>(
+          "SELECT * FROM queued_thread_messages ORDER BY id",
+        )
+        .all()
+        .map((message) => ({
+          ...message,
+          author_user_id: LOCAL_OWNER_USER_ID,
+        }));
       const pluginsBefore = db.$client
         .prepare("SELECT * FROM plugins ORDER BY id")
         .all();
@@ -116,6 +127,7 @@ it.each([false, true])(
       dropPluginEnabledFollowsDefaultColumn(db);
       dropQueuedMessageEditHeldUntilColumn(db);
       dropMarketplaceSourceGitSubdirectoryColumn(db);
+      rewindMultiUser(db);
       migrate(db);
       migrate(db);
 

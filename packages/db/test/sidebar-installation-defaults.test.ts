@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PERSONAL_PROJECT_ID } from "@bb/domain";
+import { LOCAL_OWNER_USER_ID, PERSONAL_PROJECT_ID } from "@bb/domain";
 import {
   createConnection,
   migrate,
@@ -13,6 +13,7 @@ import {
   dropIdleLifecycleIndexes,
   rewindThreadPruningWork,
   dropMarketplaceSourceGitSubdirectoryColumn,
+  rewindMultiUser,
   dropQueuedMessageEditHeldUntilColumn,
 } from "./helpers/rewind.js";
 
@@ -83,13 +84,20 @@ describe.each(["project", "thread", "preference"] as const)(
             .prepare("SELECT * FROM ui_preferences")
             .all();
           const projects = db.$client.prepare("SELECT * FROM projects").all();
-          const threads = db.$client.prepare("SELECT * FROM threads").all();
+          const threads = db.$client
+            .prepare<[], Record<string, unknown>>("SELECT * FROM threads")
+            .all()
+            .map((thread) => ({
+              ...thread,
+              created_by_user_id: LOCAL_OWNER_USER_ID,
+            }));
           db.$client.exec("DROP TABLE ui_preference_defaults");
           dropIdleLifecycleIndexes(db);
           rewindThreadPruningWork(db);
           dropPluginEnabledFollowsDefaultColumn(db);
           dropQueuedMessageEditHeldUntilColumn(db);
           dropMarketplaceSourceGitSubdirectoryColumn(db);
+          rewindMultiUser(db);
           db.$client
             .prepare("DELETE FROM __drizzle_migrations WHERE created_at >= ?")
             .run(SIDEBAR_INSTALLATION_DEFAULTS_MIGRATION_TIMESTAMP);

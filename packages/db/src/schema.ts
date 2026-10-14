@@ -15,6 +15,7 @@ import { startedOnBehalfOfInitiatorValues } from "@bb/domain/started-on-behalf-o
 import { threadCreateOriginValues } from "@bb/domain/thread-create-origin";
 import { threadOriginKindValues } from "@bb/domain/thread-origin-kind";
 import { threadVisibilityValues } from "@bb/domain/thread-visibility";
+import { userRoleValues } from "@bb/domain/user-role";
 import type {
   EnvironmentProviderSelection,
   JsonValue,
@@ -47,10 +48,84 @@ export const authUsers = sqliteTable(
     email: text("email").notNull(),
     emailVerified: integer("emailVerified", { mode: "boolean" }).notNull(),
     image: text("image"),
+    role: text("role", { enum: userRoleValues }).notNull().default("member"),
     createdAt: integer("createdAt", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updatedAt", { mode: "timestamp_ms" }).notNull(),
   },
   (table) => [uniqueIndex("user_email_unique").on(table.email)],
+);
+
+export const authSessions = sqliteTable(
+  "session",
+  {
+    id: text("id").primaryKey(),
+    expiresAt: integer("expiresAt", { mode: "timestamp_ms" }).notNull(),
+    token: text("token").notNull(),
+    createdAt: integer("createdAt", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updatedAt", { mode: "timestamp_ms" }).notNull(),
+    ipAddress: text("ipAddress"),
+    userAgent: text("userAgent"),
+    userId: text("userId")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    uniqueIndex("session_token_unique").on(table.token),
+    index("session_user_id_idx").on(table.userId),
+  ],
+);
+
+export const authAccounts = sqliteTable(
+  "account",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("accountId").notNull(),
+    providerId: text("providerId").notNull(),
+    userId: text("userId")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    accessToken: text("accessToken"),
+    refreshToken: text("refreshToken"),
+    idToken: text("idToken"),
+    accessTokenExpiresAt: integer("accessTokenExpiresAt", {
+      mode: "timestamp_ms",
+    }),
+    refreshTokenExpiresAt: integer("refreshTokenExpiresAt", {
+      mode: "timestamp_ms",
+    }),
+    scope: text("scope"),
+    password: text("password"),
+    createdAt: integer("createdAt", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updatedAt", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [index("account_user_id_idx").on(table.userId)],
+);
+
+export const authVerifications = sqliteTable(
+  "verification",
+  {
+    id: text("id").primaryKey(),
+    identifier: text("identifier").notNull(),
+    value: text("value").notNull(),
+    expiresAt: integer("expiresAt", { mode: "timestamp_ms" }).notNull(),
+    createdAt: integer("createdAt", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updatedAt", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [index("verification_identifier_idx").on(table.identifier)],
+);
+
+export const userSettings = sqliteTable(
+  "user_settings",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    valueJson: text("value_json").notNull(),
+    revision: integer("revision").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.key] })],
 );
 
 export const authApiKeys = sqliteTable(
@@ -639,6 +714,9 @@ export const threads = sqliteTable(
     deletedAt: integer("deleted_at"),
     storageDeletedAt: integer("storage_deleted_at"),
     lastReadAt: integer("last_read_at"),
+    createdByUserId: text("created_by_user_id").references(() => authUsers.id, {
+      onDelete: "set null",
+    }),
     latestAttentionAt: integer("latest_attention_at").notNull(),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
@@ -684,6 +762,27 @@ export const threads = sqliteTable(
     index("threads_active_maintenance_idx")
       .on(table.status)
       .where(sql`${table.deletedAt} IS NULL`),
+  ],
+);
+
+export const threadUserState = sqliteTable(
+  "thread_user_state",
+  {
+    threadId: text("thread_id")
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    lastReadAt: integer("last_read_at"),
+    pinnedAt: integer("pinned_at"),
+    pinSortKey: text("pin_sort_key"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.threadId, table.userId] }),
+    index("thread_user_state_user_pin_sort_idx")
+      .on(table.userId, table.pinSortKey, table.threadId)
+      .where(sql`${table.pinnedAt} IS NOT NULL`),
   ],
 );
 
@@ -953,6 +1052,9 @@ export const promptHistoryEntries = sqliteTable(
       .notNull()
       .references(() => threads.id, { onDelete: "cascade" }),
     scope: text("scope").$type<PromptHistoryScope>().notNull(),
+    userId: text("user_id").references(() => authUsers.id, {
+      onDelete: "set null",
+    }),
     requestSequence: integer("request_sequence").notNull(),
     input: text("input").notNull(),
     createdAt: integer("created_at").notNull(),
@@ -997,6 +1099,9 @@ export const queuedThreadMessages = sqliteTable(
       .references(() => threads.id, { onDelete: "cascade" }),
     content: text("content").notNull(),
     senderThreadId: text("sender_thread_id"),
+    authorUserId: text("author_user_id").references(() => authUsers.id, {
+      onDelete: "set null",
+    }),
     // How the dispatch this row was queued from was requested, and the plugin
     // that requested it. On the row rather than read from the request, so a
     // drained re-attempt decides on the same provenance its first attempt saw.
@@ -1227,6 +1332,10 @@ export const pendingInteractions = sqliteTable(
     status: text("status").$type<PendingInteractionStatus>().notNull(),
     payload: text("payload").notNull(),
     resolution: text("resolution"),
+    resolvedByUserId: text("resolved_by_user_id").references(
+      () => authUsers.id,
+      { onDelete: "set null" },
+    ),
     statusReason: text("status_reason"),
     createdAt: integer("created_at").notNull(),
     expiresAt: integer("expires_at"),
