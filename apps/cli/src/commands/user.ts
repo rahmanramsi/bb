@@ -60,7 +60,9 @@ export function registerUserCommands(
     );
   user
     .command("remove <userId>")
-    .description("Remove a user and revoke their credentials")
+    .description(
+      "Remove a user, revoke their credentials, and delete their queued messages",
+    )
     .option("--json", "Print machine-readable JSON output")
     .action(
       action(async (userId: string, opts: UserListOptions) => {

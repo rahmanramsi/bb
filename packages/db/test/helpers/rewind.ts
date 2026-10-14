@@ -146,6 +146,7 @@ function restoreLegacyThreadPerUserColumns(db: DbConnection): void {
 export function rewindMultiUser(db: DbConnection): void {
   restoreLegacyThreadPerUserColumns(db);
   db.$client.exec(`
+    DROP TABLE IF EXISTS turn_request_authors;
     DROP TABLE IF EXISTS thread_user_state;
     DROP TABLE IF EXISTS user_settings;
     DROP TABLE IF EXISTS session;

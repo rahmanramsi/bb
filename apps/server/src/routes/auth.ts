@@ -18,7 +18,7 @@ import {
 import { UserAuthError } from "../services/user-auth.js";
 import type { ServerAppDeps } from "../types.js";
 
-type AuthRouteDeps = Pick<ServerAppDeps, "config" | "userAuth" | "db">;
+type AuthRouteDeps = Pick<ServerAppDeps, "config" | "db" | "hub" | "userAuth">;
 
 interface ResponseHeaderWriter {
   header(name: string, value: string, options: { append: boolean }): void;
@@ -185,10 +185,14 @@ export function registerAuthRoutes(app: Hono, deps: AuthRouteDeps): void {
 
   del(publicApiRoutes.users.remove, (context) => {
     assertAdmin(context);
+    let queueChangedThreadIds: string[];
     try {
-      deps.userAuth.removeUser(context.req.param("id"));
+      queueChangedThreadIds = deps.userAuth.removeUser(context.req.param("id"));
     } catch (error) {
       throw toApiError(error);
+    }
+    for (const threadId of queueChangedThreadIds) {
+      deps.hub.notifyThread(threadId, ["queue-changed"]);
     }
     return context.json({ ok: true as const });
   });

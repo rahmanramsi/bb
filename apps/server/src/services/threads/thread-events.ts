@@ -48,10 +48,12 @@ import { ApiError, TurnStartGuardError } from "../../errors.js";
 import type { AppDeps } from "../../types.js";
 import { parseStoredEventPayload } from "./thread-data.js";
 import {
-  recordTurnRequestAuthor,
-  type TurnAuthor,
-} from "./turn-request-authors.js";
-import type { DbNotifier, DbQueryConnection, DbTransaction } from "@bb/db";
+  recordTurnRequestAuthorInTransaction,
+  type DbNotifier,
+  type DbQueryConnection,
+  type DbTransaction,
+  type TurnRequestAuthor,
+} from "@bb/db";
 import type { AppendStoredThreadEventArgs as AppendThreadEventArgs } from "@bb/db";
 
 interface ThreadEventReadDeps {
@@ -81,7 +83,7 @@ interface ClientTurnRequestedEventArgs {
    * asked for.
    */
   retryOf?: TurnRequestRetryMarker;
-  author: TurnAuthor;
+  author: TurnRequestAuthor;
   environmentId: string | null;
   execution: ResolvedThreadExecutionOptions;
   initiator: ThreadTurnInitiator;
@@ -225,8 +227,6 @@ function buildClientTurnRequestedEventData(
   };
 }
 
-type AppendClientTurnEvent = (args: AppendThreadEventArgs) => number;
-
 interface AppendThreadEventTransactionResult {
   sequence: number;
 }
@@ -252,13 +252,6 @@ export function createClientTurnRequestId(): ClientTurnRequestId {
 function buildClientTurnRequestedEventArgs(
   args: PreparedClientTurnRequestedEventArgs,
 ): AppendThreadEventArgs<"client/turn/requested"> {
-  recordTurnRequestAuthor({
-    author: args.author,
-    requestId: args.requestId,
-    startsTurn:
-      args.target.kind === "thread-start" || args.target.kind === "new-turn",
-    threadId: args.threadId,
-  });
   return {
     threadId: args.threadId,
     environmentId: args.environmentId,
@@ -268,32 +261,41 @@ function buildClientTurnRequestedEventArgs(
   };
 }
 
-function appendBuiltClientTurnRequestedEvent(
-  append: AppendClientTurnEvent,
+function appendClientTurnRequestedEventInTransaction(
+  db: DbTransaction,
   args: PreparedClientTurnRequestedEventArgs,
-): AppendedClientTurnRequest {
-  const sequence = append(buildClientTurnRequestedEventArgs(args));
-  return { requestId: args.requestId, sequence };
+): AppendThreadEventTransactionResult {
+  recordTurnRequestAuthorInTransaction(db, {
+    ...args.author,
+    requestId: args.requestId,
+    threadId: args.threadId,
+  });
+  return appendThreadEventInTransactionWithAttention(
+    db,
+    buildClientTurnRequestedEventArgs(args),
+  );
 }
 
 function appendBuiltClientTurnEvent(
-  append: AppendClientTurnEvent,
+  db: DbTransaction,
   args: ClientTurnEventArgs,
 ): number | AppendedClientTurnRequest {
   switch (args.type) {
     case "client/thread/start":
-      return append({
+      return appendThreadEventInTransactionWithAttention(db, {
         threadId: args.threadId,
         environmentId: args.environmentId,
         type: args.type,
         scope: threadScope(),
         data: buildClientTurnBaseEventData(args),
-      });
+      }).sequence;
     case "client/turn/requested": {
-      return appendBuiltClientTurnRequestedEvent(append, {
+      const requestId = createClientTurnRequestId();
+      const { sequence } = appendClientTurnRequestedEventInTransaction(db, {
         ...args,
-        requestId: createClientTurnRequestId(),
+        requestId,
       });
+      return { requestId, sequence };
     }
   }
 }
@@ -465,10 +467,19 @@ export function appendClientTurnEvent(
   deps: Pick<AppDeps, "db" | "hub">,
   args: ClientTurnEventArgs,
 ): number | AppendedClientTurnRequest {
-  return appendBuiltClientTurnEvent(
-    (eventArgs) => appendThreadEvent(deps, eventArgs),
-    args,
+  const result = deps.db.transaction(
+    (tx) => appendBuiltClientTurnEvent(tx, args),
+    { behavior: "immediate" },
   );
+  deps.hub.notifyThread(
+    args.threadId,
+    buildAppendThreadEventNotificationChanges(),
+    buildAppendThreadEventNotificationMetadata({
+      sequence: typeof result === "number" ? result : result.sequence,
+      eventType: args.type,
+    }),
+  );
+  return result;
 }
 
 export function appendClientTurnEventInTransaction(
@@ -479,20 +490,14 @@ export function appendClientTurnEventInTransaction(
   db: DbTransaction,
   args: ClientTurnEventArgs,
 ): number | AppendedClientTurnRequest {
-  return appendBuiltClientTurnEvent(
-    (eventArgs) => appendThreadEventInTransaction(db, eventArgs),
-    args,
-  );
+  return appendBuiltClientTurnEvent(db, args);
 }
 
 export function appendPreparedClientTurnRequestedEventWithNotificationInTransaction(
   db: DbTransaction,
   args: PreparedClientTurnRequestedEventArgs,
 ): AppendedClientTurnRequestWithNotification {
-  const result = appendThreadEventInTransactionWithAttention(
-    db,
-    buildClientTurnRequestedEventArgs(args),
-  );
+  const result = appendClientTurnRequestedEventInTransaction(db, args);
   return {
     requestId: args.requestId,
     sequence: result.sequence,

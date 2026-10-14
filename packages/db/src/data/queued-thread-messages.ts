@@ -2182,6 +2182,24 @@ export function listThreadIdsWithHostOfflineQueueWaits(
     .map((row) => row.threadId);
 }
 
+export function deleteQueuedThreadMessagesByAuthorInTransaction(
+  db: DbTransaction,
+  authorUserId: string,
+): string[] {
+  const authored = db
+    .select()
+    .from(queuedThreadMessages)
+    .where(eq(queuedThreadMessages.authorUserId, authorUserId))
+    .all();
+  for (const queuedMessage of authored) {
+    clearPreviousQueuedMessageGroupEdgeInTransaction(db, queuedMessage);
+    db.delete(queuedThreadMessages)
+      .where(eq(queuedThreadMessages.id, queuedMessage.id))
+      .run();
+  }
+  return [...new Set(authored.map((queuedMessage) => queuedMessage.threadId))];
+}
+
 export function deleteQueuedThreadMessage(
   db: DbConnection,
   notifier: DbNotifier,

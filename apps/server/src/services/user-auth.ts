@@ -17,6 +17,7 @@ import {
   authSessions,
   authUsers,
   authVerifications,
+  deleteQueuedThreadMessagesByAuthorInTransaction,
   type DbConnection,
 } from "@bb/db";
 import {
@@ -202,7 +203,7 @@ export interface UserAuthService {
   listInvites(): UserInviteSummary[];
   revokeInvite(id: string): boolean;
   updateUserRole(userId: string, role: UserRole): AuthUser;
-  removeUser(userId: string): void;
+  removeUser(userId: string): string[];
   listPersonalAccessTokens(userId: string): PersonalAccessTokenSummary[];
   needsBootstrap(): boolean;
   authenticate(headers: Headers): Promise<AuthenticatedCredential | null>;
@@ -448,13 +449,19 @@ export async function createUserAuthService(
     return updated;
   }
 
-  function removeUser(userId: string): void {
-    args.db.transaction(() => {
+  function removeUser(userId: string): string[] {
+    const queueChangedThreadIds = args.db.transaction((tx) => {
       assertMutableUser(userId, true);
-      args.db.delete(authUsers).where(eq(authUsers.id, userId)).run();
+      const threadIds = deleteQueuedThreadMessagesByAuthorInTransaction(
+        tx,
+        userId,
+      );
+      tx.delete(authUsers).where(eq(authUsers.id, userId)).run();
+      return threadIds;
     });
     patCache.clear();
     notifyAuthorizationChange();
+    return queueChangedThreadIds;
   }
 
   function listInvites(): UserInviteSummary[] {
