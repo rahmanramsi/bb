@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { AppDeps } from "../../types.js";
 import type { PluginService } from "../plugins/plugin-service.js";
+import { SYSTEM_PLUGIN_CALLER } from "../plugins/plugin-invocation.js";
 import { serverAccessStatus } from "../machines/server-access.js";
 
 export const CONNECT_PLUGIN_SOURCE = "builtin:connect";
@@ -51,7 +52,7 @@ export async function resolveServerMoveMode(
     "status",
     handler.value,
     null,
-    { kind: "client" },
+    SYSTEM_PLUGIN_CALLER,
   );
   if (!result.ok) {
     return { mode: "unavailable", message: result.error.message };

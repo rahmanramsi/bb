@@ -414,8 +414,8 @@ function IssuesButton() {
 }
 ```
 
-Each handler also receives a context whose `experimental_caller` identifies
-the calling plugin; see "Calling another plugin's RPC" in `backend-sdk.md`.
+Each handler's context (an HTTP route's second argument too) names its
+`experimental_caller`; see "Acting as the caller" in `backend-sdk.md`.
 
 The wire envelope is `{ ok: true, result }` or `{ ok: false, error }`.
 Failures use stable codes: `invalid_json`, `invalid_input`, `handler_error`,

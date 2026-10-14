@@ -118,6 +118,13 @@ export function registerAuthRoutes(app: Hono, deps: AuthRouteDeps): void {
         "A role-capped credential cannot create personal access tokens; sign in to create one",
       );
     }
+    if (principal.delegatedPluginId !== null) {
+      throw new ApiError(
+        403,
+        "credential_delegated",
+        "A plugin acting as a user cannot create personal access tokens; sign in to create one",
+      );
+    }
     const created = await deps.userAuth.createPersonalAccessToken({
       name: payload.name,
       userId: principal.userId,

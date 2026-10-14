@@ -1,3 +1,4 @@
+import { SYSTEM_PLUGIN_CALLER } from "../../../src/services/plugins/plugin-invocation.js";
 import {
   cp,
   mkdtemp,
@@ -215,7 +216,9 @@ describe("plugin service", () => {
           status: "starting",
           detail: null,
         });
-        expect(await service.runCliCommand("starting", [], {})).toMatchObject({
+        expect(
+          await service.runCliCommand("starting", [], {}, SYSTEM_PLUGIN_CALLER),
+        ).toMatchObject({
           exitCode: 1,
           stderr: 'plugin "starting" is not running (status: starting)',
         });

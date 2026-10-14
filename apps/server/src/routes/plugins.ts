@@ -34,6 +34,13 @@ import type {
 } from "../services/plugins/plugin-api.js";
 import { PluginSettingsValidationError } from "../services/plugins/plugin-settings.js";
 import { PLUGIN_RPC_CALLER_HEADER } from "../services/plugins/plugin-rpc-caller.js";
+import {
+  pluginCallerForPrincipal,
+  runInPluginInvocation,
+  type PluginCallerIdentity,
+  type PluginInvocation,
+} from "../services/plugins/plugin-invocation.js";
+import { pluginRequiredRoleRefusal } from "@get-bb/plugin-sdk/internal/host-policy";
 import type { PluginInstallJobs } from "../services/plugins/plugin-install-jobs.js";
 import {
   prefersRespondAsync,
@@ -65,6 +72,17 @@ interface PluginRoutesDeps {
 }
 
 type WireAuthProblem = BrowserRequestProblem | { status: 401; error: string };
+
+function pluginRequestCaller(
+  context: Context,
+  deps: PluginRoutesDeps,
+): PluginCallerIdentity {
+  return pluginCallerForPrincipal(deps.db, requirePrincipal(context), null);
+}
+
+function forbiddenBody(message: string) {
+  return { ok: false, error: { code: "forbidden", message } } as const;
+}
 type UpgradeWebSocket = ReturnType<
   typeof createNodeWebSocket
 >["upgradeWebSocket"];
@@ -306,6 +324,7 @@ function pluginWebSocketEvents(args: {
   isActive: (() => Promise<boolean>) | undefined;
   handlers: ExperimentalPluginWebSocketHandlers;
   id: string;
+  invocation: PluginInvocation;
   plugins: PluginService;
   route: PluginWebSocketRouteRecord;
 }): WSEvents {
@@ -330,7 +349,7 @@ function pluginWebSocketEvents(args: {
       event,
       async () => {
         await previous;
-        await run();
+        await runInPluginInvocation(args.invocation, run);
       },
     );
     eventQueues.set(socket, current);
@@ -342,6 +361,7 @@ function pluginWebSocketEvents(args: {
     onOpen(_event, socket) {
       const exposed = expose(socket);
       if (!args.route.active) {
+        args.invocation.end();
         exposed.close(1012, "Plugin reloaded or disabled");
         return;
       }
@@ -372,6 +392,7 @@ function pluginWebSocketEvents(args: {
     },
     onClose(event, socket) {
       args.authenticatedSockets?.untrack(socket);
+      args.invocation.end();
       const exposed = expose(socket);
       if (!args.route.sockets.delete(exposed)) return;
       if (args.handlers.onClose !== undefined) {
@@ -448,11 +469,23 @@ export function registerPluginRoutes(
         `plugin "${id}" reloaded during the request — retry`,
       );
     }
-    const result = await plugins.invokeWebSocketRoute(id, fresh.value, {
-      request: context.req.raw,
-      url: new URL(context.req.url),
-      headers: context.req.raw.headers,
-    });
+    const identity = pluginRequestCaller(context, deps);
+    const refusal = pluginRequiredRoleRefusal(
+      fresh.value.requiredRole,
+      identity.authority,
+      `plugin "${id}" websocket ${fresh.value.path}`,
+    );
+    if (refusal !== null) throw new ApiError(403, "forbidden", refusal);
+    const result = await plugins.invokeWebSocketRoute(
+      id,
+      fresh.value,
+      {
+        request: context.req.raw,
+        url: new URL(context.req.url),
+        headers: context.req.raw.headers,
+      },
+      identity,
+    );
     if (!result.ok) {
       throw new ApiError(
         500,
@@ -465,6 +498,7 @@ export function registerPluginRoutes(
       isActive: context.get("bbAuthenticatedCredential")?.isActive,
       handlers: result.handlers,
       id,
+      invocation: result.invocation,
       plugins,
       route: fresh.value,
     });
@@ -537,15 +571,18 @@ export function registerPluginRoutes(
         400,
       );
     }
-    const ctx: PluginCliContext = {
-      experimental_callerRole: requirePrincipal(context).role,
-    };
+    const ctx: PluginCliContext = {};
     if (typeof body?.cwd === "string") ctx.cwd = body.cwd;
     if (typeof body?.threadId === "string") ctx.threadId = body.threadId;
     if (typeof body?.projectId === "string") ctx.projectId = body.projectId;
     ctx.signal = context.req.raw.signal;
     return pluginCliResponse(
-      plugins.runCliCommand(context.req.param("id"), argv, ctx),
+      plugins.runCliCommand(
+        context.req.param("id"),
+        argv,
+        ctx,
+        pluginRequestCaller(context, deps),
+      ),
       PLUGIN_CLI_KEEPALIVE_MS,
     );
   });
@@ -951,7 +988,14 @@ export function registerPluginRoutes(
         503,
       );
     }
-    return plugins.invokeHttpRoute(id, fresh.value, context);
+    const identity = pluginRequestCaller(context, deps);
+    const refusal = pluginRequiredRoleRefusal(
+      fresh.value.requiredRole,
+      identity.authority,
+      `plugin "${id}" route ${fresh.value.method} ${fresh.value.path}`,
+    );
+    if (refusal !== null) return context.json(forbiddenBody(refusal), 403);
+    return plugins.invokeHttpRoute(id, fresh.value, context, identity);
   });
 
   app.post("/plugins/:id/rpc/:method", async (context) => {
@@ -1014,27 +1058,23 @@ export function registerPluginRoutes(
         404,
       );
     }
-    if (
-      lookup.value.requiredRole === "admin" &&
-      requirePrincipal(context).role !== "admin"
-    ) {
-      return context.json(
-        {
-          ok: false,
-          error: {
-            code: "forbidden",
-            message: `plugin "${id}" rpc method "${method}" requires a server admin`,
-          },
-        },
-        403,
-      );
-    }
+    const identity = pluginCallerForPrincipal(
+      deps.db,
+      requirePrincipal(context),
+      callerResolution.caller,
+    );
+    const refusal = pluginRequiredRoleRefusal(
+      lookup.value.requiredRole,
+      identity.authority,
+      `plugin "${id}" rpc method "${method}"`,
+    );
+    if (refusal !== null) return context.json(forbiddenBody(refusal), 403);
     const outcome = await plugins.invokeRpcHandler(
       id,
       method,
       lookup.value,
       input,
-      callerResolution.caller,
+      identity,
     );
     if (!outcome.ok) {
       return context.json(

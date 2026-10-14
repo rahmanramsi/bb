@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -153,6 +154,13 @@ describe("plugin CLI commands (bb.cli.register + endpoints + skill + logs)", () 
     expect(JSON.parse(result.stdout)).toEqual({
       argv: ["issues", "--team", "ENG"],
       ctx: {
+        experimental_caller: {
+          kind: "client",
+          userId: LOCAL_OWNER_USER_ID,
+          role: "admin",
+          roleCeiling: null,
+          effectiveRole: "admin",
+        },
         experimental_callerRole: "admin",
         cwd: "/tmp/somewhere",
         threadId: "thr_123",

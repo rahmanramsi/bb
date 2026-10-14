@@ -2562,3 +2562,230 @@ describe("environment targets", () => {
     expect(seen).toEqual(["qm_1"]);
   });
 });
+
+describe("caller identity", () => {
+  const member = {
+    kind: "client",
+    userId: "usr_member",
+    role: "member",
+    roleCeiling: null,
+    effectiveRole: "member",
+  } as const;
+  const cappedAdmin = {
+    kind: "client",
+    userId: "usr_admin",
+    role: "admin",
+    roleCeiling: "member",
+    effectiveRole: "member",
+  } as const;
+
+  it("hands every entry point its caller and an admin client by default", async () => {
+    const seen: unknown[] = [];
+    const { bb, harness } = createFakePluginHost();
+    bb.rpc.register(
+      defineRpcContract({ who: { input: z.null(), output: z.null() } }),
+      {
+        who(_input, ctx) {
+          seen.push(ctx.experimental_caller);
+          return null;
+        },
+      },
+    );
+    bb.http.route("GET", "/who", (c, ctx) => {
+      seen.push(ctx.experimental_caller);
+      return c.json({});
+    });
+    bb.http.experimental_websocket("/socket", (ctx) => {
+      seen.push(ctx.experimental_caller);
+      return {};
+    });
+    bb.cli.register({
+      name: "who",
+      summary: "who",
+      run(_argv, ctx) {
+        seen.push([ctx.experimental_caller, ctx.experimental_callerRole]);
+        return { exitCode: 0 };
+      },
+    });
+    bb.agents.registerTool({
+      name: "who",
+      description: "who",
+      parameters: {},
+      execute(_params, ctx) {
+        seen.push(ctx.experimental_caller);
+        return "ok";
+      },
+    });
+    const admin = {
+      kind: "client",
+      userId: "user-test",
+      role: "admin",
+      roleCeiling: null,
+      effectiveRole: "admin",
+    };
+
+    await harness.callRpc("who", null);
+    await harness.callRpc("who", null, { experimental_caller: member });
+    await harness.fetchHttp("GET", "/who", undefined, {
+      experimental_caller: member,
+    });
+    await harness.experimental_openWebSocket("/socket", undefined, {
+      experimental_caller: cappedAdmin,
+    });
+    await harness.runCli([], { experimental_caller: member });
+    await harness.callAgentTool("who", {}, { experimental_caller: member });
+
+    expect(seen).toEqual([
+      admin,
+      member,
+      member,
+      cappedAdmin,
+      [member, "member"],
+      member,
+    ]);
+  });
+
+  it("refuses admin-only routes and tools to members before the handler runs", async () => {
+    let runs = 0;
+    const { bb, harness } = createFakePluginHost();
+    bb.http.route(
+      "POST",
+      "/admin",
+      (c) => {
+        runs += 1;
+        return c.json({});
+      },
+      { experimental_requiredRole: "admin" },
+    );
+    bb.http.experimental_websocket(
+      "/admin-socket",
+      () => {
+        runs += 1;
+        return {};
+      },
+      { experimental_requiredRole: "admin" },
+    );
+    bb.agents.registerTool({
+      name: "admin_tool",
+      description: "admin",
+      parameters: {},
+      experimental_requiredRole: "admin",
+      execute() {
+        runs += 1;
+        return "ran";
+      },
+    });
+
+    const refused = await harness.fetchHttp("POST", "/admin", undefined, {
+      experimental_caller: cappedAdmin,
+    });
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({
+      ok: false,
+      error: { code: "forbidden" },
+    });
+    await expect(
+      harness.experimental_openWebSocket("/admin-socket", undefined, {
+        experimental_caller: member,
+      }),
+    ).rejects.toThrow("requires a server admin");
+    expect(
+      await harness.callAgentTool(
+        "admin_tool",
+        {},
+        { experimental_caller: member },
+      ),
+    ).toMatchObject({ isError: true });
+    expect(runs).toBe(0);
+
+    expect((await harness.fetchHttp("POST", "/admin")).status).toBe(200);
+    expect(await harness.callAgentTool("admin_tool", {})).toBe("ran");
+    expect(runs).toBe(2);
+  });
+
+  it("rejects invalid required roles at registration", () => {
+    const { bb } = createFakePluginHost();
+    expect(() =>
+      bb.http.route("GET", "/x", (c) => c.json({}), {
+        experimental_requiredRole: "owner" as "admin",
+      }),
+    ).toThrow('invalid experimental_requiredRole "owner"');
+  });
+
+  it("records asCaller calls with the caller, only while the handler runs", async () => {
+    let escaped: unknown;
+    const { bb, harness } = createFakePluginHost({
+      sdk: { projects: { list: async () => [] } },
+    });
+    bb.rpc.register(
+      defineRpcContract({ act: { input: z.null(), output: z.null() } }),
+      {
+        async act(_input, ctx) {
+          escaped = ctx;
+          await bb.sdk.experimental_asCaller(ctx).projects.list();
+          await bb.sdk.projects.list();
+          return null;
+        },
+      },
+    );
+
+    await harness.callRpc("act", null, { experimental_caller: cappedAdmin });
+
+    expect(harness.sdk.calls).toEqual([
+      { path: "projects.list", args: [], experimental_caller: cappedAdmin },
+      { path: "projects.list", args: [] },
+    ]);
+    expect(() => bb.sdk.experimental_asCaller(escaped as never)).toThrow(
+      "still running",
+    );
+    expect(() =>
+      bb.sdk.experimental_asCaller({ experimental_caller: member }),
+    ).toThrow("still running");
+  });
+
+  it("refuses asCaller for plugin and system callers", async () => {
+    const { bb, harness } = createFakePluginHost();
+    bb.rpc.register(
+      defineRpcContract({ act: { input: z.null(), output: z.null() } }),
+      {
+        act(_input, ctx) {
+          bb.sdk.experimental_asCaller(ctx);
+          return null;
+        },
+      },
+    );
+    await expect(
+      harness.callRpc("act", null, {
+        experimental_caller: { kind: "plugin", pluginId: "other" },
+      }),
+    ).rejects.toThrow("cannot act as a plugin caller");
+    await expect(
+      harness.callRpc("act", null, { experimental_caller: { kind: "system" } }),
+    ).rejects.toThrow("cannot act as a system caller");
+  });
+
+  it("refuses settings writes inside a member's invocation", async () => {
+    const { bb, harness } = createFakePluginHost();
+    const settings = bb.settings.define({
+      mode: { type: "string", label: "Mode" },
+    });
+    bb.rpc.register(
+      defineRpcContract({ set: { input: z.string(), output: z.null() } }),
+      {
+        async set(mode) {
+          await settings.experimental_set({ mode });
+          return null;
+        },
+      },
+    );
+
+    await expect(
+      harness.callRpc("set", "member", { experimental_caller: cappedAdmin }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    expect((await settings.get()).mode).toBeUndefined();
+    await harness.callRpc("set", "admin");
+    expect((await settings.get()).mode).toBe("admin");
+    await settings.experimental_set({ mode: "background" });
+    expect((await settings.get()).mode).toBe("background");
+  });
+});

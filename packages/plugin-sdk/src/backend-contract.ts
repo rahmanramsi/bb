@@ -37,6 +37,8 @@ import type {
 } from "@bb/server-contract";
 import type { JsonValue, ReadonlyJsonValue } from "./json-value.js";
 import type {
+  ExperimentalPluginCaller,
+  ExperimentalPluginCallerContext,
   ExperimentalPluginRpcHandlersWithContext,
   PluginRpcContract,
   StandardSchemaV1,
@@ -814,8 +816,13 @@ export interface PluginHooks {
 
 export type PluginHttpAuthMode = "local" | "token" | "none";
 
+/**
+ * The second argument says who sent the request; pass it to
+ * `bb.sdk.experimental_asCaller` to act as that caller.
+ */
 export type PluginHttpHandler = (
   context: Context,
+  experimental_context: ExperimentalPluginCallerContext,
 ) => Response | Promise<Response>;
 
 export interface ExperimentalPluginWebSocket {
@@ -828,6 +835,12 @@ export interface ExperimentalPluginWebSocketContext {
   request: Request;
   url: URL;
   headers: Headers;
+  /**
+   * Who opened the socket. `bb.sdk.experimental_asCaller(context)` stays
+   * usable for the socket's lifetime, within the credential's few-minute
+   * expiry.
+   */
+  readonly experimental_caller: ExperimentalPluginCaller;
 }
 
 export interface ExperimentalPluginWebSocketHandlers {
@@ -861,7 +874,15 @@ export interface PluginHttp {
     method: string,
     path: string,
     handler: PluginHttpHandler,
-    opts?: { auth?: PluginHttpAuthMode },
+    opts?: {
+      auth?: PluginHttpAuthMode;
+      /**
+       * `"admin"` limits the route to server admins. bb answers other callers
+       * with HTTP 403 `{ ok: false, error: { code: "forbidden", message } }`
+       * before the handler runs; a refused WebSocket upgrade never opens.
+       */
+      experimental_requiredRole?: "admin";
+    },
   ): void;
 
   /**
@@ -872,7 +893,15 @@ export interface PluginHttp {
   experimental_websocket(
     path: string,
     handler: ExperimentalPluginWebSocketHandler,
-    opts?: { auth?: PluginHttpAuthMode },
+    opts?: {
+      auth?: PluginHttpAuthMode;
+      /**
+       * `"admin"` limits the route to server admins. bb answers other callers
+       * with HTTP 403 `{ ok: false, error: { code: "forbidden", message } }`
+       * before the handler runs; a refused WebSocket upgrade never opens.
+       */
+      experimental_requiredRole?: "admin";
+    },
   ): void;
 }
 
@@ -959,6 +988,12 @@ export interface PluginCliContext {
    * run when code calls `run` without one.
    */
   experimental_callerRole?: "admin" | "member";
+  /**
+   * Who invoked the command. bb always sets it; `experimental_callerRole` is
+   * its effective role. Pass the context to `bb.sdk.experimental_asCaller` to
+   * act as that caller.
+   */
+  experimental_caller?: ExperimentalPluginCaller;
 }
 
 export type PluginInteractionCancelReason =
@@ -1106,6 +1141,11 @@ export interface PluginAgentToolContext {
    * plugin disposal still abort the signal after detachment.
    */
   signal: AbortSignal;
+  /**
+   * The author of the turn that called the tool, with the authority the
+   * turn's `BB_TOKEN` carries; `system` when the turn has no human author.
+   */
+  readonly experimental_caller: ExperimentalPluginCaller;
 }
 
 /**
@@ -1163,6 +1203,12 @@ export interface PluginAgentToolRegistrationBase {
    * BB's standard rendering. See docs/api_to_audit.md.
    */
   presentation?: PluginRowPresentation;
+  /**
+   * `"admin"` runs the tool only when the turn's author acts as a server
+   * admin. bb answers other calls with an error result before `execute`
+   * runs.
+   */
+  experimental_requiredRole?: "admin";
 }
 
 /** Stable, plain-data context resolved by the server for one agent session. */
@@ -2073,9 +2119,25 @@ export interface PluginStatusApi {
  * leaves the namespace unchanged.
  */
 export type PluginBbSdk = Omit<BbSdk, "threads"> & {
+  /**
+   * An SDK whose requests authenticate as the caller of the given handler
+   * invocation, with that caller's effective authority and role ceiling and
+   * never more. Threads and messages it creates record the caller as their
+   * creator and author. bb mints a short-lived credential bound to the
+   * caller, this plugin, and the invocation: it stops working when the
+   * handler returns (a WebSocket's when the socket closes) and after a few
+   * minutes at most, and it cannot create personal access tokens. Throws for
+   * a `plugin` or `system` caller, a context bb did not hand to this plugin,
+   * or an invocation that already ended. In local mode it returns `bb.sdk`.
+   */
+  experimental_asCaller(context: {
+    readonly experimental_caller?: ExperimentalPluginCaller;
+  }): PluginBbSdk;
   threads: Omit<
     BbSdk["threads"],
-    "getPluginMetadata" | "updatePluginMetadata" | "experimental_listPluginMetadata"
+    | "getPluginMetadata"
+    | "updatePluginMetadata"
+    | "experimental_listPluginMetadata"
   > & {
     getPluginMetadata(
       args: Omit<ThreadPluginMetadataArgs, "pluginId"> & { pluginId?: string },

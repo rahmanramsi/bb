@@ -110,6 +110,13 @@ needs an admin only for some inputs throws
 `experimental_PluginRpcForbiddenError` for the same reply, and points admins to
 a separate method marked `experimental_requiredRole: "admin"`.
 
+`bb.http.route` and `bb.http.experimental_websocket` options and
+`registerTool` take the same `experimental_requiredRole: "admin"`. bb answers
+HTTP callers with 403 `forbidden`, refuses the WebSocket upgrade, and returns
+an error result to a tool call whose turn author is not acting as an admin.
+`settings.experimental_set` throws `forbidden` when it runs inside a member's
+request, because it would otherwise bypass the settings admin gate.
+
 Agents discover plugin commands through the server-generated
 `plugin-commands` skill, which lists each command's `summary` and the
 `commands` usage lines — fill both in. Combined stdout and stderr must fit

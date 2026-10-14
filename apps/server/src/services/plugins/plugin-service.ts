@@ -28,9 +28,16 @@ import {
   type ExperimentalPluginProviderEnvContext,
   type ExperimentalPluginProviderEnvHealthContext,
   type PluginRpcError,
-  type ExperimentalPluginRpcCaller,
 } from "@get-bb/plugin-sdk";
 import {
+  createPluginInvocation,
+  runInPluginInvocation,
+  runPluginInvocation,
+  type PluginCallerIdentity,
+  type PluginInvocation,
+} from "./plugin-invocation.js";
+import {
+  pluginRequiredRoleRefusal,
   enforcePluginCliOutputLimit,
   normalizePluginAgentConfiguration,
   normalizeRpcJsonResult,
@@ -375,22 +382,32 @@ export interface PluginService {
   discoverRpc(query: PluginRpcDiscoveryQuery): PublishedPluginRpcMethod[];
   getRpcHandler(id: string, method: string): PluginWireLookup<PluginRpcHandler>;
   /**
-   * The caller of a plugin rpc request: a plugin when `token` is the live
-   * per-load token its `bb.sdk.plugins.callRpc` attaches, the client when no
-   * token was sent, and not ok for any other token.
+   * The plugin behind a plugin rpc request: the plugin whose live per-load
+   * token `bb.sdk.plugins.callRpc` attached, null when no token was sent,
+   * and not ok for any other token.
    */
   resolveRpcCaller(token: string | undefined): PluginRpcCallerResolution;
   invokeHttpRoute(
     id: string,
     route: PluginHttpRouteRecord,
     context: Context,
+    identity: PluginCallerIdentity,
   ): Promise<Response>;
+  /**
+   * Run a WebSocket route's handler as `identity`. The returned invocation
+   * stays live for the socket; the caller ends it when the socket closes.
+   */
   invokeWebSocketRoute(
     id: string,
     route: PluginWebSocketRouteRecord,
-    context: ExperimentalPluginWebSocketContext,
+    context: Omit<ExperimentalPluginWebSocketContext, "experimental_caller">,
+    identity: PluginCallerIdentity,
   ): Promise<
-    | { ok: true; handlers: ExperimentalPluginWebSocketHandlers }
+    | {
+        ok: true;
+        handlers: ExperimentalPluginWebSocketHandlers;
+        invocation: PluginInvocation;
+      }
     | { ok: false; error: string }
   >;
   invokeWebSocketEvent(
@@ -404,7 +421,7 @@ export interface PluginService {
     method: string,
     handler: PluginRpcHandler,
     input: unknown,
-    caller: ExperimentalPluginRpcCaller,
+    identity: PluginCallerIdentity,
   ): Promise<
     { ok: true; result: JsonValue } | { ok: false; error: PluginRpcError }
   >;
@@ -416,7 +433,11 @@ export interface PluginService {
   runCliCommand(
     id: string,
     argv: string[],
-    ctx: PluginCliContext,
+    ctx: Omit<
+      PluginCliContext,
+      "experimental_caller" | "experimental_callerRole"
+    >,
+    identity: PluginCallerIdentity,
   ): Promise<PluginCliExecutionResult>;
   listSkillRootContributions(): PluginSkillRootContribution[];
   listAgentTools(): PluginAgentToolContribution[];
@@ -440,7 +461,8 @@ export interface PluginService {
     pluginId: string;
     record: PluginAgentToolRecord;
     input: unknown;
-    ctx: PluginAgentToolContext;
+    ctx: Omit<PluginAgentToolContext, "experimental_caller">;
+    identity: PluginCallerIdentity;
   }): Promise<ToolCallResponse>;
   listMentionProviderContributions(): PluginMentionProviderContribution[];
   searchMentions(args: {
@@ -2088,14 +2110,18 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
 
     resolveRpcCaller,
 
-    async invokeHttpRoute(id, route, context) {
+    async invokeHttpRoute(id, route, context, identity) {
+      const invocation = createPluginInvocation(id, identity);
       const outcome = await invokeWrapped(
         id,
         `http ${route.method} ${route.path}`,
-        async () => {
-          const response = await route.handler(context);
-          return adoptHttpRouteResponse(response);
-        },
+        () =>
+          runPluginInvocation(invocation, async () => {
+            const response = await route.handler(context, {
+              experimental_caller: invocation.caller,
+            });
+            return adoptHttpRouteResponse(response);
+          }),
       );
       if (outcome.ok) return outcome.value;
       return context.json(
@@ -2104,12 +2130,18 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
       );
     },
 
-    async invokeWebSocketRoute(id, route, context) {
+    async invokeWebSocketRoute(id, route, context, identity) {
+      const invocation = createPluginInvocation(id, identity);
       const outcome = await invokeWrapped(
         id,
         `websocket ${route.path} connect`,
         () => {
-          const handlers = route.handler(context);
+          const handlers = runInPluginInvocation(invocation, () =>
+            route.handler({
+              ...context,
+              experimental_caller: invocation.caller,
+            }),
+          );
           if (
             typeof handlers !== "object" ||
             handlers === null ||
@@ -2133,16 +2165,19 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
           return handlers;
         },
       );
-      return outcome.ok
-        ? { ok: true, handlers: outcome.value }
-        : { ok: false, error: outcome.error };
+      if (outcome.ok) {
+        return { ok: true, handlers: outcome.value, invocation };
+      }
+      invocation.end();
+      return { ok: false, error: outcome.error };
     },
 
     async invokeWebSocketEvent(id, route, event, run) {
       await invokeWrapped(id, `websocket ${route.path} ${event}`, run);
     },
 
-    async invokeRpcHandler(id, method, handler, input, caller) {
+    async invokeRpcHandler(id, method, handler, input, identity) {
+      const invocation = createPluginInvocation(id, identity);
       const outcome = await invokeWrapped(id, `rpc ${method}`, async () => {
         const parsedInput = await validateRpcValue(
           handler.inputSchema,
@@ -2150,9 +2185,11 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
           "input",
           throwRpcBoundaryError,
         );
-        const result = await handler.handler(parsedInput, {
-          experimental_caller: caller,
-        });
+        const result = await runPluginInvocation(invocation, () =>
+          handler.handler(parsedInput, {
+            experimental_caller: invocation.caller,
+          }),
+        );
         const parsedOutput = await validateRpcValue(
           handler.outputSchema,
           result,
@@ -2189,7 +2226,7 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
       return cliContributions();
     },
 
-    async runCliCommand(id, argv, ctx) {
+    async runCliCommand(id, argv, ctx, identity) {
       const fail = (stderr: string) =>
         enforcePluginCliOutputLimit(
           { exitCode: 1, stdout: "", stderr },
@@ -2208,11 +2245,18 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
       if (!registration) {
         return fail(`plugin "${id}" registers no CLI command`);
       }
+      const invocation = createPluginInvocation(id, identity);
       const outcome = await invokeWrapped(
         id,
         `cli ${registration.name}`,
         async () => {
-          const result = await registration.run(argv, ctx);
+          const result = await runPluginInvocation(invocation, () =>
+            registration.run(argv, {
+              ...ctx,
+              experimental_caller: invocation.caller,
+              experimental_callerRole: invocation.authority,
+            }),
+          );
           if (typeof result?.exitCode !== "number") {
             throw new Error(
               "cli run() must return { exitCode: number, stdout?, stderr? }",
@@ -2424,7 +2468,20 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
       return collectAgentTools().find((entry) => entry.record.name === name);
     },
 
-    async invokeAgentTool({ pluginId, record, input, ctx }) {
+    async invokeAgentTool({ pluginId, record, input, ctx, identity }) {
+      const invocation = createPluginInvocation(pluginId, identity);
+      const refusal = pluginRequiredRoleRefusal(
+        record.requiredRole,
+        invocation.authority,
+        `Tool "${record.name}"`,
+      );
+      if (refusal !== null) {
+        invocation.end();
+        return {
+          success: false,
+          contentItems: [{ type: "inputText", text: refusal }],
+        };
+      }
       const parsed = record.parse(input);
       if (!parsed.ok) {
         return {
@@ -2441,7 +2498,12 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
         pluginId,
         `tool ${record.name}`,
         async () => {
-          const result = await record.execute(parsed.value, ctx);
+          const result = await runPluginInvocation(invocation, () =>
+            record.execute(parsed.value, {
+              ...ctx,
+              experimental_caller: invocation.caller,
+            }),
+          );
           return normalizeAgentToolResult(record.name, result);
         },
       );

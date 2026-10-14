@@ -1642,6 +1642,7 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
       getLoopbackBaseUrl: () => boundLoopbackBaseUrl,
       getServiceToken: () => boundServiceToken,
       rpcCaller: rpcCallers.issue(row.id),
+      issuePluginCallerCredential: deps.issuePluginCallerCredential ?? null,
       publishSignal: (channel, payload) => {
         deps.hub.notifyPluginSignal(row.id, channel, payload);
       },
@@ -2036,8 +2037,8 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
   function bindSdk(args: { baseUrl: string; serviceToken: string }): void {
     boundSdk = createPluginLoopbackSdk({
       baseUrl: args.baseUrl,
+      authToken: args.serviceToken,
       callerToken: null,
-      serviceToken: args.serviceToken,
     });
     boundLoopbackBaseUrl = args.baseUrl;
     boundServiceToken = args.serviceToken;

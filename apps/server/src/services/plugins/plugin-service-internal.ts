@@ -17,6 +17,10 @@ import type {
   PluginRuntimeStatus,
 } from "@bb/server-contract";
 import type { ServerLogger } from "../../types.js";
+import type {
+  PluginCallerCredential,
+  PluginCallerCredentialArgs,
+} from "../user-auth.js";
 import type { TelemetryService } from "../system/telemetry.js";
 import type { NotificationHub } from "../../ws/hub.js";
 import type {
@@ -105,6 +109,15 @@ export interface PluginServiceDeps {
     | "setPluginDirectory"
   >;
   getAppUrl?: () => string | null;
+  /**
+   * Mints `bb.sdk.experimental_asCaller` credentials in multi-user mode.
+   * Omitted in local mode and isolated plugin tests, where every caller is
+   * the local owner and `experimental_asCaller` returns `bb.sdk`; any other
+   * caller is then refused.
+   */
+  issuePluginCallerCredential?: (
+    args: PluginCallerCredentialArgs,
+  ) => PluginCallerCredential;
   dataDir: string;
   appVersion: string;
   bundledPlugins?: readonly BundledPluginRegistration[];
