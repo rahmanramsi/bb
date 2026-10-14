@@ -34,6 +34,7 @@ import {
 } from "./thread-lifecycle.js";
 import { resolveDispatchAuthor } from "./dispatch-author.js";
 import { resolvePermissionEscalation } from "./thread-runtime-config.js";
+import { appendTurnRequestAuthorUnknownEventInTransaction } from "./turn-authority.js";
 import {
   createThreadStartup,
   type ThreadForkDescriptor,
@@ -142,19 +143,26 @@ function getCurrentProvisioningFailureThread(
   return currentThread;
 }
 
-interface SettleSeededThreadProvisioningArgs {
+interface SettleThreadProvisioningWithoutRunArgs {
+  authorUnknown: boolean;
   context: ThreadProvisionContext;
   environmentId: string;
   threadId: string;
 }
 
-function settleSeededThreadProvisioning(
+function settleThreadProvisioningWithoutRun(
   deps: ThreadProvisioningDeps,
-  args: SettleSeededThreadProvisioningArgs,
+  args: SettleThreadProvisioningWithoutRunArgs,
 ): void {
   const settled = deps.db.transaction(
     (tx) => {
       const current = getThreadProvisionContext(tx, args.threadId);
+      if (args.authorUnknown) {
+        appendTurnRequestAuthorUnknownEventInTransaction(
+          { db: tx, hub: deps.hub },
+          { threadId: args.threadId, environmentId: args.environmentId },
+        );
+      }
       const outcome = applyLoggedThreadLifecycleEventInTransaction(
         { db: tx, logger: deps.logger },
         { threadId: args.threadId, event: { type: "run.succeeded" } },
@@ -180,7 +188,7 @@ function settleSeededThreadProvisioning(
   if (!settled.outcome.applied) {
     deps.logger.warn(
       { threadId: args.threadId },
-      "Seed-without-run thread was no longer starting; idle settle skipped",
+      "Thread provisioning without a run was no longer starting; idle settle skipped",
     );
     return;
   }
@@ -257,7 +265,8 @@ async function startThreadIfEnvironmentReady(
     args.context.request.seedWithoutRun &&
     args.context.request.fork === null
   ) {
-    settleSeededThreadProvisioning(deps, {
+    settleThreadProvisioningWithoutRun(deps, {
+      authorUnknown: false,
       context: args.context,
       environmentId: args.environment.id,
       threadId: args.thread.id,
@@ -274,6 +283,15 @@ async function startThreadIfEnvironmentReady(
     requestId: args.context.request.clientRequestId,
     threadId: args.thread.id,
   });
+  if (author === null && deps.config.authMode === "multi") {
+    settleThreadProvisioningWithoutRun(deps, {
+      authorUnknown: true,
+      context: args.context,
+      environmentId: args.environment.id,
+      threadId: args.thread.id,
+    });
+    return;
+  }
   await requestThreadStart(deps, {
     authorRoleCeiling: author?.authorRoleCeiling ?? null,
     authorUserId: author?.authorUserId ?? null,

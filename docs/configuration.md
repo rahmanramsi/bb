@@ -2025,7 +2025,9 @@ recover the author, for example because an older bb version accepted the
 message or its author was removed, it drops the message rather than running it
 with any other credential, and the timeline shows the error
 `turn_request_author_unknown`: the message was not delivered and must be sent
-again.
+again. The same holds for a message that waits while bb sets up the thread's
+environment, including a new thread's first message: when setup finishes, bb
+does not start it, shows the error, and leaves the thread idle.
 
 `GET /api/v1/me` returns the authenticated user, the role the credential acts
 with as `effectiveRole`, and its `roleCeiling` (`"member"` or null). Admins update roles with

@@ -123,6 +123,20 @@ export function sharesRunningTurnAuthority(
 
 const TURN_REQUEST_AUTHOR_UNKNOWN_ERROR_CODE = "turn_request_author_unknown";
 
+export function appendTurnRequestAuthorUnknownEventInTransaction(
+  deps: { db: DbTransaction; hub: DbNotifier },
+  args: { environmentId: string | null; threadId: string },
+): void {
+  appendSystemErrorEventInTransaction(deps, {
+    threadId: args.threadId,
+    environmentId: args.environmentId,
+    code: TURN_REQUEST_AUTHOR_UNKNOWN_ERROR_CODE,
+    message:
+      "A message was not delivered because its sender could not be verified. Send it again.",
+    scope: threadScope(),
+  });
+}
+
 const refusedTurnRequestSchema = z.object({
   senderThreadId: z.string().nullable(),
   systemMessageKind: systemMessageKindSchema.optional(),
@@ -152,13 +166,9 @@ export function requeueTurnSubmitRefusedForBindingInTransaction(
     threadId: command.threadId,
   });
   if (author === null) {
-    appendSystemErrorEventInTransaction(deps, {
+    appendTurnRequestAuthorUnknownEventInTransaction(deps, {
       threadId: command.threadId,
       environmentId: getThread(deps.db, command.threadId)?.environmentId ?? null,
-      code: TURN_REQUEST_AUTHOR_UNKNOWN_ERROR_CODE,
-      message:
-        "A message was not delivered because its sender could not be verified. Send it again.",
-      scope: threadScope(),
     });
     return;
   }
