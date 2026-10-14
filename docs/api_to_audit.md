@@ -159,9 +159,9 @@ host defaults `runCli` to an admin context and `callRpc` to an admin caller,
 with `experimental_callerRole: "member"` to test refusals.
 
 First-party callers: Concurrency limit, Account Pooler, bb connect, bb account,
-Storage retention, Keep Awake, Modal Sandbox, Custom instructions, and MCP mark
-their server-wide configuration, credential, enrollment, and bulk cleanup
-operations. Before stabilizing, audit whether plugin HTTP routes, WebSocket
+Storage retention, Keep Awake, Modal Sandbox, Custom instructions, MCP, and Docs
+mark their server-wide configuration, credential, enrollment, vault, and bulk
+cleanup operations. Before stabilizing, audit whether plugin HTTP routes, WebSocket
 routes, and agent tools need the same role, whether `experimental_caller`
 should also carry the role, and whether RPC discovery should publish it.
 

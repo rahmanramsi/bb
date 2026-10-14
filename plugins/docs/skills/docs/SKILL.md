@@ -21,6 +21,8 @@ bb docs read <path> --vault <vault-id>
 
 Use the path and vault exactly as returned. Paths are relative to the vault;
 do not guess an absolute host path or inspect the vault outside `bb docs`.
+Only a server admin can run `bb docs vault-add` or `bb docs vault-remove`; on
+`admin_required`, ask the user to have an admin add the vault.
 
 ## Docs @-mentions
 

@@ -675,6 +675,60 @@ describe("Docs vault operations", () => {
     ).rejects.toThrow('unknown setting "directory"');
   });
 
+  it("keeps vault creation and removal to admins while members can list vaults", async () => {
+    const { harness } = await loadNotebook({ "draft.md": "# Draft" });
+    const member = { experimental_callerRole: "member" } as const;
+
+    await expect(
+      harness.behavior.callRpc(
+        "createVault",
+        { name: "Server data", rootPath: "/var/lib/bb" },
+        member,
+      ),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    await expect(
+      harness.behavior.callRpc("removeVault", { vaultId: "personal" }, member),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    for (const argv of [
+      ["vault-add", "Server data", "/var/lib/bb", "--json"],
+      ["vault-remove", "personal", "--json"],
+    ]) {
+      const refused = await harness.behavior.runCli(argv, member);
+      expect(refused.exitCode).toBe(1);
+      expect(JSON.parse(refused.stdout)).toMatchObject({
+        ok: false,
+        error: { code: "admin_required" },
+      });
+    }
+    await expect(
+      harness.behavior.runCli(["vault-add", "--help"], member),
+    ).resolves.toMatchObject({
+      exitCode: 0,
+      stdout: expect.stringContaining("absolute-root"),
+    });
+    const listed = await harness.behavior.runCli(["vaults", "--json"], member);
+    expect(JSON.parse(listed.stdout)).toEqual([
+      expect.objectContaining({ id: "personal" }),
+    ]);
+
+    const added = await harness.behavior.runCli([
+      "vault-add",
+      "Work",
+      "/work",
+      "--json",
+    ]);
+    expect(added.exitCode).toBe(0);
+    expect(JSON.parse(added.stdout)).toMatchObject({
+      name: "Work",
+      rootPath: "/work",
+    });
+    await expect(
+      harness.behavior.callRpc("removeVault", {
+        vaultId: JSON.parse(added.stdout).id,
+      }),
+    ).resolves.toEqual({ ok: true });
+  });
+
   it("keeps a frontmatter-managed document at its existing path", async () => {
     const { harness } = await loadNotebook({
       "stable-wiki-slug.md": [
