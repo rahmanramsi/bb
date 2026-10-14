@@ -358,7 +358,7 @@ describe("multi-user per-user state", () => {
       ).toMatchObject({ status: "resolving", resolvedByUserId: alice.id });
 
       const users = await json<{ users: Array<{ id: string; name: string }> }>(
-        request(harness, bob, "/api/v1/users"),
+        request(harness, bob, "/api/v1/users/directory"),
       );
       expect(users.users).toEqual(
         expect.arrayContaining([

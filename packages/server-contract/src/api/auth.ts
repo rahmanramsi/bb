@@ -92,8 +92,33 @@ export type CreateUserInviteRequest = z.input<
 >;
 
 export interface CreateUserInviteResponse {
+  id: string;
   token: string;
   role: z.infer<typeof userRoleSchema>;
   email: string | null;
   expiresAt: number;
 }
+
+export const updateUserRoleRequestSchema = z
+  .object({ role: userRoleSchema })
+  .strict();
+export type UpdateUserRoleRequest = z.infer<typeof updateUserRoleRequestSchema>;
+export type PathUserId = { param: { id: string } };
+export type PathUserInviteId = { param: { id: string } };
+export interface UserInviteSummary {
+  id: string;
+  role: z.infer<typeof userRoleSchema>;
+  email: string | null;
+  expiresAt: number;
+  createdAt: number;
+  createdByUserId: string;
+}
+export interface UserInviteListResponse {
+  invites: UserInviteSummary[];
+}
+export const acceptUserInviteRequestSchema = authSignUpRequestSchema.extend({
+  inviteToken: z.string().min(1),
+});
+export type AcceptUserInviteRequest = z.infer<
+  typeof acceptUserInviteRequestSchema
+>;

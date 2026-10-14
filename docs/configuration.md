@@ -257,6 +257,7 @@ child; do not set them yourself.
 | `BB_MARKETPLACE_URL`           | `bb-app env`, or environment                       | Startup-only testing    | Manifest URL of the reserved `bb-community` plugin marketplace. It defaults to `https://getbb.app/marketplace/v2/marketplace.json`. If the default v2 request returns 404, the server requests v1. Set another URL to test catalog refreshes. The server requests that URL without fallback. It changes only `bb-community`. Add other marketplaces with `bb marketplace add`. Restart the app after a change. |
 | `BB_SERVER_URL`                | `bb-app config`                                    | Remote CLI/host use     | Server URL for standalone `bb` CLI and `host-daemon` commands on the current machine. The CLI defaults to `http://127.0.0.1:38886` when unset.                                                                                                                                                                                                                                                                 |
 | `BB_SERVER_BIND_HOST`          | `bb-app env`, environment, or `--server-bind-host` | Startup-only            | Server listener host. Defaults to `127.0.0.1`; accepts only `127.0.0.1` or `0.0.0.0`. A full launcher or desktop app restart is required; until then, a previous `0.0.0.0` listener remains exposed. This is not a `bb-app config` key.                                                                                                                                                                        |
+| `BB_TOKEN`                     | Environment                                        | CLI credential          | Bearer credential that overrides the PAT saved by `bb login` for the current server origin. Agent shells receive a server-issued value in multi mode.                                                                                                                                                                                                                                                          |
 | `BB_AUTH_MODE`                 | `bb-app env` or environment                        | Startup-only            | Server authentication mode, `local` (default) or `multi`. See [Authentication](#authentication). A full launcher or desktop app restart is required. This is not a `bb-app config` key.                                                                                                                                                                                                                        |
 | `BB_SERVER_PORT`               | `bb-app env`, environment, or `--server-port`      | Startup-only            | HTTP listener port. Defaults to `38886`. A full launcher or desktop app restart is required after a persistent set or unset.                                                                                                                                                                                                                                                                                   |
 | `BB_HOST_DAEMON_PORT`          | `bb-app env`, environment, or `--host-daemon-port` | Startup-only            | Local host-daemon API port. Defaults to `38887`. A full launcher or desktop app restart is required after a persistent set or unset.                                                                                                                                                                                                                                                                           |
@@ -1874,8 +1875,8 @@ own thread read and unread state, pinned threads and pin order, UI preferences
 history. Changing them affects only that user, and realtime updates for them
 reach only that user's connected apps. A user who has never opened a thread
 sees it as read up to its creation. Projects, threads, and everything else stay
-shared. `GET /api/v1/users` lists everyone on the server, so
-clients can show attribution: threads record `createdByUserId`, queued
+shared. Admins list users with `GET /api/v1/users` (`bb user list`).
+Authenticated clients use `GET /api/v1/users/directory` to resolve attribution: threads record `createdByUserId`, queued
 messages record `authorUserId`, and resolved interactions record
 `resolvedByUserId`. In `local` mode all of this belongs to the local owner.
 
@@ -1893,6 +1894,48 @@ The colocated launcher and in-process plugins use a server credential that
 rotates on each server start and is stored in the owner-only
 `server-service-token` file under the server data directory. The launcher sends
 it only to a loopback server when preparing the local daemon's enrollment.
+
+### CLI login and account management
+
+Sign in to a multi-user server with `bb login --email EMAIL`. The CLI prompts
+for the password and creates a PAT. Use `--password-file PATH` for unattended
+sign-in, or `bb login --token TOKEN` to save an existing PAT. Without either
+option, `bb login` reads a PAT from a hidden prompt or standard input. Login
+validates the credential before saving it to the server origin's profile in
+`<BB_DATA_DIR>/client.json`, with file permissions `0600`. `BB_SERVER_URL`
+selects the server; `BB_TOKEN` overrides its saved token for CLI requests,
+including plugin commands. `bb whoami [--json]` shows the current user.
+`bb logout [--json]` removes only that profile's saved login. It does not
+revoke the PAT or unset `BB_TOKEN`.
+
+Admins use `bb user list`, `bb user role USER_ID admin|member`, and
+`bb user remove USER_ID`. System users and the last account admin cannot be
+removed or demoted. `bb invite create [--email EMAIL] [--role admin|member]`
+prints a seven-day, single-use token. `bb invite list` lists pending unexpired
+invites without tokens; `bb invite revoke ID` invalidates one. New users run
+`bb invite accept TOKEN --email EMAIL --name NAME` and enter their password,
+or supply `--password-file PATH`, then sign in with `bb login`.
+`bb token create NAME`, `bb token list`, and `bb token revoke ID` manage only
+the current user's PATs. New token values are shown once. All these commands
+accept `--json`.
+
+Roles are guardrails for a trusted team. A member who runs an agent effectively
+has shell access to its host. In multi mode, each turn supplies a signed
+seven-day `BB_TOKEN` to the agent shell through the launch environment. It
+uses the thread creator's current role, stops authenticating if that user is
+removed, and is masked in runtime environment displays. Threads without a
+creator use the local owner. In local mode, shells need no credential.
+
+`GET /api/v1/me` returns the authenticated user. Admins update roles with
+`PUT /api/v1/users/:id/role` (`{"role":"admin"|"member"}`) and remove accounts
+with `DELETE /api/v1/users/:id`. Invite management uses
+`GET /api/v1/auth/invites` and `DELETE /api/v1/auth/invites/:id`.
+`POST /api/v1/auth/invites/accept` accepts `inviteToken`, `email`, `name`, and
+`password` without a prior login; it creates the account and a session cookie.
+The SDK exposes these through `experimental_auth` and `experimental_users`.
+Pass `{ context: { authToken: TOKEN } }` to `createNodeBbSdk` or
+`createBrowserBbSdk` to send a Bearer header on typed requests and uploads.
+The Node SDK also sends the token in its default WebSocket handshake.
 
 The startup `Server listening` and `app` lines show the actual listener address.
 With wildcard binding they show `http://0.0.0.0:<port>`, while bb's health check

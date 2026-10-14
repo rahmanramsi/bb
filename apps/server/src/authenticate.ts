@@ -11,6 +11,7 @@ type AuthenticateDeps = Pick<ServerAppDeps, "config" | "userAuth">;
 
 const AUTH_OPTIONAL_API_PATHS = new Set([
   "/api/v1/auth/session",
+  "/api/v1/auth/invites/accept",
   "/api/v1/auth/sign-in",
   "/api/v1/auth/sign-out",
   "/api/v1/auth/sign-up",

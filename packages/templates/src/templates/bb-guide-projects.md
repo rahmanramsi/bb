@@ -43,6 +43,13 @@ Global prompt history:
   user has their own prompt history. Pass the returned cursor to continue from
   the next page.
 
+People:
+
+  bb user list                            List users with ids and roles
+
+  Maps createdByUserId, authorUserId, and resolvedByUserId on threads, queued
+  messages, and interactions to names.
+
 Discovery:
 
   bb project branches <id> --host <id>   List branches for a machine source

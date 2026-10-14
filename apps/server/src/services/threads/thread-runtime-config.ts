@@ -3,13 +3,14 @@ import {
   mergeHostAndProviderEnvironment,
 } from "../hosts/host-environment.js";
 import { getEnvironment, getHost, getProject } from "@bb/db";
-import type {
-  DynamicTool,
-  InstructionMode,
-  PermissionEscalation,
-  ThreadRecord,
-  ThreadTurnInitiator,
-  EnvironmentStatus,
+import {
+  LOCAL_OWNER_USER_ID,
+  type DynamicTool,
+  type InstructionMode,
+  type PermissionEscalation,
+  type ThreadRecord,
+  type ThreadTurnInitiator,
+  type EnvironmentStatus,
 } from "@bb/domain";
 import type {
   HostDaemonContributedEnvEntry,
@@ -37,6 +38,7 @@ import {
 import { readWorkspaceAgentContext } from "./workspace-agent-context.js";
 import { resolveDeprecatedWorkspaceProvisionType } from "../environments/environment-response.js";
 import { markTurnTraceSpan } from "../system/turn-trace.js";
+import { issueThreadShellToken } from "../user-auth.js";
 
 const UPDATE_ENVIRONMENT_DIRECTORY_INSTRUCTIONS =
   "If the user asks you to move this thread to another checkout, worktree, or directory, make sure the target directory exists, then call `update_environment_directory` with its absolute path. After it succeeds, stop work in the current turn; future turns will run in the updated environment.";
@@ -200,6 +202,22 @@ export async function resolveThreadRuntimeCommandConfig(
       },
     }),
   );
+  if (deps.config.authMode === "multi") {
+    const token = await issueThreadShellToken(
+      deps.config.dataDir,
+      args.thread.createdByUserId ?? LOCAL_OWNER_USER_ID,
+    );
+    for (let index = contributedEnv.length - 1; index >= 0; index -= 1) {
+      if (contributedEnv[index].name === "BB_TOKEN")
+        contributedEnv.splice(index, 1);
+    }
+    contributedEnv.push({
+      name: "BB_TOKEN",
+      value: token,
+      source: { core: "thread-auth" },
+      reason: "Authenticate the thread shell with its creator's server account",
+    });
+  }
   markTurnTraceSpan("runtimeConfig.env");
   const injectedSkillSources = resolveSkillCatalog(deps, {
     projectSkillSources: workspaceAgentContext.projectSkillSources,

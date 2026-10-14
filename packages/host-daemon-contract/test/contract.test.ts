@@ -1219,6 +1219,12 @@ const ACP_BRIDGE_LAUNCH = {
 
 const CONTRIBUTED_ENV = [
   {
+    name: "BB_TOKEN",
+    value: "bbshell_credential",
+    source: { core: "thread-auth" },
+    reason: "Authenticate the thread shell",
+  },
+  {
     name: "PLUGIN_API_URL",
     value: { serverPath: "/plugins/auth-proxy/api" },
     source: { plugin: "auth-proxy" },
@@ -1228,7 +1234,7 @@ const CONTRIBUTED_ENV = [
 
 describe("host-daemon command schemas", () => {
   it("uses the current host-daemon protocol version", () => {
-    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(234);
+    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(235);
     expect(HOST_ARTIFACT_MAX_BYTES).toBe(256 * 1024 * 1024);
   });
 

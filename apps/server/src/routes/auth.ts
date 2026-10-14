@@ -45,7 +45,7 @@ function assertMultiUserMode(deps: AuthRouteDeps): void {
 }
 
 export function registerAuthRoutes(app: Hono, deps: AuthRouteDeps): void {
-  const { del, get, post } = typedRoutes<PublicApiSchema>(app, {
+  const { del, get, post, put } = typedRoutes<PublicApiSchema>(app, {
     onValidationError: (message) =>
       new ApiError(400, "invalid_request", message),
   });
@@ -126,8 +126,67 @@ export function registerAuthRoutes(app: Hono, deps: AuthRouteDeps): void {
   });
 
   get(publicApiRoutes.users.list, (context) => {
+    assertAdmin(context);
+    return context.json({ users: deps.userAuth.listUsers() });
+  });
+
+  get(publicApiRoutes.me, (context) => {
+    const principal = requirePrincipal(context);
+    const user = deps.userAuth.getUser(principal.userId);
+    if (user === null) throw new ApiError(401, "unauthorized", "Unauthorized");
+    return context.json({ user });
+  });
+
+  get(publicApiRoutes.users.directory, (context) => {
     requirePrincipal(context);
     return context.json({ users: deps.userAuth.listUsers() });
+  });
+
+  put(publicApiRoutes.users.updateRole, (context, payload) => {
+    assertAdmin(context);
+    try {
+      return context.json({
+        user: deps.userAuth.updateUserRole(
+          context.req.param("id"),
+          payload.role,
+        ),
+      });
+    } catch (error) {
+      throw toApiError(error);
+    }
+  });
+
+  del(publicApiRoutes.users.remove, (context) => {
+    assertAdmin(context);
+    try {
+      deps.userAuth.removeUser(context.req.param("id"));
+    } catch (error) {
+      throw toApiError(error);
+    }
+    return context.json({ ok: true as const });
+  });
+
+  get(routes.listInvites, (context) => {
+    assertAdmin(context);
+    return context.json({ invites: deps.userAuth.listInvites() });
+  });
+
+  del(routes.revokeInvite, (context) => {
+    assertAdmin(context);
+    if (!deps.userAuth.revokeInvite(context.req.param("id")))
+      throw new ApiError(404, "invite_not_found", "Invite not found");
+    return context.json({ ok: true as const });
+  });
+
+  post(routes.acceptInvite, async (context, payload) => {
+    assertMultiUserMode(deps);
+    try {
+      const result = await deps.userAuth.signUp(payload);
+      appendSetCookieHeaders(context, result.setCookieHeaders);
+      return context.json({ user: result.user }, 201);
+    } catch (error) {
+      throw toApiError(error);
+    }
   });
 
   post(routes.createInvite, async (context, payload) => {

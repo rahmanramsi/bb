@@ -1,5 +1,10 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { and, asc, desc, eq, like, lt, ne } from "drizzle-orm";
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto";
+import { and, asc, desc, eq, gt, like, lt, ne } from "drizzle-orm";
 import { betterAuth } from "better-auth";
 import { apiKey } from "@better-auth/api-key";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
@@ -12,10 +17,15 @@ import {
   type DbConnection,
 } from "@bb/db";
 import { LOCAL_OWNER_USER_ID, userRoleSchema, type UserRole } from "@bb/domain";
-import type { AuthUser, PersonalAccessTokenSummary } from "@bb/server-contract";
+import type {
+  AuthUser,
+  PersonalAccessTokenSummary,
+  UserInviteSummary,
+} from "@bb/server-contract";
 import { readOrCreateSecretFile, writeSecretFile } from "@bb/secret-storage";
 import { z } from "zod";
 import { SERVER_SERVICE_TOKEN_FILE_NAME } from "@bb/config/server";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { MACHINE_AUTH_SYSTEM_USER_ID } from "./machine-auth.js";
 import type { ServerLogger } from "../types.js";
@@ -58,6 +68,28 @@ const inviteValueSchema = z
   })
   .strict();
 
+const shellTokenPayloadSchema = z
+  .object({ userId: z.string().min(1), expiresAt: z.number().int().positive() })
+  .strict();
+const SHELL_TOKEN_PREFIX = "bbshell_";
+const SHELL_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+export async function issueThreadShellToken(
+  dataDir: string,
+  userId: string,
+): Promise<string> {
+  const secret = (
+    await readFile(join(dataDir, AUTH_SECRET_FILE_NAME), "utf8")
+  ).trim();
+  const payload = Buffer.from(
+    JSON.stringify({ userId, expiresAt: Date.now() + SHELL_TOKEN_TTL_MS }),
+  ).toString("base64url");
+  const signature = createHmac("sha256", secret)
+    .update(payload)
+    .digest("base64url");
+  return `${SHELL_TOKEN_PREFIX}${payload}.${signature}`;
+}
+
 export class UserAuthError extends Error {
   constructor(
     readonly status: 401 | 403 | 404 | 409,
@@ -93,6 +125,7 @@ export interface CreateInviteArgs {
 }
 
 export interface CreatedInvite {
+  id: string;
   email: string | null;
   expiresAt: number;
   role: UserRole;
@@ -113,6 +146,10 @@ export interface UserAuthService {
   }): Promise<CreatedPersonalAccessToken>;
   getUser(userId: string): AuthUser | null;
   listUsers(): AuthUser[];
+  listInvites(): UserInviteSummary[];
+  revokeInvite(id: string): boolean;
+  updateUserRole(userId: string, role: UserRole): AuthUser;
+  removeUser(userId: string): void;
   listPersonalAccessTokens(userId: string): PersonalAccessTokenSummary[];
   needsBootstrap(): boolean;
   resolvePrincipal(headers: Headers): Promise<RequestPrincipal | null>;
@@ -262,6 +299,111 @@ export async function createUserAuthService(
       .all();
   }
 
+  function assertMutableUser(userId: string, losingAdmin: boolean): AuthUser {
+    if (
+      userId === LOCAL_OWNER_USER_ID ||
+      userId === MACHINE_AUTH_SYSTEM_USER_ID
+    ) {
+      throw new UserAuthError(
+        409,
+        "protected_user",
+        "System users cannot be changed or removed",
+      );
+    }
+    const user = getUser(userId);
+    if (user === null)
+      throw new UserAuthError(404, "user_not_found", "User not found");
+    if (losingAdmin && user.role === "admin") {
+      const otherAdmin = args.db
+        .select({ id: authUsers.id })
+        .from(authUsers)
+        .innerJoin(authAccounts, eq(authAccounts.userId, authUsers.id))
+        .where(
+          and(
+            eq(authUsers.role, "admin"),
+            ne(authUsers.id, userId),
+            eq(authAccounts.providerId, CREDENTIAL_PROVIDER_ID),
+          ),
+        )
+        .limit(1)
+        .get();
+      if (otherAdmin === undefined)
+        throw new UserAuthError(
+          409,
+          "last_admin",
+          "The last account admin cannot be removed or demoted",
+        );
+    }
+    return user;
+  }
+
+  function updateUserRole(userId: string, role: UserRole): AuthUser {
+    return args.db.transaction(() => {
+      const user = assertMutableUser(userId, role !== "admin");
+      args.db
+        .update(authUsers)
+        .set({ role, updatedAt: new Date() })
+        .where(eq(authUsers.id, userId))
+        .run();
+      return { ...user, role };
+    });
+  }
+
+  function removeUser(userId: string): void {
+    args.db.transaction(() => {
+      assertMutableUser(userId, true);
+      args.db.delete(authUsers).where(eq(authUsers.id, userId)).run();
+    });
+    patCache.clear();
+  }
+
+  function listInvites(): UserInviteSummary[] {
+    return args.db
+      .select()
+      .from(authVerifications)
+      .where(
+        and(
+          like(authVerifications.identifier, `${INVITE_IDENTIFIER_PREFIX}%`),
+          gt(authVerifications.expiresAt, new Date()),
+        ),
+      )
+      .orderBy(desc(authVerifications.createdAt))
+      .all()
+      .flatMap((row) => {
+        let value: unknown;
+        try {
+          value = JSON.parse(row.value);
+        } catch {
+          return [];
+        }
+        const parsed = inviteValueSchema.safeParse(value);
+        return parsed.success
+          ? [
+              {
+                id: row.id,
+                ...parsed.data,
+                createdAt: row.createdAt.getTime(),
+                expiresAt: row.expiresAt.getTime(),
+              },
+            ]
+          : [];
+      });
+  }
+
+  function revokeInvite(id: string): boolean {
+    return (
+      args.db
+        .delete(authVerifications)
+        .where(
+          and(
+            eq(authVerifications.id, id),
+            like(authVerifications.identifier, `${INVITE_IDENTIFIER_PREFIX}%`),
+          ),
+        )
+        .run().changes > 0
+    );
+  }
+
   function principalForUser(
     userId: string,
     kind: PrincipalKind,
@@ -319,6 +461,26 @@ export async function createUserAuthService(
       if (timingSafeEqualStrings(token, serviceToken)) {
         return SERVICE_PRINCIPAL;
       }
+      if (token.startsWith(SHELL_TOKEN_PREFIX)) {
+        const parts = token.slice(SHELL_TOKEN_PREFIX.length).split(".");
+        if (parts.length !== 2) return null;
+        const [payload, signature] = parts;
+        const expected = createHmac("sha256", secret)
+          .update(payload)
+          .digest("base64url");
+        if (!timingSafeEqualStrings(expected, signature)) return null;
+        let value: unknown;
+        try {
+          value = JSON.parse(
+            Buffer.from(payload, "base64url").toString("utf8"),
+          );
+        } catch {
+          return null;
+        }
+        const parsed = shellTokenPayloadSchema.safeParse(value);
+        if (!parsed.success || parsed.data.expiresAt <= Date.now()) return null;
+        return principalForUser(parsed.data.userId, "user");
+      }
       if (!token.startsWith(USER_PAT_PREFIX)) {
         return null;
       }
@@ -368,10 +530,10 @@ export async function createUserAuthService(
       const email = normalizeEmail(signUpArgs.email);
       const bootstrap = needsBootstrap();
       const invite =
-        bootstrap || signUpArgs.inviteToken === null
+        signUpArgs.inviteToken === null
           ? null
           : findInvite(signUpArgs.inviteToken);
-      if (!bootstrap && invite === null) {
+      if ((!bootstrap || signUpArgs.inviteToken !== null) && invite === null) {
         throw new UserAuthError(
           403,
           "invite_required",
@@ -565,10 +727,11 @@ export async function createUserAuthService(
         ),
       )
       .run();
+    const id = randomBytes(16).toString("hex");
     args.db
       .insert(authVerifications)
       .values({
-        id: randomBytes(16).toString("hex"),
+        id,
         identifier: `${INVITE_IDENTIFIER_PREFIX}${sha256Hex(token)}`,
         value: JSON.stringify({
           role: inviteArgs.role,
@@ -581,6 +744,7 @@ export async function createUserAuthService(
       })
       .run();
     return {
+      id,
       email,
       expiresAt: expiresAt.getTime(),
       role: inviteArgs.role,
@@ -594,6 +758,10 @@ export async function createUserAuthService(
     createPersonalAccessToken,
     getUser,
     listUsers,
+    listInvites,
+    revokeInvite,
+    updateUserRole,
+    removeUser,
     listPersonalAccessTokens,
     needsBootstrap,
     resolvePrincipal,

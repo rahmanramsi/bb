@@ -41,9 +41,12 @@ export interface BbRealtimeSocket {
 
 export type BbRealtimeSocketFactory = (url: string) => BbRealtimeSocket;
 
-export interface BbSdkContext {}
+export interface BbSdkContext {
+  authToken?: string;
+}
 
 export interface CreateHttpTransportArgs {
+  context?: BbSdkContext;
   baseUrl?: string;
   fetch?: FetchImplementation;
   realtimeUrl?: string;

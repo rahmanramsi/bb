@@ -4118,11 +4118,34 @@ with third-party providers.
 
 Before stabilization, audit whether `limit` should be a number, whether the cursor format needs versioning, whether project or thread filters belong on this call rather than on `projects.promptHistory` and `threads.promptHistory`, and whether skipped rows should fill the page.
 
-## User directory (`bb.sdk.experimental_users`)
+## User management (`bb.sdk.experimental_users`)
 
-`bb.sdk.experimental_users.list({ signal? })` returns `{ users }`, every account on the server with `id`, `name`, `email`, and `role` (`"admin"` or `"member"`), ordered by name. Any signed-in caller may list it; in `local` auth mode it holds the local owner. It resolves the attribution ids on threads (`createdByUserId`), queued messages (`authorUserId`), and pending interactions (`resolvedByUserId`). The same route backs the app's attribution labels (`useUserAttribution`).
+`list({ signal? })` returns `{ users }` for admins. `directory({ signal? })`
+returns the same attribution fields for authenticated callers and backs the
+app's `useUserAttribution` labels. `updateRole({ userId, role, signal? })`
+returns `{ user }`; `remove({ userId, signal? })` revokes the user's credentials
+and removes the account. Both require admin. System users and the last account
+admin are protected. The CLI uses these paths for `bb user list|role|remove`.
 
-Before stabilization, audit whether email belongs in a directory every member can read, whether disabled or deleted users need a tombstone so old attribution still resolves, and whether the directory should page once teams grow.
+Before stabilization, audit directory email visibility, deleted-user attribution,
+and pagination for larger teams. Core attribution uses `directory`.
+
+## Account authentication (`bb.sdk.experimental_auth`)
+
+`me` returns the current user; `session` returns authentication mode, bootstrap
+status, and the optional current user. `signIn`, `signUp`, and `signOut` use
+server-owned account authentication. `createToken({ name })`, `listTokens`,
+and `revokeToken({ id })` manage the caller's PATs. `createInvite({ email?,
+role? })`, `listInvites`, and `revokeInvite({ id })` require admin;
+`acceptInvite({ inviteToken, email, name, password })` creates an account using
+a single-use invite. Core routes, SDK, and `bb login`, `bb whoami`,
+`bb token`, and `bb invite` share these implementations. Node and browser SDK
+contexts accept `authToken`, sent in the Authorization header; Node's default
+WebSocket factory also uses it. Session cookies remain the browser default.
+
+Before stabilization, audit cookie handling, PAT lifecycle, invite expiry and
+revocation, last-admin protection, and the account settings UI's use of these
+same routes.
 
 ## `ThreadChatMessageReference.experimental_messageSeq`
 

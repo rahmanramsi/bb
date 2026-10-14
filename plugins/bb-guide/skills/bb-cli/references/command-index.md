@@ -70,6 +70,35 @@ This index lists every command path that the core CLI registers, including alias
 - `bb prompt-history`
 - `bb prompt-history list`
 
+## authentication
+
+- `bb login`
+- `bb logout`
+- `bb whoami`
+- `bb token`
+- `bb token create`
+- `bb token list`
+- `bb token revoke`
+- `bb invite`
+- `bb invite create`
+- `bb invite list`
+- `bb invite revoke`
+- `bb invite accept`
+
+`bb login --email EMAIL` creates and saves a CLI PAT for the current server.
+`bb login --token TOKEN` saves an existing PAT. `BB_TOKEN` overrides the saved
+credential. User and invite administration require admin. Invite acceptance
+creates an account without prior sign-in. See [configuration](configuration.md).
+
+## user
+
+- `bb user`
+- `bb user list`
+- `bb user role`
+- `bb user remove`
+
+`bb user list` maps the `createdByUserId`, `authorUserId`, and `resolvedByUserId` values on threads, queued messages, and interactions to names.
+
 ## provider
 
 - `bb provider`

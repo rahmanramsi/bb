@@ -7,6 +7,7 @@ import {
   setThreadExecutionOverride,
 } from "@bb/db";
 import {
+  LOCAL_OWNER_USER_ID,
   defaultExperiments,
   encodeClientTurnRequestIdNumber,
   normalizeProviderNativeRoots,
@@ -1138,6 +1139,64 @@ describe("thread runtime config", () => {
       );
       expect(oneOff.model).toBe("claude-sonnet-4-6");
       expect(oneOff.reasoningLevel).toBe("low");
+    });
+  });
+
+  it("injects a shell credential in multi mode and omits it in local mode", async () => {
+    await withTestHarness(async (harness) => {
+      const hostId = "host-auth";
+      seedHostSession(harness.deps, { id: hostId });
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId,
+        path: "/tmp/auth-project",
+      });
+      const environment = seedEnvironment(harness.deps, {
+        hostId,
+        projectId: project.id,
+        path: "/tmp/auth-project",
+      });
+      const thread = seedThread(harness.deps, {
+        projectId: project.id,
+        environmentId: environment.id,
+      });
+      const input = {
+        thread,
+        model: "test-model",
+        environment: {
+          hostId,
+          id: environment.id,
+          path: environment.path,
+          status: environment.status,
+        },
+      };
+      const local = await resolveThreadRuntimeCommandConfig(
+        harness.deps,
+        input,
+      );
+      expect(
+        local.contributedEnv.some((entry) => entry.name === "BB_TOKEN"),
+      ).toBe(false);
+      harness.deps.config.authMode = "multi";
+      const multi = await resolveThreadRuntimeCommandConfig(
+        harness.deps,
+        input,
+      );
+      const credential = multi.contributedEnv.find(
+        (entry) => entry.name === "BB_TOKEN",
+      );
+      expect(credential).toMatchObject({
+        name: "BB_TOKEN",
+        source: { core: "thread-auth" },
+      });
+      if (credential === undefined || typeof credential.value !== "string")
+        throw new Error("missing shell credential");
+      const principal = await harness.deps.userAuth.resolvePrincipal(
+        new Headers({ authorization: `Bearer ${credential.value}` }),
+      );
+      expect(principal).toMatchObject({
+        userId: thread.createdByUserId ?? LOCAL_OWNER_USER_ID,
+        role: "admin",
+      });
     });
   });
 

@@ -11,6 +11,7 @@ const clientSshHostConfigSchema = z
 
 const clientServerConfigSchema = z
   .object({
+    authToken: z.string().trim().min(1).optional(),
     hosts: z.record(z.string().min(1), clientSshHostConfigSchema).default({}),
   })
   .strict();

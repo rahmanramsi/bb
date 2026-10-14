@@ -13,7 +13,7 @@ const NO_ATTRIBUTION: UserAttribution = { nameFor: () => null };
 export function useUserDirectory() {
   return useQuery({
     queryKey: userDirectoryQueryKey(),
-    queryFn: ({ signal }) => sdk.experimental_users.list({ signal }),
+    queryFn: ({ signal }) => sdk.experimental_users.directory({ signal }),
     ...SERVER_SESSION_QUERY_POLICY,
   });
 }

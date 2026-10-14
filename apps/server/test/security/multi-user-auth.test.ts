@@ -2,6 +2,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
+import { createNodeBbSdk } from "@bb/sdk/node";
+import { issueThreadShellToken } from "../../src/services/user-auth.js";
 import { SERVER_SERVICE_TOKEN_FILE_NAME } from "@bb/config/server";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -60,6 +62,15 @@ const ROUTE_FAMILY_PROBES: Probe[] = [
 ];
 
 const ADMIN_ONLY_PROBES: Probe[] = [
+  { method: "GET", path: "/api/v1/users" },
+  {
+    method: "PUT",
+    path: "/api/v1/users/missing/role",
+    body: { role: "admin" },
+  },
+  { method: "DELETE", path: "/api/v1/users/missing" },
+  { method: "GET", path: "/api/v1/auth/invites" },
+  { method: "DELETE", path: "/api/v1/auth/invites/missing" },
   { method: "POST", path: "/api/v1/auth/invites", body: {} },
   { method: "POST", path: "/api/v1/hosts/join-codes", body: {} },
   {
@@ -333,6 +344,36 @@ describe("multi-user authentication", () => {
     });
   });
 
+  it("keeps a bootstrap admin when the first account accepts a member invite", async () => {
+    server = await startTestServer({ authMode: "multi" });
+    const guest = createNodeBbSdk({ baseUrl: server.baseUrl });
+    await expect(
+      guest.experimental_auth.acceptInvite({
+        inviteToken: "bbinv_invalid",
+        email: "first@example.test",
+        name: "First",
+        password: "a long account password",
+      }),
+    ).rejects.toMatchObject({ status: 403, code: "invite_required" });
+    const admin = createNodeBbSdk({
+      baseUrl: server.baseUrl,
+      context: { authToken: server.deps.userAuth.serviceToken },
+    });
+    const invite = await admin.experimental_auth.createInvite({
+      role: "member",
+    });
+    const result = await guest.experimental_auth.acceptInvite({
+      inviteToken: invite.token,
+      email: "first@example.test",
+      name: "First",
+      password: "a long account password",
+    });
+    expect(result.user.role).toBe("admin");
+    expect((await guest.experimental_auth.session()).needsBootstrap).toBe(
+      false,
+    );
+  });
+
   it("requires an invite after the first user and promotes only the first user to admin", async () => {
     server = await startTestServer({ authMode: "multi" });
     await bootstrapTeam();
@@ -472,7 +513,7 @@ describe("multi-user authentication", () => {
       ).status,
     ).toBe(401);
     const directory = await send(
-      { method: "GET", path: "/api/v1/users" },
+      { method: "GET", path: "/api/v1/users/directory" },
       { cookie: team.adminCookie },
     );
     const { users } = (await directory.json()) as {
@@ -655,5 +696,147 @@ describe("local auth mode", () => {
       password: "long enough password",
     });
     expect(signUpAttempt.status).toBe(409);
+  });
+});
+
+describe("user administration", () => {
+  it("changes roles immediately, protects the last admin, and removes cached user credentials", async () => {
+    server = await startTestServer({ authMode: "multi" });
+    const team = await bootstrapTeam();
+    const admin = createNodeBbSdk({
+      baseUrl: server.baseUrl,
+      context: { authToken: team.adminToken },
+    });
+    const member = createNodeBbSdk({
+      baseUrl: server.baseUrl,
+      context: { authToken: team.memberToken },
+    });
+    const { user } = await member.experimental_auth.me();
+    const { user: owner } = await admin.experimental_auth.me();
+    await expect(member.experimental_users.list()).rejects.toMatchObject({
+      status: 403,
+    });
+    expect((await member.experimental_users.directory()).users).toContainEqual(
+      user,
+    );
+    await expect(
+      admin.experimental_users.updateRole({ userId: owner.id, role: "member" }),
+    ).rejects.toMatchObject({ status: 409, code: "last_admin" });
+    await expect(
+      admin.experimental_users.remove({ userId: owner.id }),
+    ).rejects.toMatchObject({ status: 409, code: "last_admin" });
+    await expect(
+      admin.experimental_users.remove({ userId: "usr_local_owner" }),
+    ).rejects.toMatchObject({ status: 409, code: "protected_user" });
+    await expect(
+      admin.experimental_users.updateRole({ userId: "missing", role: "admin" }),
+    ).rejects.toMatchObject({ status: 404 });
+    const shellToken = await issueThreadShellToken(
+      server.config.dataDir,
+      user.id,
+    );
+    const shell = createNodeBbSdk({
+      baseUrl: server.baseUrl,
+      context: { authToken: shellToken },
+    });
+    expect((await shell.experimental_auth.me()).user.role).toBe("member");
+    await expect(shell.experimental_users.list()).rejects.toMatchObject({
+      status: 403,
+    });
+    await admin.experimental_users.updateRole({
+      userId: user.id,
+      role: "admin",
+    });
+    expect((await member.experimental_users.list()).users).toContainEqual({
+      ...user,
+      role: "admin",
+    });
+    expect((await shell.experimental_auth.me()).user.role).toBe("admin");
+    await admin.experimental_users.updateRole({
+      userId: user.id,
+      role: "member",
+    });
+    await expect(member.experimental_users.list()).rejects.toMatchObject({
+      status: 403,
+    });
+    const tampered = createNodeBbSdk({
+      baseUrl: server.baseUrl,
+      context: { authToken: `${shellToken}x` },
+    });
+    await expect(tampered.experimental_auth.me()).rejects.toMatchObject({
+      status: 401,
+    });
+    await admin.experimental_users.remove({ userId: user.id });
+    await expect(member.experimental_auth.me()).rejects.toMatchObject({
+      status: 401,
+    });
+    await expect(shell.experimental_auth.me()).rejects.toMatchObject({
+      status: 401,
+    });
+    expect(
+      (await admin.experimental_users.list()).users.some(
+        (entry) => entry.id === user.id,
+      ),
+    ).toBe(false);
+  });
+
+  it("lists pending invites without their secrets and rejects revoked, mismatched, or reused invites", async () => {
+    server = await startTestServer({ authMode: "multi" });
+    const team = await bootstrapTeam();
+    const admin = createNodeBbSdk({
+      baseUrl: server.baseUrl,
+      context: { authToken: team.adminToken },
+    });
+    const guest = createNodeBbSdk({ baseUrl: server.baseUrl });
+    const invited = await admin.experimental_auth.createInvite({
+      email: "next@example.test",
+      role: "admin",
+    });
+    const list = await admin.experimental_auth.listInvites();
+    expect(list.invites).toContainEqual(
+      expect.objectContaining({
+        id: invited.id,
+        email: "next@example.test",
+        role: "admin",
+      }),
+    );
+    expect(JSON.stringify(list)).not.toContain(invited.token);
+    const account = {
+      name: "Next",
+      email: "wrong@example.test",
+      password: "a valid long password",
+      inviteToken: invited.token,
+    };
+    await expect(
+      guest.experimental_auth.acceptInvite(account),
+    ).rejects.toMatchObject({ status: 403, code: "invite_email_mismatch" });
+    expect(
+      (
+        await guest.experimental_auth.acceptInvite({
+          ...account,
+          email: "next@example.test",
+        })
+      ).user.role,
+    ).toBe("admin");
+    await expect(
+      guest.experimental_auth.acceptInvite({
+        ...account,
+        email: "next@example.test",
+      }),
+    ).rejects.toMatchObject({ status: 403, code: "invite_required" });
+    expect((await admin.experimental_auth.listInvites()).invites).toHaveLength(
+      0,
+    );
+    const revoked = await admin.experimental_auth.createInvite({});
+    await admin.experimental_auth.revokeInvite({ id: revoked.id });
+    await expect(
+      guest.experimental_auth.acceptInvite({
+        ...account,
+        inviteToken: revoked.token,
+      }),
+    ).rejects.toMatchObject({ status: 403, code: "invite_required" });
+    await expect(
+      admin.experimental_auth.revokeInvite({ id: revoked.id }),
+    ).rejects.toMatchObject({ status: 404 });
   });
 });

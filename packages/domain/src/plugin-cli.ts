@@ -19,6 +19,12 @@ export const RESERVED_BB_CLI_COMMANDS: readonly string[] = [
   "theme",
   "thread",
   "updates",
+  "user",
+  "login",
+  "logout",
+  "whoami",
+  "invite",
+  "token",
   "voice",
 ];
 

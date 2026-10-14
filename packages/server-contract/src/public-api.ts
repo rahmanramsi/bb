@@ -425,6 +425,13 @@ import {
   type ServerMoveStatusResponse,
 } from "./api/server-move.js";
 import {
+  acceptUserInviteRequestSchema,
+  updateUserRoleRequestSchema,
+  type AcceptUserInviteRequest,
+  type UpdateUserRoleRequest,
+  type PathUserId,
+  type PathUserInviteId,
+  type UserInviteListResponse,
   authSignInRequestSchema,
   authSignUpRequestSchema,
   createPersonalAccessTokenRequestSchema,
@@ -450,6 +457,12 @@ type PathThreadInteractionId = {
 };
 
 export const publicApiRoutes = {
+  me: defineRoute({
+    path: "/me",
+    method: "get",
+    request: noRequest(),
+    response: jsonResponse<AuthUserResponse>(),
+  }),
   auth: {
     session: defineRoute({
       path: "/auth/session",
@@ -501,6 +514,26 @@ export const publicApiRoutes = {
       request: noRequest<PathPersonalAccessTokenId>(),
       response: jsonResponse<{ ok: true }>(),
     }),
+    listInvites: defineRoute({
+      path: "/auth/invites",
+      method: "get",
+      request: noRequest(),
+      response: jsonResponse<UserInviteListResponse>(),
+    }),
+    revokeInvite: defineRoute({
+      path: "/auth/invites/:id",
+      method: "delete",
+      request: noRequest<PathUserInviteId>(),
+      response: jsonResponse<{ ok: true }>(),
+    }),
+    acceptInvite: defineRoute({
+      path: "/auth/invites/accept",
+      method: "post",
+      request: jsonRequest<EmptyInput, AcceptUserInviteRequest>(
+        acceptUserInviteRequestSchema,
+      ),
+      response: jsonResponse<AuthUserResponse>({ status: 201 }),
+    }),
     createInvite: defineRoute({
       path: "/auth/invites",
       method: "post",
@@ -511,6 +544,26 @@ export const publicApiRoutes = {
     }),
   },
   users: {
+    directory: defineRoute({
+      path: "/users/directory",
+      method: "get",
+      request: noRequest(),
+      response: jsonResponse<UserListResponse>(),
+    }),
+    updateRole: defineRoute({
+      path: "/users/:id/role",
+      method: "put",
+      request: jsonRequest<PathUserId, UpdateUserRoleRequest>(
+        updateUserRoleRequestSchema,
+      ),
+      response: jsonResponse<AuthUserResponse>(),
+    }),
+    remove: defineRoute({
+      path: "/users/:id",
+      method: "delete",
+      request: noRequest<PathUserId>(),
+      response: jsonResponse<{ ok: true }>(),
+    }),
     list: defineRoute({
       path: "/users",
       method: "get",

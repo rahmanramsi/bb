@@ -68,7 +68,37 @@ invite. Admin-only actions return `403` to members.
 Read and unread state, pins and pin order, UI preferences, appearance, and
 prompt history are kept per user; projects and threads are shared. Threads,
 queued messages, and resolved interactions record who created, wrote, or
-answered them (`createdByUserId`, `authorUserId`, `resolvedByUserId`).
+answered them (`createdByUserId`, `authorUserId`, `resolvedByUserId`);
+`bb user list` maps those ids to names for admins.
+
+Sign in to a multi-user server with `bb login --email EMAIL`. The CLI prompts
+for the password and creates a PAT. Use `--password-file PATH` for unattended
+sign-in, or `bb login --token TOKEN` to save an existing PAT. Without either
+option, `bb login` reads a PAT from a hidden prompt or standard input. Login
+validates the credential before saving it to the server origin's profile in
+`<BB_DATA_DIR>/client.json`, with file permissions `0600`. `BB_SERVER_URL`
+selects the server; `BB_TOKEN` overrides its saved token for CLI requests,
+including plugin commands. `bb whoami [--json]` shows the current user.
+`bb logout [--json]` removes only that profile's saved login. It does not
+revoke the PAT or unset `BB_TOKEN`.
+
+Admins use `bb user list`, `bb user role USER_ID admin|member`, and
+`bb user remove USER_ID`. System users and the last account admin cannot be
+removed or demoted. `bb invite create [--email EMAIL] [--role admin|member]`
+prints a seven-day, single-use token. `bb invite list` lists pending unexpired
+invites without tokens; `bb invite revoke ID` invalidates one. New users run
+`bb invite accept TOKEN --email EMAIL --name NAME` and enter their password,
+or supply `--password-file PATH`, then sign in with `bb login`.
+`bb token create NAME`, `bb token list`, and `bb token revoke ID` manage only
+the current user's PATs. New token values are shown once. All these commands
+accept `--json`.
+
+Roles are guardrails for a trusted team. A member who runs an agent effectively
+has shell access to its host. In multi mode, each turn supplies a signed
+seven-day `BB_TOKEN` to the agent shell through the launch environment. It
+uses the thread creator's current role, stops authenticating if that user is
+removed, and is masked in runtime environment displays. Threads without a
+creator use the local owner. In local mode, shells need no credential.
 
 Settings → General → Command line installs the bb CLI for use outside bb: it
 puts the `bb` command on PATH on the computer that runs the bb server, so the
