@@ -1568,7 +1568,10 @@ describe("automations server plugin harness", () => {
           },
           MEMBER,
         ),
-      ).rejects.toThrow("Script automations require an admin");
+      ).rejects.toMatchObject({
+        code: "forbidden",
+        message: expect.stringContaining("Script automations require an admin"),
+      });
       await expect(
         harness.callRpc(
           "automations_update",
@@ -1579,7 +1582,10 @@ describe("automations server plugin harness", () => {
           },
           MEMBER,
         ),
-      ).rejects.toThrow("Script automations require an admin");
+      ).rejects.toMatchObject({
+        code: "forbidden",
+        message: expect.stringContaining("Script automations require an admin"),
+      });
       await expect(
         harness.callRpc(
           "automations_update",
@@ -1590,21 +1596,30 @@ describe("automations server plugin harness", () => {
           },
           MEMBER,
         ),
-      ).rejects.toThrow("Script automations require an admin");
+      ).rejects.toMatchObject({
+        code: "forbidden",
+        message: expect.stringContaining("Script automations require an admin"),
+      });
       await expect(
         harness.callRpc(
           "automations_update",
           { projectId: PROJECT_ID, automationId: script.id, name: "Renamed" },
           MEMBER,
         ),
-      ).rejects.toThrow("Script automations require an admin");
+      ).rejects.toMatchObject({
+        code: "forbidden",
+        message: expect.stringContaining("Script automations require an admin"),
+      });
       await expect(
         harness.callRpc(
           "automations_run",
           { projectId: PROJECT_ID, automationId: script.id },
           MEMBER,
         ),
-      ).rejects.toThrow("Script automations require an admin");
+      ).rejects.toMatchObject({
+        code: "forbidden",
+        message: expect.stringContaining("Script automations require an admin"),
+      });
       for (const method of [
         "automations_create_script",
         "automations_update_script",
@@ -1763,6 +1778,15 @@ describe("automations server plugin harness", () => {
         expect(result.exitCode).toBe(1);
         expect(result.stderr).toContain("requires a server admin");
       }
+      const refusedJson = await harness.runCli(
+        ["run", script.id, "--project", PROJECT_ID, "--json"],
+        MEMBER,
+      );
+      expect(refusedJson.exitCode).toBe(1);
+      expect(JSON.parse(refusedJson.stdout ?? "")).toMatchObject({
+        ok: false,
+        error: { code: "admin_required" },
+      });
 
       const listed = automationListResponseSchema.parse(
         await harness.callRpc("automations_list", { projectId: PROJECT_ID }),
@@ -1854,14 +1878,20 @@ describe("automations server plugin harness", () => {
           { projectId: PROJECT_ID, automationId: pausedScript.id },
           MEMBER,
         ),
-      ).rejects.toThrow("Script automations require an admin");
+      ).rejects.toMatchObject({
+        code: "forbidden",
+        message: expect.stringContaining("Script automations require an admin"),
+      });
       await expect(
         harness.callRpc(
           "automations_pause",
           { projectId: PROJECT_ID, automationId: activeScript.id },
           MEMBER,
         ),
-      ).rejects.toThrow("Script automations require an admin");
+      ).rejects.toMatchObject({
+        code: "forbidden",
+        message: expect.stringContaining("Script automations require an admin"),
+      });
       for (const [method, automationId] of [
         ["automations_resume_script", pausedScript.id],
         ["automations_pause_script", activeScript.id],

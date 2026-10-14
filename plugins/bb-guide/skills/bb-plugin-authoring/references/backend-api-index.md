@@ -13,6 +13,7 @@ Read the installed declarations for exact current signatures.
 - `cliCommand`
 - `PluginCliError`
 - `experimental_assertCliAdmin`
+- `experimental_PluginRpcForbiddenError`
 - `BbContext`
 - `BbNavigate`
 - `BbPluginApi`

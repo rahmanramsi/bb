@@ -14,7 +14,10 @@ import {
   updateAutomationInputSchema,
 } from "./rpc-types.js";
 import { z } from "zod";
-import { defineRpcContract } from "@get-bb/plugin-sdk";
+import {
+  defineRpcContract,
+  experimental_PluginRpcForbiddenError,
+} from "@get-bb/plugin-sdk";
 import type { AutomationService } from "./service.js";
 
 export const automationRpcContract = defineRpcContract({
@@ -86,7 +89,7 @@ export const automationRpcContract = defineRpcContract({
 });
 
 function scriptAdminRequired(method: string): Error {
-  return new Error(
+  return new experimental_PluginRpcForbiddenError(
     `Script automations require an admin; admins use ${method}_script.`,
   );
 }

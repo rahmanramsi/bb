@@ -3607,6 +3607,20 @@ function normalizeRpcIssues(
   });
 }
 
+export function rpcHandlerError(
+  error: unknown,
+  handlerErrorMessage: string,
+): PluginRpcError {
+  if (
+    error instanceof Error &&
+    error.name === "PluginRpcForbiddenError" &&
+    Reflect.get(error, "code") === "forbidden"
+  ) {
+    return { code: "forbidden", message: error.message };
+  }
+  return { code: "handler_error", message: handlerErrorMessage };
+}
+
 export async function validateRpcValue(
   schema: StandardSchemaV1,
   value: unknown,

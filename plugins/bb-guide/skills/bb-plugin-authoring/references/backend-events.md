@@ -419,10 +419,11 @@ the calling plugin; see "Calling another plugin's RPC" in `backend-sdk.md`.
 
 The wire envelope is `{ ok: true, result }` or `{ ok: false, error }`.
 Failures use stable codes: `invalid_json`, `invalid_input`, `handler_error`,
-`invalid_output`, `non_json_result`, and `unknown_method`; validation failures
-also carry normalized `{ message, path? }[]` issues. Unknown methods return
-404, invalid JSON/input returns 400, and handler/output/serialization failures
-return 500. Results must be strict JSON values: cyclic objects, bigint,
+`invalid_output`, `non_json_result`, `unknown_method`, and `forbidden`;
+validation failures also carry normalized `{ message, path? }[]` issues.
+Unknown methods return 404, invalid JSON/input returns 400, admin-only methods
+called by a member and handlers that throw `experimental_PluginRpcForbiddenError`
+return 403, and other handler/output/serialization failures return 500. Results must be strict JSON values: cyclic objects, bigint,
 undefined/functions, class instances, symbol keys, and non-finite numbers are
 rejected rather than coerced or silently dropped.
 

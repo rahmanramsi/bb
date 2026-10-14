@@ -40,6 +40,7 @@ import {
   providerIconRefusalMessage,
   providerWithoutBridgeMessage,
   registerSettingDescriptors,
+  rpcHandlerError,
   runPluginStorageMigrations,
   undeclaredIconProblem,
   validateBackgroundServiceRegistration,
@@ -1820,10 +1821,7 @@ function createFakePluginHostInternal(
           },
         });
       } catch (error) {
-        return throwRpcError({
-          code: "handler_error",
-          message: errorMessage(error),
-        });
+        return throwRpcError(rpcHandlerError(error, errorMessage(error)));
       }
       const validatedOutput = await validateRpcValue(
         record.outputSchema,

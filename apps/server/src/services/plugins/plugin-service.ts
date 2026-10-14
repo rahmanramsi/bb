@@ -35,6 +35,7 @@ import {
   normalizePluginAgentConfiguration,
   normalizeRpcJsonResult,
   RESERVED_AGENT_TOOL_NAMES,
+  rpcHandlerError,
   adoptHttpRouteResponse,
   validatePluginProviderEnvEntries,
   validateRpcValue,
@@ -2166,7 +2167,7 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
       }
       return {
         ok: false,
-        error: { code: "handler_error", message: outcome.error },
+        error: rpcHandlerError(outcome.cause, outcome.error),
       };
     },
 

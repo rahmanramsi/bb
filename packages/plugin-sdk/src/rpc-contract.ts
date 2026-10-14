@@ -25,6 +25,21 @@ export interface PluginRpcError {
 }
 
 /**
+ * Thrown by an rpc handler to refuse its caller, for methods that need an
+ * admin only for some inputs. The host answers HTTP 403 with error code
+ * `forbidden` and this message, the same reply as a contract's
+ * `experimental_requiredRole`. Every other thrown error stays `handler_error`.
+ */
+export class experimental_PluginRpcForbiddenError extends Error {
+  readonly code = "forbidden";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "PluginRpcForbiddenError";
+  }
+}
+
+/**
  * The validator-neutral subset of Standard Schema v1 used by plugin contracts.
  * Zod 4 schemas implement this interface directly; other validators can do
  * the same without becoming part of BB's public protocol.
