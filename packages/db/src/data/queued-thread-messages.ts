@@ -93,6 +93,7 @@ export interface CreateQueuedThreadMessageInput {
 export interface UpdateQueuedThreadMessageInput {
   content: PromptInput[];
   editorRoleCeiling: RoleCeiling | null;
+  editorUserId: string | null;
   expectedUpdatedAt: number;
   id: string;
   threadId: string;
@@ -734,9 +735,14 @@ export function updateQueuedThreadMessage(
         .update(queuedThreadMessages)
         .set({
           content: JSON.stringify(input.content),
-          ...(input.editorRoleCeiling === null
-            ? {}
-            : { authorRoleCeiling: input.editorRoleCeiling }),
+          ...(existing.authorUserId !== input.editorUserId
+            ? {
+                authorRoleCeiling: input.editorRoleCeiling,
+                authorUserId: input.editorUserId,
+              }
+            : input.editorRoleCeiling === null
+              ? {}
+              : { authorRoleCeiling: input.editorRoleCeiling }),
           editHeldUntil: null,
           updatedAt: Math.max(Date.now(), existing.updatedAt + 1),
         })

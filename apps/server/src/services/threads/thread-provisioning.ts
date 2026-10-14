@@ -307,6 +307,10 @@ export function requestThreadProvision(
     });
     const target: TurnRequestTarget = { kind: "thread-start" };
     const request = appendClientTurnEvent(deps, {
+      author: {
+        authorRoleCeiling: args.authorRoleCeiling,
+        authorUserId: args.authorUserId,
+      },
       threadId: args.thread.id,
       environmentId: args.thread.environmentId,
       type: "client/turn/requested",
@@ -446,6 +450,10 @@ function appendReprovisionTurnRequest(
         appendPreparedClientTurnRequestedEventWithNotificationInTransaction(
           tx,
           {
+            author: {
+              authorRoleCeiling: args.authorRoleCeiling,
+              authorUserId: args.authorUserId,
+            },
             threadId: args.thread.id,
             environmentId: args.environment.id,
             type: "client/turn/requested",

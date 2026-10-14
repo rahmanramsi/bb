@@ -288,7 +288,10 @@ Messaging:
     --image <path>                         CLI-local absolute path, file: URL, or uploaded image path
 
   Tell steers by default, delivering the message immediately into the active
-  turn. Use --mode queue for non-urgent follow-ups that can wait until the agent
+  turn. In multi-user mode a message steers only into a turn that runs with the
+  same credential; a message from another user, a plugin, or a member-capped
+  BB_TOKEN interrupts that turn and starts a new one instead, so tell reports it
+  as queued until the new turn starts. Use --mode queue for non-urgent follow-ups that can wait until the agent
   is free; --mode auto steers a live turn and starts a new one on an idle
   thread. Input sent while a turn is starting stays in the queue with
   `waitingOn: turn-starting`; `turn/started` wakes it and steers it into that

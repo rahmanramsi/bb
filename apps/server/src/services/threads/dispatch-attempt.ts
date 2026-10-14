@@ -89,6 +89,8 @@ import {
 import { resolveDispatchAuthor } from "./dispatch-author.js";
 import type { TurnRequestRetryMarker } from "./thread-events.js";
 import { restoreInterruptedThreadStartupRequest } from "./thread-provisioning.js";
+import { requestThreadInterruptForOtherAuthor } from "./thread-lifecycle.js";
+import { sharesRunningTurnAuthority } from "./turn-authority.js";
 import { markTurnTraceSpan } from "../system/turn-trace.js";
 
 export const pendingThreadStartContextSchema = z.object({
@@ -482,6 +484,28 @@ async function runDispatchAttempt(
 
     if (payload.mode !== "start" && isManualCompactionActive(deps, thread)) {
       continued.outcome = waitOn({ kind: "thread-busy" }, null);
+      return;
+    }
+    if (
+      attempt === "join-turn" &&
+      !sharesRunningTurnAuthority(deps, {
+        author: {
+          authorRoleCeiling: args.authorRoleCeiling,
+          authorUserId: args.authorUserId,
+        },
+        thread,
+      })
+    ) {
+      if (
+        deps.pendingInteractions.hasTurnBoundPendingThreadInteraction(thread.id)
+      ) {
+        continued.outcome = waitOn({ kind: "interaction" }, null);
+        return;
+      }
+      continued.outcome = waitOn({ kind: "thread-busy" }, null);
+      if (dispatchEnvironment !== null) {
+        requestThreadInterruptForOtherAuthor(deps, thread, dispatchEnvironment);
+      }
       return;
     }
     if (

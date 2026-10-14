@@ -86,6 +86,11 @@ hostId, providerId, projectId, parentThreadId, groupBy })`.
   agent can finish its current work first. Steer is especially important for a
   wrong direction, hard stop, or critical clarification.
   Example: `bb thread tell <thread-id> "Stop and use approach B" --mode steer`.
+- In multi-user mode a steer joins the active turn only when it would run with
+  the same credential as that turn. A message from another user, a plugin, or
+  a member-capped `BB_TOKEN` interrupts the active turn and starts as a new
+  turn with its own credential; `--json` reports `delivery: "queued"` until it
+  starts. Do not resend it.
 - Input sent while a turn is starting stays queued with
   `waitingOn.kind: "turn-starting"`. The `turn/started` event wakes it and
   steers it into that turn. Do not resend it.

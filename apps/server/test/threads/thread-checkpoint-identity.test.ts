@@ -124,6 +124,7 @@ describe("checkpoint identity through runtime, ingestion, and editing", () => {
           for (const text of ["first", "second"]) {
             const input: PromptInput[] = [{ type: "text", text, mentions: [] }];
             const request = appendClientTurnEvent(harness.deps, {
+              author: { authorRoleCeiling: null, authorUserId: null },
               type: "client/turn/requested",
               threadId: source.id,
               environmentId: environment.id,

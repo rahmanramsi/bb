@@ -127,6 +127,7 @@ function parentSystemTurnRequestFields(
   args: QueueReadyParentSystemMessageArgs,
 ) {
   return {
+    author: { authorRoleCeiling: null, authorUserId: null },
     threadId: args.thread.id,
     environmentId: args.environment.id,
     type: "client/turn/requested",

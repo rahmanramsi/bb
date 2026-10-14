@@ -138,6 +138,7 @@ describe("queued thread messages", () => {
 
     const result = updateQueuedThreadMessage(db, noopNotifier, {
       editorRoleCeiling: null,
+      editorUserId: null,
       content: textInput("edited in place"),
       expectedUpdatedAt: before?.updatedAt ?? -1,
       id: first.id,
@@ -179,6 +180,7 @@ describe("queued thread messages", () => {
     expect(
       updateQueuedThreadMessage(db, noopNotifier, {
         editorRoleCeiling: null,
+        editorUserId: null,
         content: textInput("first edit"),
         expectedUpdatedAt: queuedMessage.updatedAt,
         id: queuedMessage.id,
@@ -188,6 +190,7 @@ describe("queued thread messages", () => {
     expect(
       updateQueuedThreadMessage(db, noopNotifier, {
         editorRoleCeiling: null,
+        editorUserId: null,
         content: textInput("stale edit"),
         expectedUpdatedAt: queuedMessage.updatedAt,
         id: queuedMessage.id,
@@ -219,6 +222,7 @@ describe("queued thread messages", () => {
 
       const result = updateQueuedThreadMessage(db, noopNotifier, {
         editorRoleCeiling: null,
+        editorUserId: null,
         content: altInput,
         expectedUpdatedAt: queuedMessage.updatedAt,
         id: queuedMessage.id,
@@ -255,6 +259,7 @@ describe("queued thread messages", () => {
     expect(
       updateQueuedThreadMessage(db, noopNotifier, {
         editorRoleCeiling: null,
+        editorUserId: null,
         content: altInput,
         expectedUpdatedAt: queuedMessage.updatedAt,
         id: queuedMessage.id,
@@ -2023,6 +2028,7 @@ describe("queued thread messages", () => {
 
       const saved = updateQueuedThreadMessage(db, noopNotifier, {
         editorRoleCeiling: null,
+        editorUserId: null,
         content: textInput("SAVED EDIT"),
         expectedUpdatedAt: edited.updatedAt,
         id: edited.id,

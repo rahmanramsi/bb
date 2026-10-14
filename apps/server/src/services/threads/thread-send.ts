@@ -407,6 +407,7 @@ export function captureUserMessageSentTelemetry(
 
 function appendAndQueueSendThreadMessageInTransaction({
   hub,
+  authorRoleCeiling,
   authorUserId,
   retryOf,
   beforeAppendInTransaction,
@@ -432,6 +433,7 @@ function appendAndQueueSendThreadMessageInTransaction({
         appendPreparedClientTurnRequestedEventWithNotificationInTransaction(
           tx,
           {
+            author: { authorRoleCeiling, authorUserId },
             threadId: thread.id,
             environmentId,
             type: "client/turn/requested",

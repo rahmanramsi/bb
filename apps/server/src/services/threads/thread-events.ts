@@ -47,6 +47,10 @@ import type {
 import { ApiError, TurnStartGuardError } from "../../errors.js";
 import type { AppDeps } from "../../types.js";
 import { parseStoredEventPayload } from "./thread-data.js";
+import {
+  recordTurnRequestAuthor,
+  type TurnAuthor,
+} from "./turn-request-authors.js";
 import type { DbNotifier, DbQueryConnection, DbTransaction } from "@bb/db";
 import type { AppendStoredThreadEventArgs as AppendThreadEventArgs } from "@bb/db";
 
@@ -77,6 +81,7 @@ interface ClientTurnRequestedEventArgs {
    * asked for.
    */
   retryOf?: TurnRequestRetryMarker;
+  author: TurnAuthor;
   environmentId: string | null;
   execution: ResolvedThreadExecutionOptions;
   initiator: ThreadTurnInitiator;
@@ -247,6 +252,11 @@ export function createClientTurnRequestId(): ClientTurnRequestId {
 function buildClientTurnRequestedEventArgs(
   args: PreparedClientTurnRequestedEventArgs,
 ): AppendThreadEventArgs<"client/turn/requested"> {
+  recordTurnRequestAuthor({
+    author: args.author,
+    requestId: args.requestId,
+    threadId: args.threadId,
+  });
   return {
     threadId: args.threadId,
     environmentId: args.environmentId,
