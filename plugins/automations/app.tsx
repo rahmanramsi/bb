@@ -16,6 +16,7 @@ import type {
   AutomationResponse,
   AgentExecutionUpdate,
   AutomationRunListResponse,
+  AutomationRunMode,
   AutomationRunResponse,
   AutomationsOverviewResponse,
 } from "./src/rpc-types";
@@ -319,7 +320,6 @@ function useMutations() {
   type MutationMethod =
     | "automations_pause"
     | "automations_resume"
-    | "automations_run"
     | "automations_delete";
   const call = useCallback(
     (method: MutationMethod, route: DetailRoute) => rpc.call(method, route),
@@ -328,7 +328,11 @@ function useMutations() {
   return {
     pause: (route: DetailRoute) => call("automations_pause", route),
     resume: (route: DetailRoute) => call("automations_resume", route),
-    run: (route: DetailRoute) => call("automations_run", route),
+    run: (route: DetailRoute, mode: AutomationRunMode) =>
+      rpc.call(
+        mode === "script" ? "automations_run_script" : "automations_run",
+        route,
+      ),
     delete: (route: DetailRoute) => call("automations_delete", route),
     update: (route: DetailRoute, agent: AgentExecutionUpdate) =>
       rpc.call("automations_update", { ...route, agent }),
@@ -415,9 +419,9 @@ function OverviewView({
   );
 
   const runNow = useCallback(
-    async (route: DetailRoute) => {
+    async (route: DetailRoute, mode: AutomationRunMode) => {
       try {
-        await mutations.run(route);
+        await mutations.run(route, mode);
         toast.success("Run started");
       } catch (rpcError: unknown) {
         toast.error(`Failed to run automation: ${errorText(rpcError)}`);
@@ -528,9 +532,9 @@ function DetailView({
   );
 
   const runAction = useCallback(
-    (method: "pause" | "resume" | "run") => {
+    (method: "pause" | "resume" | "run", request: () => Promise<unknown>) => {
       setActionPending(true);
-      mutations[method](route)
+      request()
         .then(
           () => {
             if (method === "run") toast.success("Run started");
@@ -542,7 +546,7 @@ function DetailView({
         )
         .finally(() => setActionPending(false));
     },
-    [mutations, route],
+    [],
   );
 
   const openEdit = useCallback(() => {
@@ -672,11 +676,18 @@ function DetailView({
       runsState={runsState}
       actionPending={actionPending}
       editing={requiresPrompt || editingRequested}
-      onToggle={(checked) => runAction(checked ? "resume" : "pause")}
+      onToggle={(checked) => {
+        const method = checked ? "resume" : "pause";
+        runAction(method, () => mutations[method](route));
+      }}
       onEdit={openEdit}
       onCancelEdit={requiresPrompt ? onBack : () => setEditingRequested(false)}
       onUpdateAgent={updateAgent}
-      onRunNow={() => runAction("run")}
+      onRunNow={() =>
+        runAction("run", () =>
+          mutations.run(route, readableAutomation.execution.mode),
+        )
+      }
       onDelete={() => setDeleteOpen(true)}
       onOpenThread={openThread}
       footer={deleteDialog}

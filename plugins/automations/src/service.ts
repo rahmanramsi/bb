@@ -39,6 +39,7 @@ import {
   type AutomationReadProblem,
   type AutomationReadResult,
   type AutomationRunListResponse,
+  type AutomationRunMode,
   type AutomationRunRpcResponse,
   type AutomationResponse,
   type AutomationScriptWorkingDirectory,
@@ -83,6 +84,10 @@ export interface AutomationService {
     projectId: string;
     automationId: string;
   }): Promise<AutomationDetailReadResult>;
+  runMode(input: {
+    projectId: string;
+    automationId: string;
+  }): AutomationRunMode;
   create(
     input: ResolvedCreateAutomationInput,
   ): Promise<AutomationDetailResponse>;
@@ -594,6 +599,10 @@ export function createAutomationService(args: {
         pluginDataDir,
         row: requireProjectAutomation(db, input),
       });
+    },
+
+    runMode(input) {
+      return requireProjectAutomation(db, input).runMode;
     },
 
     async create(payload) {

@@ -8,6 +8,7 @@ import {
 import type {
   AutomationReadProblem,
   AutomationResponse,
+  AutomationRunMode,
   AutomationsOverviewResponse,
 } from "./src/rpc-types.js";
 import { CREATE_AUTOMATION_PROMPT } from "./composer";
@@ -262,7 +263,10 @@ export function OverviewRow({
     enabled: boolean,
     route: AutomationDetailRoute,
   ) => Promise<void>;
-  onRunNow: (route: AutomationDetailRoute) => Promise<void>;
+  onRunNow: (
+    route: AutomationDetailRoute,
+    mode: AutomationRunMode,
+  ) => Promise<void>;
   onDelete: (route: AutomationDetailRoute, name: string) => void;
 }) {
   const [togglePending, setTogglePending] = useState(false);
@@ -291,7 +295,9 @@ export function OverviewRow({
           pending={runPending}
           onRunNow={() => {
             setRunPending(true);
-            void onRunNow(route).finally(() => setRunPending(false));
+            void onRunNow(route, automation.execution.mode).finally(() =>
+              setRunPending(false),
+            );
           }}
           onDelete={() => onDelete(route, automation.name)}
         />
@@ -463,7 +469,10 @@ export function AutomationOverviewView({
     enabled: boolean,
     route: AutomationDetailRoute,
   ) => Promise<void>;
-  onRunNow: (route: AutomationDetailRoute) => Promise<void>;
+  onRunNow: (
+    route: AutomationDetailRoute,
+    mode: AutomationRunMode,
+  ) => Promise<void>;
   onDelete: (route: AutomationDetailRoute, name: string) => void;
   onCreateViaChat: (prompt?: string) => void;
   activeMode: AutomationCollectionMode;

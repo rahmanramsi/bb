@@ -3,6 +3,7 @@ import {
   PluginCliError,
   cliCommand,
   defineCli,
+  experimental_assertCliAdmin,
   type BbPluginApi,
   type PluginCliContext,
   type PluginCliResult,
@@ -62,7 +63,10 @@ project source on that host when one exists; Personal and projects without a
 server-host source run in the plugin's shared script storage directory.
 Existing scripts without a saved policy also run there. Select
 automation-storage, project, or an absolute server-host path with
---working-directory. An unavailable selected directory fails the run.`;
+--working-directory. An unavailable selected directory fails the run.
+
+On a multi-user server only admins can create, update, or run script
+automations. Members can manage agent automations.`;
 
 const JSON_OPTION = {
   type: "boolean",
@@ -252,6 +256,12 @@ type UpdateOptionValues = ExecutionOptionValues &
     project: string | undefined;
     name: string | undefined;
   };
+
+function usesScriptOptions(options: ScriptOptionValues): boolean {
+  return (Object.keys(SCRIPT_OPTIONS) as Array<keyof ScriptOptionValues>).some(
+    (name) => options[name] !== undefined,
+  );
+}
 
 function cliError(message: string, code: string): PluginCliError {
   return new PluginCliError(message, { code });
@@ -1114,6 +1124,12 @@ export function registerAutomationCli(args: {
           run: (input, ctx) =>
             attempt(async () => {
               const projectId = requireProjectId(input.options.project, ctx);
+              if (usesScriptOptions(input.options)) {
+                experimental_assertCliAdmin(
+                  ctx,
+                  "Creating a script automation",
+                );
+              }
               const { execution, scriptSource } = await buildExecution(
                 bb,
                 input.options,
@@ -1181,6 +1197,18 @@ export function registerAutomationCli(args: {
           ],
           run: (input, ctx) =>
             attempt(async () => {
+              if (
+                usesScriptOptions(input.options) ||
+                service.runMode({
+                  projectId: requireProjectId(input.options.project, ctx),
+                  automationId: input.positionals.automationId,
+                }) === "script"
+              ) {
+                experimental_assertCliAdmin(
+                  ctx,
+                  "Updating a script automation",
+                );
+              }
               const { request, scriptSource } = await buildUpdateRequest(
                 bb,
                 input.options,
@@ -1248,9 +1276,15 @@ export function registerAutomationCli(args: {
           run: (input, ctx) =>
             attempt(async () => {
               const idempotencyKey = input.options["idempotency-key"];
-              const result = await service.run({
+              const target = {
                 projectId: requireProjectId(input.options.project, ctx),
                 automationId: input.positionals.automationId,
+              };
+              if (service.runMode(target) === "script") {
+                experimental_assertCliAdmin(ctx, "Running a script automation");
+              }
+              const result = await service.run({
+                ...target,
                 ...(idempotencyKey ? { idempotencyKey } : {}),
               });
               const threadLine = result.run.threadId

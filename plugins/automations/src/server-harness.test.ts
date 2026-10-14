@@ -34,11 +34,14 @@ const rpcMethods = [
   "automations_list",
   "automations_get",
   "automations_create",
+  "automations_create_script",
   "automations_update",
+  "automations_update_script",
   "automations_delete",
   "automations_pause",
   "automations_resume",
   "automations_run",
+  "automations_run_script",
   "automations_runs",
 ].sort();
 
@@ -1516,5 +1519,308 @@ describe("automations server plugin harness", () => {
     await expect(bb.storage.kv.get("after-dispose")).rejects.toThrow(
       PluginContextStaleError,
     );
+  });
+  describe("script automations require an admin", () => {
+    const MEMBER = { experimental_callerRole: "member" } as const;
+
+    function scriptExecution() {
+      return { mode: "script", script: "env", interpreter: "bash" };
+    }
+
+    async function createScriptAutomationAsAdmin(
+      harness: FakePluginHost["harness"],
+    ) {
+      const result = await harness.runCli([
+        "create",
+        "--project",
+        PROJECT_ID,
+        "--name",
+        "Admin script",
+        "--in",
+        "1h",
+        "--script",
+        "echo ok",
+        "--json",
+      ]);
+      expect(result.exitCode).toBe(0);
+      return automationDetailResponseSchema.parse(
+        JSON.parse(result.stdout ?? ""),
+      );
+    }
+
+    it("refuses member RPC create, update, and run of script automations", async () => {
+      const { harness } = await bootAutomationsPlugin();
+      const agent = await createAgentAutomation(harness);
+      const script = await createScriptAutomationAsAdmin(harness);
+
+      await expect(
+        harness.callRpc(
+          "automations_create",
+          {
+            projectId: PROJECT_ID,
+            name: "Member script",
+            enabled: true,
+            trigger: oneShotTrigger(),
+            execution: scriptExecution(),
+            origin: "human",
+          },
+          MEMBER,
+        ),
+      ).rejects.toThrow("Script automations require an admin");
+      await expect(
+        harness.callRpc(
+          "automations_update",
+          {
+            projectId: PROJECT_ID,
+            automationId: agent.id,
+            execution: scriptExecution(),
+          },
+          MEMBER,
+        ),
+      ).rejects.toThrow("Script automations require an admin");
+      await expect(
+        harness.callRpc(
+          "automations_update",
+          {
+            projectId: PROJECT_ID,
+            automationId: script.id,
+            script: { workingDirectory: { type: "automation-storage" } },
+          },
+          MEMBER,
+        ),
+      ).rejects.toThrow("Script automations require an admin");
+      await expect(
+        harness.callRpc(
+          "automations_update",
+          { projectId: PROJECT_ID, automationId: script.id, name: "Renamed" },
+          MEMBER,
+        ),
+      ).rejects.toThrow("Script automations require an admin");
+      await expect(
+        harness.callRpc(
+          "automations_run",
+          { projectId: PROJECT_ID, automationId: script.id },
+          MEMBER,
+        ),
+      ).rejects.toThrow("Script automations require an admin");
+      for (const method of [
+        "automations_create_script",
+        "automations_update_script",
+        "automations_run_script",
+      ] as const) {
+        await expect(
+          harness.callRpc(
+            method,
+            { projectId: PROJECT_ID, automationId: script.id },
+            MEMBER,
+          ),
+        ).rejects.toThrow("requires an admin");
+      }
+
+      const listed = automationListResponseSchema.parse(
+        await harness.callRpc("automations_list", { projectId: PROJECT_ID }),
+      );
+      expect(listed.map((automation) => automation.name).sort()).toEqual([
+        "Admin script",
+        "Agent automation",
+      ]);
+      expect(
+        automationRunListResponseSchema.parse(
+          await harness.callRpc("automations_runs", {
+            projectId: PROJECT_ID,
+            automationId: script.id,
+          }),
+        ).runs,
+      ).toHaveLength(0);
+
+      await harness.dispose();
+    });
+
+    it("keeps agent automations available to member RPC callers", async () => {
+      const { harness } = await bootAutomationsPlugin();
+      const created = automationDetailResponseSchema.parse(
+        await harness.callRpc(
+          "automations_create",
+          {
+            projectId: PROJECT_ID,
+            name: "Member agent",
+            enabled: true,
+            trigger: oneShotTrigger(),
+            execution: agentExecution(),
+            origin: "human",
+          },
+          MEMBER,
+        ),
+      );
+      await expect(
+        harness.callRpc(
+          "automations_update",
+          {
+            projectId: PROJECT_ID,
+            automationId: created.id,
+            agent: { prompt: "updated by member" },
+          },
+          MEMBER,
+        ),
+      ).resolves.toMatchObject({
+        execution: { mode: "agent", prompt: "updated by member" },
+      });
+      await expect(
+        harness.callRpc(
+          "automations_run",
+          { projectId: PROJECT_ID, automationId: created.id },
+          MEMBER,
+        ),
+      ).resolves.toMatchObject({ run: { status: "running" } });
+
+      await harness.dispose();
+    });
+
+    it("lets admins create, update, and run script automations through the script RPC methods", async () => {
+      const { harness } = await bootAutomationsPlugin();
+      const agent = await createAgentAutomation(harness);
+
+      const created = automationDetailResponseSchema.parse(
+        await harness.callRpc("automations_create_script", {
+          projectId: PROJECT_ID,
+          name: "Admin RPC script",
+          enabled: true,
+          trigger: oneShotTrigger(),
+          execution: scriptExecution(),
+          origin: "human",
+        }),
+      );
+      expect(created.execution).toMatchObject({ mode: "script" });
+      await expect(
+        harness.callRpc("automations_update_script", {
+          projectId: PROJECT_ID,
+          automationId: agent.id,
+          execution: scriptExecution(),
+        }),
+      ).resolves.toMatchObject({ execution: { mode: "script" } });
+      await expect(
+        harness.callRpc("automations_update_script", {
+          projectId: PROJECT_ID,
+          automationId: created.id,
+          name: "Renamed admin script",
+        }),
+      ).resolves.toMatchObject({ name: "Renamed admin script" });
+      await expect(
+        harness.callRpc("automations_run_script", {
+          projectId: PROJECT_ID,
+          automationId: created.id,
+        }),
+      ).resolves.toMatchObject({ run: { status: "running" } });
+      await vi.waitFor(async () => {
+        const runs = automationRunListResponseSchema.parse(
+          await harness.callRpc("automations_runs", {
+            projectId: PROJECT_ID,
+            automationId: created.id,
+          }),
+        ).runs;
+        expect(runs[0]?.status).not.toBe("running");
+      });
+
+      await harness.dispose();
+    });
+
+    it("refuses member CLI create, update, and run of script automations", async () => {
+      const { harness } = await bootAutomationsPlugin();
+      const agent = await createAgentAutomation(harness);
+      const script = await createScriptAutomationAsAdmin(harness);
+
+      const attempts = [
+        [
+          "create",
+          "--project",
+          PROJECT_ID,
+          "--name",
+          "Member script",
+          "--in",
+          "1h",
+          "--script",
+          "env",
+        ],
+        [
+          "create",
+          "--project",
+          PROJECT_ID,
+          "--name",
+          "Member file script",
+          "--in",
+          "1h",
+          "--script-file",
+          "/etc/hosts",
+        ],
+        ["update", agent.id, "--project", PROJECT_ID, "--script", "env"],
+        ["update", script.id, "--project", PROJECT_ID, "--name", "Renamed"],
+        ["run", script.id, "--project", PROJECT_ID],
+      ];
+      for (const argv of attempts) {
+        const result = await harness.runCli(argv, MEMBER);
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain("requires a server admin");
+      }
+
+      const listed = automationListResponseSchema.parse(
+        await harness.callRpc("automations_list", { projectId: PROJECT_ID }),
+      );
+      expect(listed.map((automation) => automation.name).sort()).toEqual([
+        "Admin script",
+        "Agent automation",
+      ]);
+
+      const help = await harness.runCli(["create", "--help"], MEMBER);
+      expect(help.exitCode).toBe(0);
+      expect(help.stdout).toContain("--script");
+
+      await harness.dispose();
+    });
+
+    it("keeps agent automations available to member CLI callers", async () => {
+      const { harness } = await bootAutomationsPlugin();
+      const created = await harness.runCli(
+        [
+          "create",
+          "--project",
+          PROJECT_ID,
+          "--name",
+          "Member agent",
+          "--in",
+          "1h",
+          "--prompt",
+          "summarize",
+          "--provider",
+          "codex",
+          "--model",
+          "gpt-5",
+          "--json",
+        ],
+        MEMBER,
+      );
+      expect(created.exitCode).toBe(0);
+      const automation = automationDetailResponseSchema.parse(
+        JSON.parse(created.stdout ?? ""),
+      );
+      const updated = await harness.runCli(
+        [
+          "update",
+          automation.id,
+          "--project",
+          PROJECT_ID,
+          "--prompt",
+          "updated",
+        ],
+        MEMBER,
+      );
+      expect(updated.exitCode).toBe(0);
+      const run = await harness.runCli(
+        ["run", automation.id, "--project", PROJECT_ID],
+        MEMBER,
+      );
+      expect(run.exitCode).toBe(0);
+
+      await harness.dispose();
+    });
   });
 });

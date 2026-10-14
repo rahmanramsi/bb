@@ -1604,8 +1604,14 @@ describe("automation CLI --script-file", () => {
       service,
     });
     if (!cli) throw new Error("automation CLI was not registered");
+    const registered: PluginCliRegistration = cli;
     return {
-      cli,
+      cli: {
+        run: (
+          argv: string[],
+          ctx: Parameters<PluginCliRegistration["run"]>[1],
+        ) => registered.run(argv, { experimental_callerRole: "admin", ...ctx }),
+      },
       db,
       pluginDataDir,
       srcDir,
