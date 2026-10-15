@@ -56,7 +56,11 @@ function sameCredential(
   right: ThreadShellCredential | null,
 ): boolean {
   if (left === null || right === null) return left === right;
-  return left.userId === right.userId && left.roleCeiling === right.roleCeiling;
+  return (
+    left.userId === right.userId &&
+    left.roleCeiling === right.roleCeiling &&
+    left.grantId === right.grantId
+  );
 }
 
 export interface RunningTurnBinding {
@@ -178,6 +182,7 @@ export function requeueTurnSubmitRefusedForBindingInTransaction(
     content: command.input,
     senderThreadId: request.senderThreadId,
     authorUserId: author.authorUserId,
+    authorGrantId: author.authorGrantId,
     authorRoleCeiling: author.authorRoleCeiling,
     origin: null,
     originPluginId: null,

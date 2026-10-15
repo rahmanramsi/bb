@@ -863,6 +863,7 @@ describe("user administration", () => {
       admin.experimental_users.updateRole({ userId: "missing", role: "admin" }),
     ).rejects.toMatchObject({ status: 404 });
     const shellToken = await issueThreadShellToken(server.config.dataDir, {
+      grantId: null,
       userId: user.id,
       roleCeiling: null,
     });

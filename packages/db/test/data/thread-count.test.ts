@@ -32,13 +32,13 @@ function setup() {
     source: { type: "local_path", hostId: hostB.id, path: "/tmp/b" },
   });
   const environmentA = createEnvironment(db, noopNotifier, {
-      providerOwnsPath: false,
+    providerOwnsPath: false,
     hostId: hostA.id,
     projectId: projectA.id,
     path: "/tmp/a",
   });
   const environmentB = createEnvironment(db, noopNotifier, {
-      providerOwnsPath: false,
+    providerOwnsPath: false,
     hostId: hostB.id,
     projectId: projectB.id,
     path: "/tmp/b",

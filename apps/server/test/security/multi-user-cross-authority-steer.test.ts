@@ -288,6 +288,7 @@ async function cappedShellToken(
   const thread = getThread(harness.db, fixture.thread.id);
   if (thread === null) throw new Error("thread not found");
   const config = await resolveThreadRuntimeCommandConfig(harness.deps, {
+    authorGrantId: null,
     authorRoleCeiling: null,
     authorUserId: LOCAL_OWNER_USER_ID,
     environment: {
@@ -447,7 +448,10 @@ describe("sends into a running turn of another authority", () => {
       const principal = z
         .object({ userId: z.string(), roleCeiling: z.string().nullable() })
         .parse(await tokenPrincipal(harness, dispatchedToken(cappedTurn)));
-      expect(principal).toMatchObject({ userId: bob.id, roleCeiling: "member" });
+      expect(principal).toMatchObject({
+        userId: bob.id,
+        roleCeiling: "member",
+      });
     });
   });
 });
@@ -492,6 +496,7 @@ describe("queued messages edited by another authority", () => {
       );
       expect(editedRow).toMatchObject({
         authorUserId: bob.id,
+        authorGrantId: null,
         authorRoleCeiling: null,
       });
 

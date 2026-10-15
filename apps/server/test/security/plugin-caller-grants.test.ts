@@ -258,6 +258,7 @@ async function cappedAdminHeaders(adminId: string) {
   const { issueThreadShellToken } =
     await import("../../src/services/user-auth.js");
   const token = await issueThreadShellToken(server!.config.dataDir, {
+    grantId: null,
     userId: adminId,
     roleCeiling: "member",
   });
@@ -335,6 +336,7 @@ describe("caller grants in multi-user mode", () => {
     const auth = started.deps.userAuth;
     const credentialFor = (grantId: string, userId: string) =>
       auth.issuePluginCallerCredential({
+        derivedGrantId: null,
         grantId,
         maxRole: "member",
         pluginId: "grants",
@@ -400,6 +402,7 @@ describe("caller grants in multi-user mode", () => {
       await rpc("steal", { grantId }, team.admin.headers, "thief"),
     ).toMatch(/does not exist or was revoked/);
     const forged = started.deps.userAuth.issuePluginCallerCredential({
+      derivedGrantId: null,
       grantId,
       maxRole: "admin",
       pluginId: "thief",
@@ -451,6 +454,113 @@ describe("caller grants in multi-user mode", () => {
     ).toMatchObject({ ok: false, message: /cannot act as a system caller/ });
   });
 
+  it("permanently lowers an admin's grant to member on demotion, so promotion does not restore it", async () => {
+    const started = await startServer("multi");
+    const team = await bootstrapTeam();
+    const auth = started.deps.userAuth;
+    const adminGrant = await mintGrant(team.admin.headers);
+    const memberGrant = await mintGrant(team.member.headers);
+    const mintedBeforeDemotion = auth.issuePluginCallerCredential({
+      derivedGrantId: null,
+      grantId: adminGrant,
+      maxRole: "admin",
+      pluginId: "grants",
+      roleCeiling: null,
+      userId: team.admin.id,
+    }).token;
+
+    await setRole(team.otherAdmin, team.admin.id, "member");
+    expect(auth.listPluginCallerGrants(team.admin.id)).toEqual([
+      expect.objectContaining({ id: adminGrant, maxRole: "member" }),
+    ]);
+    expect(auth.listPluginCallerGrants(team.member.id)).toEqual([
+      expect.objectContaining({ id: memberGrant, maxRole: "member" }),
+    ]);
+
+    await setRole(team.otherAdmin, team.admin.id, "admin");
+    expect(auth.listPluginCallerGrants(team.admin.id)).toEqual([
+      expect.objectContaining({ id: adminGrant, maxRole: "member" }),
+    ]);
+    expect(
+      await rpc("use", { grantId: adminGrant }, team.member.headers),
+    ).toMatchObject({
+      ok: true,
+      value: { effectiveRole: "member", roleCeiling: "member" },
+    });
+    expect(
+      await rpc(
+        "use",
+        { grantId: adminGrant, op: "users" },
+        team.member.headers,
+      ),
+    ).toMatchObject({ ok: false, status: 403 });
+    expect(
+      await auth.resolvePrincipal(new Headers(bearer(mintedBeforeDemotion))),
+    ).toMatchObject({ role: "member", roleCeiling: "member" });
+
+    const fresh = await mintGrant(team.admin.headers);
+    expect(
+      await rpc("use", { grantId: fresh }, team.member.headers),
+    ).toMatchObject({
+      ok: true,
+      value: { effectiveRole: "admin", roleCeiling: null },
+    });
+  });
+
+  it("expires grants after 90 days by default and only skips expiry when asked", async () => {
+    const started = await startServer("multi");
+    const team = await bootstrapTeam();
+    const before = Date.now();
+    const defaulted = await mintGrant(team.member.headers);
+    const unbounded = await mintGrant(team.member.headers, {
+      purpose: "Indefinite",
+      expiresInDays: null,
+    });
+    const explicit = await mintGrant(team.member.headers, {
+      purpose: "Ten days",
+      expiresInDays: 10,
+    });
+    const day = 24 * 60 * 60 * 1000;
+
+    const response = await request(
+      "GET",
+      `/api/v1/users/${team.member.id}/plugin-grants`,
+      team.member.headers,
+    );
+    expect(response.status).toBe(200);
+    const grants = z
+      .object({
+        grants: z.array(
+          z.object({
+            id: z.string(),
+            createdAt: z.number(),
+            expiresAt: z.number().nullable(),
+          }),
+        ),
+      })
+      .parse(await response.json()).grants;
+    const byId = new Map(grants.map((grant) => [grant.id, grant]));
+    expect(byId.get(defaulted)?.expiresAt).toBe(
+      byId.get(defaulted)!.createdAt + 90 * day,
+    );
+    expect(byId.get(defaulted)!.createdAt).toBeGreaterThanOrEqual(before);
+    expect(byId.get(unbounded)?.expiresAt).toBeNull();
+    expect(byId.get(explicit)?.expiresAt).toBe(
+      byId.get(explicit)!.createdAt + 10 * day,
+    );
+
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 91 * day);
+    expect(
+      await rpc("use", { grantId: defaulted }, team.admin.headers),
+    ).toMatchObject({ ok: false, refused: true, message: /expired/ });
+    expect(
+      await rpc("use", { grantId: unbounded }, team.admin.headers),
+    ).toMatchObject({ ok: true });
+    vi.restoreAllMocks();
+    void started;
+  });
+
   it("validates the purpose and expiry", async () => {
     await startServer("multi");
     const team = await bootstrapTeam();
@@ -461,6 +571,7 @@ describe("caller grants in multi-user mode", () => {
       { purpose: "ok", expiresInDays: 0 },
       { purpose: "ok", expiresInDays: 1.5 },
       { purpose: "ok", expiresInDays: 3651 },
+      { purpose: "ok", expiresInDays: "never" },
     ]) {
       expect(await rpc("grant", invalid, team.member.headers)).toMatchObject({
         ok: false,
@@ -517,6 +628,7 @@ describe("caller grants in multi-user mode", () => {
     ).toBe(403);
 
     const delegated = started.deps.userAuth.issuePluginCallerCredential({
+      derivedGrantId: null,
       grantId: null,
       maxRole: "admin",
       pluginId: "grants",
@@ -715,6 +827,243 @@ describe("threads started for a person by a plugin", () => {
       await started.deps.userAuth.resolvePrincipal(new Headers(bearer(token))),
     ).toMatchObject({ userId: team.member.id, roleCeiling: "member" });
     await expectCappedAfterPromotion(team, token);
+  });
+
+  async function grantTurn(
+    started: RunningTestServer,
+    daemon: ReturnType<typeof respondAsReadyDaemon>,
+    fixture: Fixture,
+    person: Person,
+    actor: Person,
+    grantRequest: Record<string, unknown> = { purpose: "Nightly triage" },
+  ) {
+    const grantId = await mintGrant(person.headers, grantRequest);
+    const result = await rpc(
+      "use",
+      { grantId, op: "spawn", spawn: spawnArgs(fixture) },
+      actor.headers,
+    );
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    const threadId: string = result.value.id;
+    const token = await firstTurnToken(daemon, threadId);
+    const authors = started.db
+      .select()
+      .from(turnRequestAuthors)
+      .where(eq(turnRequestAuthors.threadId, threadId))
+      .all();
+    expect(authors.length).toBeGreaterThan(0);
+    for (const author of authors) {
+      expect(author).toMatchObject({
+        authorUserId: person.id,
+        authorGrantId: grantId,
+      });
+    }
+    return { grantId, threadId, token };
+  }
+
+  async function whoami(token: string): Promise<number> {
+    return (await request("GET", "/api/v1/me", bearer(token))).status;
+  }
+
+  it("stops a grant turn's BB_TOKEN once the grant is revoked, expires, or its plugin or person is removed", async () => {
+    const started = await startServer("multi");
+    const team = await bootstrapTeam();
+    const fixture = seedThreadFixture(started, {
+      environment: { status: "ready" },
+    });
+    const daemon = respondAsReadyDaemon(started, fixture);
+
+    const asCaller = await rpc(
+      "spawnAsCaller",
+      { spawn: spawnArgs(fixture) },
+      team.member.headers,
+    );
+    expect(asCaller.ok, JSON.stringify(asCaller)).toBe(true);
+    const callerToken = await firstTurnToken(daemon, asCaller.value.id);
+    expect(
+      await started.deps.userAuth.resolvePrincipal(
+        new Headers(bearer(callerToken)),
+      ),
+    ).toMatchObject({ userId: team.member.id, grantId: null });
+
+    const revoked = await grantTurn(
+      started,
+      daemon,
+      fixture,
+      team.member,
+      team.admin,
+    );
+    expect(await whoami(revoked.token)).toBe(200);
+    expect(
+      await started.deps.userAuth.resolvePrincipal(
+        new Headers(bearer(revoked.token)),
+      ),
+    ).toMatchObject({
+      userId: team.member.id,
+      roleCeiling: "member",
+      grantId: revoked.grantId,
+    });
+    const revocation = await request(
+      "DELETE",
+      `/api/v1/users/${team.member.id}/plugin-grants/${revoked.grantId}`,
+      team.member.headers,
+    );
+    expect(revocation.status).toBe(200);
+    expect(await whoami(revoked.token)).toBe(401);
+    expect(await whoami(callerToken)).toBe(200);
+
+    const expiring = await grantTurn(
+      started,
+      daemon,
+      fixture,
+      team.member,
+      team.admin,
+      { purpose: "One day", expiresInDays: 1 },
+    );
+    expect(await whoami(expiring.token)).toBe(200);
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 2 * 24 * 60 * 60 * 1000);
+    expect(
+      await started.deps.userAuth.resolvePrincipal(
+        new Headers(bearer(expiring.token)),
+      ),
+    ).toBeNull();
+    vi.restoreAllMocks();
+
+    const pluginRemoved = await grantTurn(
+      started,
+      daemon,
+      fixture,
+      team.member,
+      team.admin,
+    );
+    expect(await whoami(pluginRemoved.token)).toBe(200);
+    await started.pluginService.remove("grants");
+    expect(await whoami(pluginRemoved.token)).toBe(401);
+    expect(await whoami(callerToken)).toBe(200);
+
+    const removal = await request(
+      "DELETE",
+      `/api/v1/users/${team.member.id}`,
+      team.admin.headers,
+    );
+    expect(removal.status).toBe(200);
+    expect(await whoami(callerToken)).toBe(401);
+  });
+
+  it("refuses to let a person's removal leave their grant turn token working", async () => {
+    const started = await startServer("multi");
+    const team = await bootstrapTeam();
+    const fixture = seedThreadFixture(started, {
+      environment: { status: "ready" },
+    });
+    const daemon = respondAsReadyDaemon(started, fixture);
+    const turn = await grantTurn(
+      started,
+      daemon,
+      fixture,
+      team.member,
+      team.admin,
+    );
+    expect(await whoami(turn.token)).toBe(200);
+
+    const removal = await request(
+      "DELETE",
+      `/api/v1/users/${team.member.id}`,
+      team.admin.headers,
+    );
+    expect(removal.status).toBe(200);
+    expect(await whoami(turn.token)).toBe(401);
+  });
+
+  it("caps an admin grant's turn token after demotion and never lets it mint a PAT or grant", async () => {
+    const started = await startServer("multi");
+    const team = await bootstrapTeam();
+    const fixture = seedThreadFixture(started, {
+      environment: { status: "ready" },
+    });
+    const daemon = respondAsReadyDaemon(started, fixture);
+    const turn = await grantTurn(
+      started,
+      daemon,
+      fixture,
+      team.admin,
+      team.member,
+    );
+    const principal = await started.deps.userAuth.resolvePrincipal(
+      new Headers(bearer(turn.token)),
+    );
+    expect(principal).toMatchObject({
+      userId: team.admin.id,
+      role: "admin",
+      roleCeiling: null,
+      grantId: turn.grantId,
+      delegatedPluginId: null,
+    });
+    expect(
+      (await request("GET", "/api/v1/users", bearer(turn.token))).status,
+    ).toBe(200);
+
+    const pat = await request(
+      "POST",
+      "/api/v1/auth/tokens",
+      bearer(turn.token),
+      { name: "escape" },
+    );
+    expect(pat.status).toBe(403);
+    expect(await pat.json()).toMatchObject({ code: "credential_delegated" });
+    const grants = await request(
+      "GET",
+      `/api/v1/users/${team.admin.id}/plugin-grants`,
+      bearer(turn.token),
+    );
+    expect(grants.status).toBe(403);
+    expect(
+      await rpc("grant", { purpose: "laundered" }, bearer(turn.token)),
+    ).toMatchObject({ ok: false, message: /acting through a grant/ });
+
+    await setRole(team.otherAdmin, team.admin.id, "member");
+    await setRole(team.otherAdmin, team.admin.id, "admin");
+    expect(
+      await started.deps.userAuth.resolvePrincipal(
+        new Headers(bearer(turn.token)),
+      ),
+    ).toMatchObject({ role: "member", roleCeiling: "member" });
+    expect(
+      (await request("GET", "/api/v1/users", bearer(turn.token))).status,
+    ).toBe(403);
+  });
+
+  it("keeps threads a grant turn starts through asCaller bound to the grant", async () => {
+    const started = await startServer("multi");
+    const team = await bootstrapTeam();
+    const fixture = seedThreadFixture(started, {
+      environment: { status: "ready" },
+    });
+    const daemon = respondAsReadyDaemon(started, fixture);
+    const turn = await grantTurn(
+      started,
+      daemon,
+      fixture,
+      team.member,
+      team.admin,
+    );
+
+    const derived = await rpc(
+      "spawnAsCaller",
+      { spawn: spawnArgs(fixture) },
+      bearer(turn.token),
+    );
+    expect(derived.ok, JSON.stringify(derived)).toBe(true);
+    const derivedToken = await firstTurnToken(daemon, derived.value.id);
+    expect(
+      await started.deps.userAuth.resolvePrincipal(
+        new Headers(bearer(derivedToken)),
+      ),
+    ).toMatchObject({ userId: team.member.id, grantId: turn.grantId });
+
+    await rpc("revoke", { grantId: turn.grantId }, team.admin.headers);
+    expect(await whoami(derivedToken)).toBe(401);
   });
 
   it("caps a member's side chat fork created through asCaller", async () => {

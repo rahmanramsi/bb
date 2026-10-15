@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   authUsers,
+  capPluginCallerGrantsForUserInTransaction,
   createPluginCallerGrant,
   deletePluginCallerGrant,
   deletePluginCallerGrantsForPlugin,
@@ -55,6 +56,44 @@ describe("plugin caller grants", () => {
 
     expect(listPluginCallerGrantsForUser(db, "usr_a")).toEqual([newer, older]);
     expect(getPluginCallerGrant(db, older.id)).toEqual(older);
+  });
+
+  it("lowers only that user's admin grants on demotion", () => {
+    const adminGrant = createPluginCallerGrant(db, {
+      pluginId: "automations",
+      userId: "usr_a",
+      maxRole: "admin",
+      purpose: "admin work",
+      createdAt: 1,
+      expiresAt: null,
+    });
+    const otherAdminGrant = createPluginCallerGrant(db, {
+      pluginId: "automations",
+      userId: "usr_b",
+      maxRole: "admin",
+      purpose: "other admin work",
+      createdAt: 2,
+      expiresAt: null,
+    });
+
+    expect(
+      db.transaction((tx) =>
+        capPluginCallerGrantsForUserInTransaction(tx, {
+          maxRole: "admin",
+          userId: "usr_a",
+        }),
+      ),
+    ).toBe(0);
+    expect(
+      db.transaction((tx) =>
+        capPluginCallerGrantsForUserInTransaction(tx, {
+          maxRole: "member",
+          userId: "usr_a",
+        }),
+      ),
+    ).toBe(1);
+    expect(getPluginCallerGrant(db, adminGrant.id)?.maxRole).toBe("member");
+    expect(getPluginCallerGrant(db, otherAdminGrant.id)?.maxRole).toBe("admin");
   });
 
   it("deletes a grant only for its own plugin or its own user", () => {

@@ -80,7 +80,11 @@ async function shellToken(
   harness: TestAppHarness,
   fixture: Fixture,
   threadId: string,
-  author: { authorRoleCeiling: "member" | null; authorUserId: string | null },
+  author: {
+    authorGrantId: string | null;
+    authorRoleCeiling: "member" | null;
+    authorUserId: string | null;
+  },
 ): Promise<string | null> {
   const thread = getThread(harness.db, threadId);
   if (thread === null) throw new Error("thread not found");
@@ -110,6 +114,7 @@ async function cappedShellToken(
   threadId: string,
 ): Promise<string> {
   const token = await shellToken(harness, fixture, threadId, {
+    authorGrantId: null,
     authorRoleCeiling: null,
     authorUserId: LOCAL_OWNER_USER_ID,
   });
@@ -174,6 +179,7 @@ async function queuedRowToken(
   const [queued] = listQueuedThreadMessages(harness.db, threadId);
   if (queued === undefined) throw new Error("message not queued");
   return shellToken(harness, fixture, threadId, {
+    authorGrantId: queued.authorGrantId,
     authorRoleCeiling: queued.authorRoleCeiling,
     authorUserId: queued.authorUserId,
   });
@@ -248,6 +254,7 @@ describe("credentials derived from a role-capped BB_TOKEN", () => {
       ).toHaveLength(0);
 
       const direct = await shellToken(harness, fixture, fixture.thread.id, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: bob.id,
       });
@@ -403,6 +410,7 @@ describe("credentials derived from a role-capped BB_TOKEN", () => {
         expect(row.authorUserId).toBe(bob.id);
         derived.push(
           await shellToken(harness, fixture, createdThread.id, {
+            authorGrantId: row.authorGrantId,
             authorRoleCeiling: row.authorRoleCeiling,
             authorUserId: row.authorUserId,
           }),
@@ -416,6 +424,7 @@ describe("credentials derived from a role-capped BB_TOKEN", () => {
         expect(await listUsersStatus(harness, bearer(token))).toBe(403);
       }
       const ownTurn = await shellToken(harness, fixture, createdThread.id, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: bob.id,
       });

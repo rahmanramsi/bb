@@ -139,6 +139,7 @@ describe("composed machine thread lifecycle", () => {
         });
 
         const thread = await createThreadFromRequest(harness.deps, {
+          createdByGrantId: null,
           createdByRoleCeiling: null,
           createdByUserId: LOCAL_OWNER_USER_ID,
           projectId: project.id,

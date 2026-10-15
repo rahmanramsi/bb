@@ -93,6 +93,7 @@ type SendThreadMessagePayload = SendMessageRequest & {
 };
 
 interface SendThreadMessageArgs {
+  authorGrantId: string | null;
   authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   beforeAppendInTransaction?: SendThreadMessageTransactionPreflight;
@@ -152,6 +153,7 @@ interface SendThreadMessageQueueRequest {
 
 interface AppendAndQueueSendThreadMessageArgs {
   hub: DbNotifier;
+  authorGrantId: string | null;
   authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   /** Retry provenance; absent for an original dispatch. */
@@ -408,6 +410,7 @@ export function captureUserMessageSentTelemetry(
 
 function appendAndQueueSendThreadMessageInTransaction({
   hub,
+  authorGrantId,
   authorRoleCeiling,
   authorUserId,
   retryOf,
@@ -434,7 +437,7 @@ function appendAndQueueSendThreadMessageInTransaction({
         appendPreparedClientTurnRequestedEventWithNotificationInTransaction(
           tx,
           {
-            author: { authorRoleCeiling, authorUserId },
+            author: { authorGrantId, authorRoleCeiling, authorUserId },
             threadId: thread.id,
             environmentId,
             type: "client/turn/requested",
@@ -615,6 +618,7 @@ async function sendThreadMessageWithoutContextClear(
 
   if (
     await dispatchTurnDuringReprovision({
+      authorGrantId: args.authorGrantId,
       authorRoleCeiling: args.authorRoleCeiling,
       authorUserId: args.authorUserId,
       beforeRequestAppendInTransaction: beforeAppendInTransaction,
@@ -660,6 +664,7 @@ async function sendThreadMessageWithoutContextClear(
 
   if (mode === "start") {
     const commandArgs = {
+      authorGrantId: args.authorGrantId,
       authorRoleCeiling: args.authorRoleCeiling,
       authorUserId: args.authorUserId,
       thread,
@@ -696,6 +701,7 @@ async function sendThreadMessageWithoutContextClear(
       : await prepareReadyThreadTurnCommand(deps, commandArgs);
     const queuedRequest = appendAndQueueSendThreadMessageInTransaction({
       hub: deps.hub,
+      authorGrantId: args.authorGrantId,
       authorRoleCeiling: args.authorRoleCeiling,
       authorUserId: args.authorUserId,
       ...(args.retryOf !== undefined ? { retryOf: args.retryOf } : {}),
@@ -773,6 +779,7 @@ async function sendThreadMessageWithoutContextClear(
     hostId: readyEnvironment.hostId,
   });
   const preparedCommand = await prepareTurnSubmitCommandPayload(deps, {
+    authorGrantId: args.authorGrantId,
     authorRoleCeiling: args.authorRoleCeiling,
     authorUserId: args.authorUserId,
     thread,
@@ -798,6 +805,7 @@ async function sendThreadMessageWithoutContextClear(
   });
   const queuedRequest = appendAndQueueSendThreadMessageInTransaction({
     hub: deps.hub,
+    authorGrantId: args.authorGrantId,
     authorRoleCeiling: args.authorRoleCeiling,
     authorUserId: args.authorUserId,
     ...(args.retryOf !== undefined ? { retryOf: args.retryOf } : {}),

@@ -191,6 +191,7 @@ async function requireReadyQueuedMessageEnvironment(
 }
 
 export interface CreateQueuedMessageForThreadArgs {
+  authorGrantId: string | null;
   authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   payload: CreateQueuedMessageRequest;
@@ -255,6 +256,7 @@ export async function createQueuedMessageForThread(
           threadId: thread.id,
           content: input,
           senderThreadId,
+          authorGrantId: args.authorGrantId,
           authorRoleCeiling: args.authorRoleCeiling,
           authorUserId: args.authorUserId,
           model: execution.model,
@@ -535,6 +537,7 @@ async function sendClaimedQueuedMessageForIdleProviderThread(
     hostId: environment.hostId,
   });
   const preparedCommand = await prepareTurnSubmitCommandPayload(deps, {
+    authorGrantId: args.queuedMessages[0]!.authorGrantId,
     authorRoleCeiling: args.queuedMessages[0]!.authorRoleCeiling,
     authorUserId: queuedMessage.authorUserId,
     environment,
@@ -570,6 +573,7 @@ async function sendClaimedQueuedMessageForIdleProviderThread(
       }
       const request = appendClientTurnEventInTransaction(tx, {
         author: {
+          authorGrantId: args.queuedMessages[0]!.authorGrantId,
           authorRoleCeiling: args.queuedMessages[0]!.authorRoleCeiling,
           authorUserId: queuedMessage.authorUserId,
         },
@@ -738,6 +742,7 @@ async function sendClaimedQueuedMessageForThread(
   const lead = args.queuedMessages[0]!;
   const outcome = await attemptDispatch(deps, {
     thread: args.thread,
+    authorGrantId: lead.authorGrantId,
     authorRoleCeiling: lead.authorRoleCeiling,
     authorUserId: lead.authorUserId,
     payload: {

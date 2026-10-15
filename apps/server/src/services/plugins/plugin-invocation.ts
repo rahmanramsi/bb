@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { DbConnection } from "@bb/db";
+import { getPluginCallerGrant, type DbConnection } from "@bb/db";
 import type { RoleCeiling, UserRole } from "@bb/domain";
 import type { ExperimentalPluginCaller } from "@get-bb/plugin-sdk";
 import { pluginCallerAuthority } from "@get-bb/plugin-sdk/internal/host-policy";
@@ -8,11 +8,13 @@ import { readUserRole, type RequestPrincipal } from "../user-auth.js";
 export interface PluginCallerIdentity {
   authority: UserRole;
   caller: ExperimentalPluginCaller;
+  grantId: string | null;
 }
 
 export const SYSTEM_PLUGIN_CALLER: PluginCallerIdentity = {
   authority: "admin",
   caller: { kind: "system" },
+  grantId: null,
 };
 
 export function pluginCallerForPrincipal(
@@ -21,13 +23,18 @@ export function pluginCallerForPrincipal(
   pluginCaller: ExperimentalPluginCaller | null,
 ): PluginCallerIdentity {
   if (pluginCaller !== null) {
-    return { authority: principal.role, caller: pluginCaller };
+    return {
+      authority: principal.role,
+      caller: pluginCaller,
+      grantId: principal.grantId,
+    };
   }
   if (principal.kind === "machine") return SYSTEM_PLUGIN_CALLER;
   if (principal.delegatedPluginId !== null) {
     return {
       authority: principal.role,
       caller: { kind: "plugin", pluginId: principal.delegatedPluginId },
+      grantId: principal.grantId,
     };
   }
   const role =
@@ -43,34 +50,58 @@ export function pluginCallerForPrincipal(
       roleCeiling: principal.roleCeiling,
       effectiveRole: principal.role,
     },
+    grantId: principal.grantId,
   };
 }
 
 export function pluginCallerForTurnAuthor(
   db: DbConnection,
-  author: { roleCeiling: RoleCeiling | null; userId: string } | null,
+  author: {
+    grantId: string | null;
+    roleCeiling: RoleCeiling | null;
+    userId: string;
+  } | null,
 ): PluginCallerIdentity {
   const role = author === null ? null : readUserRole(db, author.userId);
-  if (author === null || role === null) {
-    return { authority: "member", caller: { kind: "system" } };
+  const grant =
+    author?.grantId == null ? null : getPluginCallerGrant(db, author.grantId);
+  if (
+    author === null ||
+    role === null ||
+    (author.grantId !== null &&
+      (grant === null ||
+        grant.userId !== author.userId ||
+        (grant.expiresAt !== null && grant.expiresAt <= Date.now())))
+  ) {
+    return {
+      authority: "member",
+      caller: { kind: "system" },
+      grantId: null,
+    };
   }
+  const roleCeiling: RoleCeiling | null =
+    author.roleCeiling === null && grant?.maxRole !== "member"
+      ? null
+      : "member";
   const effectiveRole =
-    author.roleCeiling === null && role === "admin" ? "admin" : "member";
+    roleCeiling === null && role === "admin" ? "admin" : "member";
   return {
     authority: effectiveRole,
     caller: {
       kind: "client",
       userId: author.userId,
       role,
-      roleCeiling: author.roleCeiling,
+      roleCeiling,
       effectiveRole,
     },
+    grantId: author.grantId,
   };
 }
 
 export interface PluginInvocation {
   readonly authority: UserRole;
   readonly caller: ExperimentalPluginCaller;
+  readonly grantId: string | null;
   readonly pluginId: string;
   isLive(): boolean;
   onEnd(hook: () => void): void;
@@ -93,6 +124,7 @@ export function createPluginInvocation(
         ? "admin"
         : "member",
     caller,
+    grantId: args.grantId,
     pluginId,
     isLive: () => live,
     onEnd(hook) {

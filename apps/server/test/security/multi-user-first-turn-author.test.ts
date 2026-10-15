@@ -218,6 +218,7 @@ async function cappedMemberToken(
   const thread = getThread(harness.db, fixture.thread.id);
   if (thread === null) throw new Error("thread not found");
   const config = await resolveThreadRuntimeCommandConfig(harness.deps, {
+    authorGrantId: null,
     authorRoleCeiling: null,
     authorUserId: LOCAL_OWNER_USER_ID,
     environment: {

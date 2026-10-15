@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import type { UserRole } from "@bb/domain";
-import type { DbConnection } from "../connection.js";
+import type { DbConnection, DbTransaction } from "../connection.js";
 import { createPluginCallerGrantId } from "../ids.js";
 import { pluginCallerGrants } from "../schema.js";
 
@@ -77,4 +77,21 @@ export function deletePluginCallerGrantsForPlugin(
   db.delete(pluginCallerGrants)
     .where(eq(pluginCallerGrants.pluginId, pluginId))
     .run();
+}
+
+export function capPluginCallerGrantsForUserInTransaction(
+  db: DbTransaction,
+  args: { maxRole: UserRole; userId: string },
+): number {
+  if (args.maxRole === "admin") return 0;
+  return db
+    .update(pluginCallerGrants)
+    .set({ maxRole: args.maxRole })
+    .where(
+      and(
+        eq(pluginCallerGrants.userId, args.userId),
+        eq(pluginCallerGrants.maxRole, "admin"),
+      ),
+    )
+    .run().changes;
 }

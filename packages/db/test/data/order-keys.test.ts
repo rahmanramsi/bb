@@ -60,9 +60,9 @@ describe("order keys", () => {
       previousKey: secondKey,
       nextKey: null,
     });
-    expect(sortKeys([frontKey, firstKey, middleKey, secondKey, endKey])).toEqual(
-      [frontKey, firstKey, middleKey, secondKey, endKey],
-    );
+    expect(
+      sortKeys([frontKey, firstKey, middleKey, secondKey, endKey]),
+    ).toEqual([frontKey, firstKey, middleKey, secondKey, endKey]);
   });
 
   it("creates dense front-insertion keys before zero-padded migrated keys", () => {

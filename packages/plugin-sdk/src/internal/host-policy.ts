@@ -3851,6 +3851,7 @@ export function pluginAsCallerRefusal(
 
 export const PLUGIN_CALLER_GRANT_PURPOSE_MAX_LENGTH = 200;
 export const PLUGIN_CALLER_GRANT_MAX_DAYS = 3650;
+export const PLUGIN_CALLER_GRANT_DEFAULT_DAYS = 90;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function parsePluginCallerGrantRequest(
@@ -3880,7 +3881,14 @@ export function parsePluginCallerGrantRequest(
       message: `bb.sdk.experimental_createCallerGrant: purpose must be 1 to ${PLUGIN_CALLER_GRANT_PURPOSE_MAX_LENGTH} characters`,
     };
   }
-  if (days === undefined) return { ok: true, purpose, expiresAt: null };
+  if (days === null) return { ok: true, purpose, expiresAt: null };
+  if (days === undefined) {
+    return {
+      ok: true,
+      purpose,
+      expiresAt: now + PLUGIN_CALLER_GRANT_DEFAULT_DAYS * DAY_MS,
+    };
+  }
   if (
     typeof days !== "number" ||
     !Number.isInteger(days) ||
@@ -3889,7 +3897,7 @@ export function parsePluginCallerGrantRequest(
   ) {
     return {
       ok: false,
-      message: `bb.sdk.experimental_createCallerGrant: expiresInDays must be a whole number from 1 to ${PLUGIN_CALLER_GRANT_MAX_DAYS}`,
+      message: `bb.sdk.experimental_createCallerGrant: expiresInDays must be a whole number from 1 to ${PLUGIN_CALLER_GRANT_MAX_DAYS}, or null for no expiry`,
     };
   }
   return { ok: true, purpose, expiresAt: now + days * DAY_MS };

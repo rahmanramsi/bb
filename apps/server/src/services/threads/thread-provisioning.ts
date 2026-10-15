@@ -60,6 +60,7 @@ import { recordAcceptedPromptHistoryEntry } from "../prompt-history.js";
 import { NotificationBuffer } from "../lib/notification-buffer.js";
 
 interface RequestThreadProvisionArgs {
+  authorGrantId: string | null;
   authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   environmentIntent: ThreadProvisionEnvironmentIntent;
@@ -73,6 +74,7 @@ interface RequestThreadProvisionArgs {
 }
 
 interface RequestThreadTargetReprovisionArgs {
+  authorGrantId: string | null;
   authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   beforeRequestAppendInTransaction?: (args: { tx: DbTransaction }) => void;
@@ -293,6 +295,7 @@ async function startThreadIfEnvironmentReady(
     return;
   }
   await requestThreadStart(deps, {
+    authorGrantId: author?.authorGrantId ?? null,
     authorRoleCeiling: author?.authorRoleCeiling ?? null,
     authorUserId: author?.authorUserId ?? null,
     thread: args.thread,
@@ -331,6 +334,7 @@ export function requestThreadProvision(
     const target: TurnRequestTarget = { kind: "thread-start" };
     const request = appendClientTurnEvent(deps, {
       author: {
+        authorGrantId: args.authorGrantId,
         authorRoleCeiling: args.authorRoleCeiling,
         authorUserId: args.authorUserId,
       },
@@ -474,6 +478,7 @@ function appendReprovisionTurnRequest(
           tx,
           {
             author: {
+              authorGrantId: args.authorGrantId,
               authorRoleCeiling: args.authorRoleCeiling,
               authorUserId: args.authorUserId,
             },

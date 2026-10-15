@@ -297,6 +297,7 @@ describe("machine and environment provider composition", () => {
       });
 
       const thread = await createThreadFromRequest(harness.deps, {
+        createdByGrantId: null,
         createdByRoleCeiling: null,
         createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
@@ -362,6 +363,7 @@ describe("machine and environment provider composition", () => {
       );
 
       await createThreadFromRequest(harness.deps, {
+        createdByGrantId: null,
         createdByRoleCeiling: null,
         createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
@@ -410,6 +412,7 @@ describe("machine and environment provider composition", () => {
       installCompositionMachine(create);
 
       await createThreadFromRequest(harness.deps, {
+        createdByGrantId: null,
         createdByRoleCeiling: null,
         createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
@@ -451,6 +454,7 @@ describe("machine and environment provider composition", () => {
 
       await expect(
         createThreadFromRequest(harness.deps, {
+          createdByGrantId: null,
           createdByRoleCeiling: null,
           createdByUserId: LOCAL_OWNER_USER_ID,
           environment: {
@@ -550,6 +554,7 @@ describe("machine and environment provider composition", () => {
       );
 
       const thread = await createThreadFromRequest(harness.deps, {
+        createdByGrantId: null,
         createdByRoleCeiling: null,
         createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
@@ -631,6 +636,7 @@ function createTargetThread(
   const sourceHostId = source?.type === "local_path" ? source.hostId : null;
   const hostId = args.hostId ?? sourceHostId ?? "host-1";
   return createThreadFromRequest(harness.deps, {
+    createdByGrantId: null,
     createdByRoleCeiling: null,
     createdByUserId: LOCAL_OWNER_USER_ID,
     environment: {
@@ -743,6 +749,7 @@ describe("shared machine preparation retention", () => {
         let nextThreadId: string | null = null;
         try {
           const next = await createThreadFromRequest(harness.deps, {
+            createdByGrantId: null,
             createdByRoleCeiling: null,
             createdByUserId: LOCAL_OWNER_USER_ID,
             projectId: otherProject.id,
@@ -940,6 +947,7 @@ describe("environment providers are asked inside provisioning", () => {
       });
 
       const child = await createThreadFromRequest(harness.deps, {
+        createdByGrantId: null,
         createdByRoleCeiling: null,
         createdByUserId: LOCAL_OWNER_USER_ID,
         environment: { type: "project-default" },
@@ -1519,6 +1527,7 @@ describe("environment providers are asked inside provisioning", () => {
       if (failedThread === null) return;
 
       const outcome = await attemptDispatch(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         thread: failedThread,
@@ -1749,6 +1758,7 @@ describe("provider validate at create time", () => {
         .get();
       await expect(
         createThreadFromRequest(harness.deps, {
+          createdByGrantId: null,
           createdByRoleCeiling: null,
           createdByUserId: LOCAL_OWNER_USER_ID,
           environment: { type: "project-default" },
@@ -2542,6 +2552,7 @@ describe("core's worktree beside providers", () => {
       });
 
       const created = await createThreadFromRequest(harness.deps, {
+        createdByGrantId: null,
         createdByRoleCeiling: null,
         createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {

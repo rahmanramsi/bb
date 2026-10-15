@@ -38,6 +38,7 @@ interface StoredQueuedThreadMessageRow {
   sendAt: number | null;
   serviceTier: string;
   senderThreadId: string | null;
+  authorGrantId: string | null;
   authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   requestedByInitiator: StartedOnBehalfOfInitiator | null;

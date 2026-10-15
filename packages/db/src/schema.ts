@@ -1007,6 +1007,7 @@ export const turnRequestAuthors = sqliteTable(
     authorRoleCeiling: text("author_role_ceiling", {
       enum: roleCeilingValues,
     }),
+    authorGrantId: text("author_grant_id"),
   },
   (table) => [primaryKey({ columns: [table.threadId, table.requestId] })],
 );
@@ -1151,6 +1152,7 @@ export const queuedThreadMessages = sqliteTable(
     authorRoleCeiling: text("author_role_ceiling", {
       enum: roleCeilingValues,
     }),
+    authorGrantId: text("author_grant_id"),
     // How the dispatch this row was queued from was requested, and the plugin
     // that requested it. On the row rather than read from the request, so a
     // drained re-attempt decides on the same provenance its first attempt saw.

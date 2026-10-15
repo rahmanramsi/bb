@@ -270,34 +270,55 @@ work acts as a user through caller grants (next section).
 `bb.sdk.experimental_createCallerGrant(ctx, { purpose, expiresInDays? })`
 resolves to `{ grantId }`. It takes the context of a running invocation of the
 same plugin whose caller is a `client`, found through the same server-side
-invocation map as `experimental_asCaller`, and throws for `plugin` and
-`system` callers, forged or ended contexts, and on a caller- or grant-bound
-SDK. `purpose` is 1 to 200 characters; `expiresInDays` is a whole number from
-1 to 3650, and omitting it means the grant lasts until revoked. Core inserts a
-`plugin_caller_grants` row: id, plugin id, user id (cascading delete with the
-user), `max_role` = the invocation's effective authority, purpose, created,
-and expiry. A member's grant and one minted through a member-capped `BB_TOKEN`
-record `member`.
+invocation map as `experimental_asCaller`, and throws for `plugin` and `system`
+callers, forged or ended contexts, and on a caller- or grant-bound SDK.
+`purpose` is 1 to 200 characters; `expiresInDays` is a whole number from 1 to
+3650, omitting it means 90 days, and `null` means the grant lasts until
+revoked. Ninety days bounds a forgotten grant to one quarter while letting a
+recurring job run a full quarter between saves; rows created before the default
+keep their stored expiry. A caller whose request authenticated through a
+grant-derived credential (a grant turn's `BB_TOKEN`, or `asCaller` inside such
+an invocation) cannot grant. Core inserts a `plugin_caller_grants` row: id,
+plugin id, user id (cascading delete with the user), `max_role` = the
+invocation's effective authority, purpose, created, and expiry. A member's
+grant and one minted through a member-capped `BB_TOKEN` record `member`.
 
-`bb.sdk.experimental_asGrant(grantId)` returns a `PluginBbSdk` authenticated
-by a `bbcaller_` credential (five-minute lifetime, as for `asCaller`) that
-also names the grant. It throws when the row is missing (revoked, its user or
-plugin removed), belongs to another plugin, or has expired. Every request
-re-reads the row, so revocation, expiry, and user removal stop credentials
-minted earlier, and the credential is refused unless its plugin id and user id
-match the row. The principal is the grant's user with
+`bb.sdk.experimental_asGrant(grantId)` returns a `PluginBbSdk` authenticated by
+a `bbcaller_` credential (five-minute lifetime, as for `asCaller`) that also
+names the grant. It throws when the row is missing (revoked, its user or plugin
+removed), belongs to another plugin, or has expired. Every request re-reads the
+row, so revocation, expiry, and user removal stop credentials minted earlier,
+and the credential is refused unless its plugin id and user id match the row.
+The principal is the grant's user with
 `role = min(max_role, current account role)` and `roleCeiling: "member"` when
-`max_role` is member: a member's grant stays member after promotion, and an
-admin's grant acts as a member while the admin is demoted and as an admin
-again only after an admin promotes them back. Threads, forks, and messages it
-creates record that user as creator and turn author through the ordinary
-routes, so the existing `BB_TOKEN` rules apply and a member grant's turns get
-a capped token. `POST /auth/tokens` refuses it with 403 `credential_delegated`;
-the grant-bound SDK throws for `experimental_asCaller`,
-`experimental_asGrant`, `experimental_createCallerGrant`, and
-`experimental_revokeCallerGrant`, and a plugin RPC reached through it sees a
-`plugin` caller, which cannot grant. Call `experimental_asGrant` for each unit
-of work. In local mode it returns `bb.sdk` for the local owner's grants.
+`max_role` is member: a member's grant stays member after promotion, and
+demoting an admin rewrites `max_role` of every grant they hold to `member` in
+the same transaction as the role change, so promoting them back does not
+restore admin authority; a fresh grant is needed. Credentials minted from the
+grant before the demotion read the stored `max_role` on every request and are
+capped too. Threads, forks, and messages it creates record that user as creator
+and turn author through the ordinary routes, so the existing `BB_TOKEN` rules
+apply and a member grant's turns get a capped token. The principal also carries
+the grant id, which is recorded as `author_grant_id` on `turn_request_authors`
+and `queued_thread_messages` (migration 0149) next to the author and role
+ceiling, and signed into the turn's shell token as a `grantId` claim.
+Authenticating such a token re-reads the grant: it answers 401 once the grant
+is revoked, expired, or deleted with its plugin or person, and caps at member
+when the stored `max_role` is member. Messages with different grant ids never
+group or steer into one another's turns. `asCaller` inside an invocation whose
+caller authenticated through a grant mints a credential with a `derivedGrantId`
+that is checked the same way without the plugin binding, so threads it creates
+stay bound to the grant, and agent tool calls of a grant turn whose grant is
+gone run as a `system` caller with member authority. `asCaller`-only turns
+record no grant: their credential ends with the handler, so there is no durable
+object to revoke and their turns follow the person's own `BB_TOKEN` rules.
+`POST /auth/tokens` and the grant routes refuse it, and a grant turn's
+`BB_TOKEN`, with 403 `credential_delegated`; the grant-bound SDK throws for
+`experimental_asCaller`, `experimental_asGrant`,
+`experimental_createCallerGrant`, and `experimental_revokeCallerGrant`, and a
+plugin RPC reached through it sees a `plugin` caller, which cannot grant. Call
+`experimental_asGrant` for each unit of work. In local mode it returns `bb.sdk`
+for the local owner's grants.
 
 `bb.sdk.experimental_revokeCallerGrant(grantId)` deletes one of the plugin's
 own grants and resolves without effect for any other id. Removing a plugin
@@ -316,27 +337,31 @@ deletes the user's grants.
 This differs from the earlier design note in four ways. Grants from
 member-capped credentials are allowed and recorded at member authority, so an
 agent holding a capped `BB_TOKEN` can still create an automation that runs as
-its user without gaining authority. Demotion caps a grant instead of revoking
-it, so a demoted admin's automations keep running as a member. Revoking
-deletes the row instead of keeping a revoked flag. Delegated credentials never
-mint grants because they reach plugins as `plugin` callers.
+its user without gaining authority. Demotion permanently lowers a grant to
+member instead of revoking it, so a demoted admin's automations keep running as
+a member. Revoking deletes the row instead of keeping a revoked flag. Delegated
+credentials never mint grants because they reach plugins as `plugin` callers.
 
 Before stabilizing, audit renewable grant credentials for long work, whether
 the app should list grants per plugin and notify plugins of revocation,
-request-log attribution of grant-backed requests, whether grants need a
-default expiry, and whether admins need a server-wide grant list.
+request-log attribution of grant-backed requests, whether 90 days suits
+scheduled automations or they need renewal prompts, whether a turn whose grant
+is gone should be refused at dispatch rather than only losing its `BB_TOKEN`,
+and whether admins need a server-wide grant list.
 
-Core callers: Automations records a grant from the person who creates or
-saves an agent automation, revokes the replaced grant and the grant of a
-deleted automation, and spawns or messages every scheduled and manual run
-through `experimental_asGrant`, so the run gets that person's `BB_TOKEN` and
+Core callers: Automations records a grant from the person who creates or saves
+an agent automation, revokes the replaced grant and the grant of a deleted
+automation, and spawns or messages every scheduled and manual run through
+`experimental_asGrant`, so the run gets that person's `BB_TOKEN` and
 attribution. Automations saved before grants existed keep running through
 `bb.sdk` and report `runsAsCreator: false`, shown in the app and
-`bb automation show` until saved again. `bb user grants` and the routes use
-the `experimental_users` SDK area. The server suite
-`plugin-caller-grants.test.ts` covers promotion and demotion, revocation,
-expiry, user and plugin removal, cross-plugin use, PAT and grant minting from a
-grant, the routes, local mode, and an automation's scheduled run.
+`bb automation show` until saved again. `bb user grants` and the routes use the
+`experimental_users` SDK area. The server suite `plugin-caller-grants.test.ts`
+covers promotion and demotion, revocation, expiry, user and plugin removal,
+cross-plugin use, PAT and grant minting from a grant, the routes, local mode,
+and an automation's scheduled run, plus permanent demotion, the default expiry,
+and grant turn tokens that stop after revocation, expiry, or plugin or person
+removal and cannot mint PATs or grants.
 
 ## User-scoped plugin data (`bb.storage.experimental_forUser`, `PluginSettingDescriptor.experimental_scope`, `bb.settings.experimental_getForUser`, and `bb.realtime.publish`'s `experimental_userId`)
 

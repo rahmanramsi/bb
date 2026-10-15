@@ -47,9 +47,7 @@ describe("app settings data", () => {
   });
 
   it("persists keyboard overrides without clobbering general settings", () => {
-    const overrides = [
-      { command: "thread.new" as const, shortcut: null },
-    ];
+    const overrides = [{ command: "thread.new" as const, shortcut: null }];
     setAppSettings(db, {
       ...defaultAppSettings,
       showKeyboardHints: false,

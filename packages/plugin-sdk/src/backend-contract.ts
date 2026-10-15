@@ -2200,9 +2200,10 @@ export interface ExperimentalCallerGrantRequest {
   purpose: string;
   /**
    * Whole days until the grant stops working, 1 to 3650. Omitted, the grant
-   * lasts until it is revoked.
+   * expires after 90 days. `null` makes it last until it is revoked; choose
+   * that only when the person expects the work to run indefinitely.
    */
-  expiresInDays?: number;
+  expiresInDays?: number | null;
 }
 
 /** A grant created by `bb.sdk.experimental_createCallerGrant`. */
@@ -2241,8 +2242,11 @@ export type PluginBbSdk = Omit<BbSdk, "threads"> & {
    * act as them later, for work that outlives the invocation such as a
    * scheduled run. The grant's authority is the caller's effective authority
    * now, so a member's grant, or one minted through a capped `BB_TOKEN`, is
-   * member forever. Only a `client` caller inside a running invocation can
-   * grant; throws otherwise and on a grant-bound or caller-bound SDK. The
+   * member forever, and demoting an admin lowers their grants to member for
+   * good. Only a `client` caller inside a running invocation can grant, and
+   * not one whose request came through a grant's turn; throws otherwise and
+   * on a grant-bound or caller-bound SDK. Expires after 90 days unless
+   * `request.expiresInDays` says otherwise. The
    * person can list and revoke their grants (`bb user grants`), an admin can
    * revoke anyone's, and removing the person or this plugin deletes them. In
    * local mode the grant belongs to the local owner.
@@ -2256,7 +2260,8 @@ export type PluginBbSdk = Omit<BbSdk, "threads"> & {
    * plugin created, with authority `min(grant authority, their current
    * role)`. Threads and messages it creates record that person as creator and
    * author, so their turns get that person's `BB_TOKEN`, capped like the
-   * grant. Throws when the grant is unknown, belongs to another plugin, has
+   * grant and refused once the grant is revoked, expires, or its person or
+   * this plugin is removed. Throws when the grant is unknown, belongs to another plugin, has
    * expired or been revoked, or its person was removed. The credential lasts
    * a few minutes and cannot create personal access tokens or grants; call
    * `experimental_asGrant` again for each unit of work. In local mode it

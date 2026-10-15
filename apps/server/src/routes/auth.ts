@@ -128,6 +128,13 @@ export function registerAuthRoutes(app: Hono, deps: AuthRouteDeps): void {
         "A plugin acting as a user cannot create personal access tokens; sign in to create one",
       );
     }
+    if (principal.grantId !== null) {
+      throw new ApiError(
+        403,
+        "credential_delegated",
+        "A credential derived from a plugin grant cannot create personal access tokens; sign in to create one",
+      );
+    }
     const created = await deps.userAuth.createPersonalAccessToken({
       name: payload.name,
       userId: principal.userId,
@@ -204,6 +211,13 @@ export function registerAuthRoutes(app: Hono, deps: AuthRouteDeps): void {
         403,
         "credential_delegated",
         "A plugin acting as a user cannot manage plugin grants",
+      );
+    }
+    if (principal.grantId !== null) {
+      throw new ApiError(
+        403,
+        "credential_delegated",
+        "A credential derived from a plugin grant cannot manage plugin grants",
       );
     }
     if (principal.userId !== userId) assertAdmin(context);

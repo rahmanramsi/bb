@@ -66,6 +66,7 @@ export interface QueuedDispatchMessage {
   input: PromptInput[];
   execution: ResolvedThreadExecutionOptions;
   senderThreadId: string | null;
+  authorGrantId: string | null;
   authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   /**
@@ -128,6 +129,7 @@ export function recordQueuedMessageWait(
           threadId: args.thread.id,
           content: args.message.input,
           senderThreadId: args.message.senderThreadId,
+          authorGrantId: args.message.authorGrantId,
           authorRoleCeiling: args.message.authorRoleCeiling,
           authorUserId: args.message.authorUserId,
           origin: args.message.origin,

@@ -30,16 +30,32 @@ describe("machine provisioning state", () => {
   it("selects unfinished provider machines through creation, suspension and removal", () => {
     const { db, host } = setup();
     try {
-      updateHost(db, noopNotifier, host.id, { machineProviderId: "test-machine" });
+      updateHost(db, noopNotifier, host.id, {
+        machineProviderId: "test-machine",
+      });
       const other = upsertHost(db, noopNotifier, { name: "other-provider" });
-      updateHost(db, noopNotifier, other.id, { machineProviderId: "other-machine" });
-      for (const phase of ["creating", "active", "suspending", "suspended", "resuming", "removing"] as const) {
+      updateHost(db, noopNotifier, other.id, {
+        machineProviderId: "other-machine",
+      });
+      for (const phase of [
+        "creating",
+        "active",
+        "suspending",
+        "suspended",
+        "resuming",
+        "removing",
+      ] as const) {
         updateHost(db, noopNotifier, host.id, { phase });
-        expect(listProviderMachines(db, "test-machine").map((row) => row.id)).toEqual([host.id]);
+        expect(
+          listProviderMachines(db, "test-machine").map((row) => row.id),
+        ).toEqual([host.id]);
       }
       updateHost(db, noopNotifier, host.id, { phase: "destroyed" });
       expect(listProviderMachines(db, "test-machine")).toEqual([]);
-      updateHost(db, noopNotifier, host.id, { phase: "active", destroyedAt: 1 });
+      updateHost(db, noopNotifier, host.id, {
+        phase: "active",
+        destroyedAt: 1,
+      });
       expect(listProviderMachines(db, "test-machine")).toEqual([]);
     } finally {
       db.$client.close();

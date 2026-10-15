@@ -2960,7 +2960,7 @@ describe("caller identity", () => {
         async grant(input, ctx) {
           const { grantId } = await bb.sdk.experimental_createCallerGrant(
             ctx,
-            input as { purpose: string; expiresInDays?: number },
+            input as { purpose: string; expiresInDays?: number | null },
           );
           return grantId;
         },
@@ -2985,6 +2985,15 @@ describe("caller identity", () => {
           { experimental_caller: cappedAdmin },
         ),
       );
+    const unboundedGrant = z
+      .string()
+      .parse(
+        await harness.callRpc(
+          "grant",
+          { purpose: "Indefinite", expiresInDays: null },
+          { experimental_caller: member },
+        ),
+      );
     expect(harness.experimental_callerGrants).toEqual([
       {
         grantId: memberGrant,
@@ -2999,9 +3008,18 @@ describe("caller identity", () => {
         grantId: cappedGrant,
         userId: "usr_admin",
         maxRole: "member",
+      }),
+      expect.objectContaining({
+        grantId: unboundedGrant,
         expiresAt: null,
       }),
     ]);
+    const capped = harness.experimental_callerGrants.find(
+      (grant) => grant.grantId === cappedGrant,
+    );
+    expect(capped?.expiresAt).toBe(
+      (capped?.createdAt ?? 0) + 90 * 24 * 60 * 60 * 1000,
+    );
 
     await bb.sdk.experimental_asGrant(cappedGrant).projects.list();
     expect(harness.sdk.calls).toEqual([

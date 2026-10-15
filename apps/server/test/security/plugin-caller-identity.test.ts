@@ -243,6 +243,7 @@ async function bootstrapTeam(): Promise<Team> {
   expect(memberSignUp.status).toBe(201);
   const memberId: string = (await json(memberSignUp)).user.id;
   const capped = await issueThreadShellToken(server.config.dataDir, {
+    grantId: null,
     userId: adminId,
     roleCeiling: "member",
   });
@@ -478,6 +479,7 @@ describe("plugin caller identity in multi-user mode", () => {
       auth.authenticate(new Headers({ authorization: `Bearer ${token}` }));
 
     const admin = auth.issuePluginCallerCredential({
+      derivedGrantId: null,
       grantId: null,
       maxRole: "admin",
       pluginId: "identity",
@@ -486,12 +488,14 @@ describe("plugin caller identity in multi-user mode", () => {
     });
     expect((await meWith(admin.token))?.principal).toEqual({
       delegatedPluginId: "identity",
+      grantId: null,
       kind: "user",
       role: "admin",
       roleCeiling: null,
       userId: team.adminId,
     });
     const memberWithAdminClaim = auth.issuePluginCallerCredential({
+      derivedGrantId: null,
       grantId: null,
       maxRole: "admin",
       pluginId: "identity",
@@ -502,6 +506,7 @@ describe("plugin caller identity in multi-user mode", () => {
       "member",
     );
     const capped = auth.issuePluginCallerCredential({
+      derivedGrantId: null,
       grantId: null,
       maxRole: "admin",
       pluginId: "identity",
@@ -573,6 +578,7 @@ describe("plugin agent tool callers", () => {
         threadId: fixture.thread.id,
         requestId: encodeClientTurnRequestIdNumber({ value: 1 }),
         authorUserId: author.userId,
+        authorGrantId: null,
         authorRoleCeiling: author.roleCeiling,
       }),
     );

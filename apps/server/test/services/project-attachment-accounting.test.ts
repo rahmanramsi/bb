@@ -118,6 +118,7 @@ describe("project attachment accounting", () => {
         sendAt: Date.now() + 30 * 24 * 3600_000,
       });
       const result = updateQueuedThreadMessage(h.db, h.hub, {
+        editorGrantId: null,
         editorRoleCeiling: null,
         editorUserId: null,
         id: queued.id,
@@ -136,6 +137,7 @@ describe("project attachment accounting", () => {
       );
       expect(
         updateQueuedThreadMessage(h.db, h.hub, {
+          editorGrantId: null,
           editorRoleCeiling: null,
           editorUserId: null,
           id: queued.id,

@@ -60,6 +60,7 @@ export interface CreateQueuedThreadMessageInput {
   senderThreadId?: string | null;
   authorUserId?: string | null;
   authorRoleCeiling?: RoleCeiling | null;
+  authorGrantId?: string | null;
   /**
    * How the dispatch this row is queued from was requested, and the plugin
    * that requested it, so a drained re-attempt carries the provenance its
@@ -92,6 +93,7 @@ export interface CreateQueuedThreadMessageInput {
 
 export interface UpdateQueuedThreadMessageInput {
   content: PromptInput[];
+  editorGrantId: string | null;
   editorRoleCeiling: RoleCeiling | null;
   editorUserId: string | null;
   expectedUpdatedAt: number;
@@ -372,6 +374,7 @@ function queuedMessageGroupingEnvelopeMatches(
     firstQueuedMessage !== null &&
     queuedMessage.authorUserId === firstQueuedMessage.authorUserId &&
     queuedMessage.authorRoleCeiling === firstQueuedMessage.authorRoleCeiling &&
+    queuedMessage.authorGrantId === firstQueuedMessage.authorGrantId &&
     queuedMessage.senderThreadId === firstQueuedMessage.senderThreadId &&
     queuedMessage.model === firstQueuedMessage.model &&
     queuedMessage.reasoningLevel === firstQueuedMessage.reasoningLevel &&
@@ -568,7 +571,8 @@ function applyQueuedThreadMessageGroupBoundary(
         queuedMessage.senderThreadId !== firstQueuedMessage?.senderThreadId ||
         queuedMessage.authorUserId !== firstQueuedMessage?.authorUserId ||
         queuedMessage.authorRoleCeiling !==
-          firstQueuedMessage?.authorRoleCeiling,
+          firstQueuedMessage?.authorRoleCeiling ||
+        queuedMessage.authorGrantId !== firstQueuedMessage?.authorGrantId,
     );
     if (hasMixedSender) {
       return { kind: "invalid_sender" };
@@ -660,6 +664,7 @@ export function createQueuedThreadMessageInTransaction(
       senderThreadId: input.senderThreadId ?? null,
       authorUserId: input.authorUserId ?? null,
       authorRoleCeiling: input.authorRoleCeiling ?? null,
+      authorGrantId: input.authorGrantId ?? null,
       origin: input.origin ?? null,
       originPluginId: input.originPluginId ?? null,
       requestedByInitiator: input.requestedBy?.initiator ?? null,
@@ -738,13 +743,19 @@ export function updateQueuedThreadMessage(
           ...(existing.systemNotice !== null ||
           existing.authorUserId !== input.editorUserId
             ? {
+                authorGrantId: input.editorGrantId,
                 authorRoleCeiling: input.editorRoleCeiling,
                 authorUserId: input.editorUserId,
                 systemNotice: null,
               }
-            : input.editorRoleCeiling === null
-              ? {}
-              : { authorRoleCeiling: input.editorRoleCeiling }),
+            : {
+                ...(input.editorRoleCeiling === null
+                  ? {}
+                  : { authorRoleCeiling: input.editorRoleCeiling }),
+                ...(input.editorGrantId === null
+                  ? {}
+                  : { authorGrantId: input.editorGrantId }),
+              }),
           editHeldUntil: null,
           updatedAt: Math.max(Date.now(), existing.updatedAt + 1),
         })

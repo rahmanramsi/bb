@@ -137,6 +137,7 @@ describe("queued thread messages", () => {
     const before = getQueuedThreadMessage(db, first.id);
 
     const result = updateQueuedThreadMessage(db, noopNotifier, {
+      editorGrantId: null,
       editorRoleCeiling: null,
       editorUserId: null,
       content: textInput("edited in place"),
@@ -178,6 +179,7 @@ describe("queued thread messages", () => {
     });
 
     const result = updateQueuedThreadMessage(db, noopNotifier, {
+      editorGrantId: null,
       editorRoleCeiling: null,
       editorUserId: null,
       content: textInput("edited notice"),
@@ -212,6 +214,7 @@ describe("queued thread messages", () => {
 
     expect(
       updateQueuedThreadMessage(db, noopNotifier, {
+        editorGrantId: null,
         editorRoleCeiling: null,
         editorUserId: null,
         content: textInput("first edit"),
@@ -222,6 +225,7 @@ describe("queued thread messages", () => {
     ).toBe("updated");
     expect(
       updateQueuedThreadMessage(db, noopNotifier, {
+        editorGrantId: null,
         editorRoleCeiling: null,
         editorUserId: null,
         content: textInput("stale edit"),
@@ -254,6 +258,7 @@ describe("queued thread messages", () => {
       });
 
       const result = updateQueuedThreadMessage(db, noopNotifier, {
+        editorGrantId: null,
         editorRoleCeiling: null,
         editorUserId: null,
         content: altInput,
@@ -291,6 +296,7 @@ describe("queued thread messages", () => {
 
     expect(
       updateQueuedThreadMessage(db, noopNotifier, {
+        editorGrantId: null,
         editorRoleCeiling: null,
         editorUserId: null,
         content: altInput,
@@ -1457,6 +1463,65 @@ describe("queued thread messages", () => {
     expect(result.kind).toBe("invalid_sender");
   });
 
+  it("rejects grouped prefixes that mix grant provenance and keeps a grant on edit", () => {
+    const { db, thread } = setup();
+    const queued = (authorGrantId: string | null, content: PromptInput[]) =>
+      createQueuedThreadMessage(db, noopNotifier, {
+        threadId: thread.id,
+        content,
+        authorGrantId,
+        model: "gpt-5",
+        reasoningLevel: "medium",
+        permissionMode: "full",
+        serviceTier: "default",
+        waitingOn: null,
+        sendAt: null,
+        payload: { kind: "inline" },
+        systemNotice: null,
+      });
+    const human = queued(null, defaultInput);
+    const granted = queued("pcg_one", altInput);
+    expect(getQueuedThreadMessage(db, granted.id)?.authorGrantId).toBe(
+      "pcg_one",
+    );
+
+    expect(
+      setQueuedThreadMessageGroupBoundary({
+        db,
+        notifier: noopNotifier,
+        threadId: thread.id,
+        expectedGroupedPrefixQueuedMessageIds: [human.id, granted.id],
+        groupBoundaryQueuedMessageId: granted.id,
+      }).kind,
+    ).toBe("invalid_sender");
+
+    const humanEdit = updateQueuedThreadMessage(db, noopNotifier, {
+      editorGrantId: null,
+      editorRoleCeiling: null,
+      editorUserId: null,
+      content: textInput("edited by a person"),
+      expectedUpdatedAt: granted.updatedAt,
+      id: granted.id,
+      threadId: thread.id,
+    });
+    expect(humanEdit.kind).toBe("updated");
+    expect(getQueuedThreadMessage(db, granted.id)?.authorGrantId).toBe(
+      "pcg_one",
+    );
+
+    const grantEdit = updateQueuedThreadMessage(db, noopNotifier, {
+      editorGrantId: "pcg_two",
+      editorRoleCeiling: null,
+      editorUserId: null,
+      content: textInput("edited through a grant"),
+      expectedUpdatedAt: getQueuedThreadMessage(db, human.id)!.updatedAt,
+      id: human.id,
+      threadId: thread.id,
+    });
+    expect(grantEdit.kind).toBe("updated");
+    expect(getQueuedThreadMessage(db, human.id)?.authorGrantId).toBe("pcg_two");
+  });
+
   it("rejects grouped prefixes that mix sender attribution", () => {
     const { db, thread } = setup();
     const firstQueuedMessage = createQueuedThreadMessage(db, noopNotifier, {
@@ -2060,6 +2125,7 @@ describe("queued thread messages", () => {
       );
 
       const saved = updateQueuedThreadMessage(db, noopNotifier, {
+        editorGrantId: null,
         editorRoleCeiling: null,
         editorUserId: null,
         content: textInput("SAVED EDIT"),

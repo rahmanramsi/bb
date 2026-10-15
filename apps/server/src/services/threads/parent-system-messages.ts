@@ -65,7 +65,11 @@ import {
 
 const PARENT_SYSTEM_MESSAGE_SOURCE = "tell";
 
-const SYSTEM_NOTICE_AUTHOR = { authorRoleCeiling: null, authorUserId: null };
+const SYSTEM_NOTICE_AUTHOR = {
+  authorGrantId: null,
+  authorRoleCeiling: null,
+  authorUserId: null,
+};
 
 export type ParentSystemMessageDelivery =
   | "delivered"
@@ -296,6 +300,7 @@ async function queueActiveParentSystemMessage(
         execution: args.execution,
         payload: { kind: "inline" },
         senderThreadId: null,
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: null,
         origin: null,
@@ -342,6 +347,7 @@ async function queueActiveParentSystemMessage(
     hostId: args.environment.hostId,
   });
   const preparedCommand = await prepareTurnSubmitCommandPayload(deps, {
+    authorGrantId: null,
     authorRoleCeiling: null,
     authorUserId: null,
     thread: args.thread,
@@ -411,6 +417,7 @@ async function queueReadyParentSystemMessage(
   const requestId = createClientTurnRequestId();
 
   const command = await prepareReadyThreadTurnCommand(deps, {
+    authorGrantId: null,
     authorRoleCeiling: null,
     authorUserId: null,
     thread: args.thread,
@@ -598,6 +605,7 @@ async function deliverParentSystemMessageWithContextGuard(
   );
   if (
     await dispatchTurnDuringReprovision({
+      authorGrantId: null,
       authorRoleCeiling: null,
       authorUserId: null,
       deps,

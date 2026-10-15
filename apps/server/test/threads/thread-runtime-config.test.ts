@@ -217,6 +217,7 @@ describe("thread runtime config", () => {
         };
 
         const startCommand = await buildThreadStartCommand(harness.deps, {
+          authorGrantId: null,
           authorRoleCeiling: null,
           authorUserId: null,
           environment,
@@ -245,6 +246,7 @@ describe("thread runtime config", () => {
         const submitCommand = await prepareTurnSubmitCommandPayload(
           harness.deps,
           {
+            authorGrantId: null,
             authorRoleCeiling: null,
             authorUserId: null,
             environment,
@@ -347,6 +349,7 @@ describe("thread runtime config", () => {
         } as const;
 
         const startCommand = await buildThreadStartCommand(harness.deps, {
+          authorGrantId: null,
           authorRoleCeiling: null,
           authorUserId: null,
           environment,
@@ -375,6 +378,7 @@ describe("thread runtime config", () => {
         const submitCommand = await prepareTurnSubmitCommandPayload(
           harness.deps,
           {
+            authorGrantId: null,
             authorRoleCeiling: null,
             authorUserId: null,
             environment,
@@ -825,6 +829,7 @@ describe("thread runtime config", () => {
       );
 
       const command = await buildThreadStartCommand(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: null,
         environment,
@@ -892,6 +897,7 @@ describe("thread runtime config", () => {
           { threadId: thread.id },
         );
         return buildThreadStartCommand(harness.deps, {
+          authorGrantId: null,
           authorRoleCeiling: null,
           authorUserId: null,
           environment,
@@ -992,6 +998,7 @@ describe("thread runtime config", () => {
         providerId: "hooked",
       });
       const command = await buildThreadStartCommand(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: null,
         environment,
@@ -1065,6 +1072,7 @@ describe("thread runtime config", () => {
       ];
 
       const command = await buildThreadStartCommand(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: null,
         environment,
@@ -1097,6 +1105,7 @@ describe("thread runtime config", () => {
         providerId: "pi",
       });
       const piCommand = await buildThreadStartCommand(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: null,
         environment,
@@ -1208,6 +1217,7 @@ describe("thread runtime config", () => {
         authorUserId: string | null,
       ) => {
         const config = await resolveThreadRuntimeCommandConfig(harness.deps, {
+          authorGrantId: null,
           authorRoleCeiling: null,
           authorUserId,
           environment: environmentInput,
@@ -1339,6 +1349,7 @@ describe("thread runtime config", () => {
 
       const resolve = async () =>
         resolveThreadRuntimeCommandConfig(harness.deps, {
+          authorGrantId: null,
           authorRoleCeiling: null,
           authorUserId: userId,
           environment: {
@@ -1418,6 +1429,7 @@ describe("thread runtime config", () => {
       const runtimeConfig = await resolveThreadRuntimeCommandConfig(
         harness.deps,
         {
+          authorGrantId: null,
           authorRoleCeiling: null,
           authorUserId: null,
           thread,
@@ -1504,6 +1516,7 @@ describe("thread runtime config", () => {
       const runtimeConfig = await resolveThreadRuntimeCommandConfig(
         harness.deps,
         {
+          authorGrantId: null,
           authorRoleCeiling: null,
           authorUserId: null,
           thread,
@@ -1559,6 +1572,7 @@ describe("thread runtime config", () => {
       const runtimeConfig = await resolveThreadRuntimeCommandConfig(
         harness.deps,
         {
+          authorGrantId: null,
           authorRoleCeiling: null,
           authorUserId: null,
           thread,
@@ -1627,6 +1641,7 @@ describe("thread runtime config", () => {
       const runtimeConfig = await resolveThreadRuntimeCommandConfig(
         harness.deps,
         {
+          authorGrantId: null,
           authorRoleCeiling: null,
           authorUserId: null,
           thread,
@@ -1705,6 +1720,7 @@ describe("thread runtime config", () => {
         const runtimeConfig = await resolveThreadRuntimeCommandConfig(
           harness.deps,
           {
+            authorGrantId: null,
             authorRoleCeiling: null,
             authorUserId: null,
             thread,
@@ -1777,6 +1793,7 @@ describe("thread runtime config", () => {
       const runtimeConfig = await resolveThreadRuntimeCommandConfig(
         harness.deps,
         {
+          authorGrantId: null,
           authorRoleCeiling: null,
           authorUserId: null,
           thread,
@@ -1891,6 +1908,7 @@ describe("thread runtime config", () => {
         const runtimeConfig = await resolveThreadRuntimeCommandConfig(
           harness.deps,
           {
+            authorGrantId: null,
             authorRoleCeiling: null,
             authorUserId: null,
             thread,
@@ -1976,6 +1994,7 @@ describe("thread runtime config", () => {
         const runtimeConfig = await resolveThreadRuntimeCommandConfig(
           harness.deps,
           {
+            authorGrantId: null,
             authorRoleCeiling: null,
             authorUserId: null,
             thread,
