@@ -14,6 +14,22 @@ import {
 import type { CommandRegistrar } from "../helpers/command-output-harness.js";
 import { registerProjectCommands } from "../../commands/project.js";
 
+const directoryUsers = [
+  { id: "usr_ada", name: "Ada", email: "ada@example.test", role: "admin" },
+  {
+    id: "usr_grace",
+    name: "Grace",
+    email: "grace@example.test",
+    role: "member",
+  },
+  {
+    id: "usr_linus",
+    name: "Linus",
+    email: "linus@example.test",
+    role: "member",
+  },
+];
+
 describe("bb project command output", () => {
   setupCommandOutputTestEnvironment();
 
@@ -287,6 +303,8 @@ describe("bb project command output", () => {
       {
         id: "proj-1",
         name: "Alpha",
+        visibility: "public",
+        ownerUserId: null,
         sources: [
           { hostId: "host-test-001", type: "local_path", path: "/tmp/alpha" },
         ],
@@ -295,14 +313,251 @@ describe("bb project command output", () => {
       },
     ];
     const get = vi.fn(async () => projects);
-    stubServerApi({ "v1.projects.$get": get });
+    const directory = vi.fn(async () => ({ users: [] }));
+    stubServerApi({
+      "v1.projects.$get": get,
+      "v1.users.directory.$get": directory,
+    });
 
     await runCommand(["project", "list"], register);
 
+    expect(directory).not.toHaveBeenCalled();
     expect(collectLogPayloads(vi.mocked(console.log))).toEqual([
       "",
-      "ID      Name   Path\n------  -----  ----------\nproj-1  Alpha  /tmp/alpha",
+      "ID      Name   Access  Owner  Path\n------  -----  ------  -----  ----------\nproj-1  Alpha  public  team   /tmp/alpha",
       "",
+    ]);
+  });
+
+  it("bb project list filters by visibility and shows owner emails", async () => {
+    const projects = [
+      {
+        id: "proj-private",
+        name: "Secret",
+        visibility: "private",
+        ownerUserId: "usr_ada",
+        sources: [],
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      {
+        id: "proj-gone",
+        name: "Orphan",
+        visibility: "private",
+        ownerUserId: "usr_unknown",
+        sources: [],
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ];
+    const get = vi.fn(async () => projects);
+    stubServerApi({
+      "v1.projects.$get": get,
+      "v1.users.directory.$get": vi.fn(async () => ({ users: directoryUsers })),
+    });
+
+    await runCommand(["project", "list", "--visibility", "private"], register);
+
+    expect(get).toHaveBeenCalledWith({ query: { visibility: "private" } });
+    const output = collectLogPayloads(vi.mocked(console.log)).join("\n");
+    expect(output).toMatch(
+      /proj-private\s+Secret\s+private\s+ada@example\.test/u,
+    );
+    expect(output).toMatch(/proj-gone\s+Orphan\s+private\s+usr_unknown/u);
+  });
+
+  it("bb project list rejects an unknown visibility before calling the server", async () => {
+    const get = vi.fn(async () => []);
+    stubServerApi({ "v1.projects.$get": get });
+
+    await expect(
+      runCommand(["project", "list", "--visibility", "secret"], register),
+    ).rejects.toThrow("process.exit:1");
+
+    expect(get).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(
+      'Error: Invalid visibility \'secret\'. Use "public" or "private".',
+    );
+  });
+
+  it("bb project create sends visibility and members resolved by email or id", async () => {
+    const post = vi.fn(async () => ({
+      id: "proj-created",
+      name: "Alpha",
+      visibility: "private",
+      ownerUserId: "usr_ada",
+      createdAt: 1,
+      updatedAt: 2,
+    }));
+    stubServerApi({
+      "v1.projects.$post": post,
+      "v1.users.directory.$get": vi.fn(async () => ({ users: directoryUsers })),
+    });
+
+    await runCommand(
+      [
+        "project",
+        "create",
+        "--name",
+        "Alpha",
+        "--root",
+        "/tmp/alpha",
+        "--visibility",
+        "private",
+        "--member",
+        "Grace@Example.test",
+        "--member",
+        "usr_linus",
+        "--json",
+      ],
+      register,
+    );
+
+    expect(post).toHaveBeenCalledWith({
+      json: {
+        name: "Alpha",
+        source: {
+          hostId: "host-test-001",
+          path: "/tmp/alpha",
+          type: "local_path",
+        },
+        visibility: "private",
+        memberUserIds: ["usr_grace", "usr_linus"],
+      },
+    });
+  });
+
+  it("bb project create rejects an unknown member without creating the project", async () => {
+    const post = vi.fn();
+    stubServerApi({
+      "v1.projects.$post": post,
+      "v1.users.directory.$get": vi.fn(async () => ({ users: directoryUsers })),
+    });
+
+    await expect(
+      runCommand(
+        [
+          "project",
+          "create",
+          "--name",
+          "Alpha",
+          "--root",
+          "/tmp/alpha",
+          "--member",
+          "nobody@example.test",
+        ],
+        register,
+      ),
+    ).rejects.toThrow("process.exit:1");
+
+    expect(post).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(
+      "Error: User 'nobody@example.test' not found. Run `bb user list` or pass a user ID or email.",
+    );
+  });
+
+  it("bb project visibility patches only the visibility", async () => {
+    const patch = vi.fn(async () => ({
+      id: "proj-1",
+      name: "Alpha",
+      visibility: "private",
+      ownerUserId: "usr_ada",
+      createdAt: 1,
+      updatedAt: 2,
+    }));
+    stubServerApi({ "v1.projects.:id.$patch": patch });
+
+    await runCommand(["project", "visibility", "proj-1", "private"], register);
+
+    expect(patch).toHaveBeenCalledWith({
+      param: { id: "proj-1" },
+      json: { visibility: "private" },
+    });
+    expect(collectLogLines(vi.mocked(console.log))).toEqual([
+      "Project proj-1 is now private",
+    ]);
+  });
+
+  it("bb project member add resolves an email and prints the member list as JSON", async () => {
+    const members = {
+      owner: {
+        userId: "usr_ada",
+        name: "Ada",
+        email: "ada@example.test",
+        addedAt: 1,
+      },
+      members: [
+        {
+          userId: "usr_grace",
+          name: "Grace",
+          email: "grace@example.test",
+          addedAt: 2,
+        },
+      ],
+    };
+    const put = vi.fn(async () => members);
+    stubServerApi({
+      "v1.projects.:id.members.:userId.$put": put,
+      "v1.users.directory.$get": vi.fn(async () => ({ users: directoryUsers })),
+    });
+
+    await runCommand(
+      ["project", "member", "add", "proj-1", "grace@example.test", "--json"],
+      register,
+    );
+
+    expect(put).toHaveBeenCalledWith({
+      param: { id: "proj-1", userId: "usr_grace" },
+    });
+    expect(
+      JSON.parse(String(vi.mocked(console.log).mock.calls[0]?.[0])),
+    ).toEqual(members);
+  });
+
+  it("bb project member list shows the owner and members", async () => {
+    stubServerApi({
+      "v1.projects.:id.members.$get": vi.fn(async () => ({
+        owner: {
+          userId: "usr_ada",
+          name: "Ada",
+          email: "ada@example.test",
+          addedAt: 1,
+        },
+        members: [
+          {
+            userId: "usr_grace",
+            name: "Grace",
+            email: "grace@example.test",
+            addedAt: 2,
+          },
+        ],
+      })),
+    });
+
+    await runCommand(["project", "member", "list", "proj-1"], register);
+
+    const output = collectLogPayloads(vi.mocked(console.log)).join("\n");
+    expect(output).toMatch(/usr_ada\s+Ada\s+ada@example\.test\s+owner/u);
+    expect(output).toMatch(/usr_grace\s+Grace\s+grace@example\.test\s+member/u);
+  });
+
+  it("bb project member remove deletes the resolved user", async () => {
+    const del = vi.fn(async () => ({ owner: null, members: [] }));
+    stubServerApi({
+      "v1.projects.:id.members.:userId.$delete": del,
+      "v1.users.directory.$get": vi.fn(async () => ({ users: directoryUsers })),
+    });
+
+    await runCommand(
+      ["project", "member", "remove", "proj-1", "usr_linus"],
+      register,
+    );
+
+    expect(del).toHaveBeenCalledWith({
+      param: { id: "proj-1", userId: "usr_linus" },
+    });
+    expect(collectLogLines(vi.mocked(console.log))).toEqual([
+      "Removed usr_linus from project proj-1",
     ]);
   });
 

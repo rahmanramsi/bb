@@ -66,16 +66,18 @@ export function ProjectActionsMenuItems({
       >
         Project settings
       </ActionMenuItem>
-      <ActionMenuItem
-        surface={surface}
-        icon="Edit"
-        onSelect={() => {
-          if (onRename) onRename();
-          else requestRename(project);
-        }}
-      >
-        Rename
-      </ActionMenuItem>
+      {project.viewerCanManage ? (
+        <ActionMenuItem
+          surface={surface}
+          icon="Edit"
+          onSelect={() => {
+            if (onRename) onRename();
+            else requestRename(project);
+          }}
+        >
+          Rename
+        </ActionMenuItem>
+      ) : null}
       {showAddLocalPath ? (
         <ActionMenuItem
           surface={surface}
@@ -88,17 +90,21 @@ export function ProjectActionsMenuItems({
         </ActionMenuItem>
       ) : null}
       {extraActions?.(surface)}
-      <ActionMenuSeparator surface={surface} />
-      <ActionMenuItem
-        surface={surface}
-        icon="Trash2"
-        variant="destructive"
-        onSelect={() => {
-          requestDelete(project);
-        }}
-      >
-        Remove
-      </ActionMenuItem>
+      {project.viewerCanManage ? (
+        <>
+          <ActionMenuSeparator surface={surface} />
+          <ActionMenuItem
+            surface={surface}
+            icon="Trash2"
+            variant="destructive"
+            onSelect={() => {
+              requestDelete(project);
+            }}
+          >
+            Remove
+          </ActionMenuItem>
+        </>
+      ) : null}
     </>
   );
 }

@@ -8,6 +8,7 @@ import {
   listStoredThreadPromptHistoryRows,
   type DbQueryConnection,
   type DbNotifier,
+  type ProjectAccessScope,
   type PromptHistoryPosition,
   type QueuedThreadMessageRow,
   type StoredPromptHistoryEntryRow,
@@ -301,11 +302,17 @@ export function decodePromptHistoryCursor(
 
 export function listPromptHistory(
   deps: PromptHistoryServiceDeps,
-  args: { before: PromptHistoryPosition | null; limit: number; userId: string },
+  args: {
+    before: PromptHistoryPosition | null;
+    limit: number;
+    projectAccess: ProjectAccessScope;
+    userId: string;
+  },
 ): { entries: PromptHistoryListEntry[]; nextCursor: string | null } {
   const rows = listPromptHistoryPage(deps.db, {
     before: args.before,
     limit: args.limit + 1,
+    projectAccess: args.projectAccess,
     userId: args.userId,
   });
   const pageRows = rows.slice(0, args.limit);

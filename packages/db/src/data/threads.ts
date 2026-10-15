@@ -50,6 +50,10 @@ import { createThreadId } from "../ids.js";
 import { NON_TERMINAL_SESSION_STATUSES } from "./terminal-sessions.js";
 import { createOrderKeyBetween } from "./order-keys.js";
 import { insertThreadPluginMetadata } from "./thread-plugin-metadata.js";
+import {
+  accessibleProjectIdCondition,
+  type ProjectAccessScope,
+} from "./project-access.js";
 
 type ThreadWriteConnection = DbConnection | DbTransaction;
 
@@ -117,6 +121,7 @@ export interface ThreadSearchResults {
 }
 
 export interface SearchThreadsWithPendingInteractionStateArgs {
+  projectAccess?: ProjectAccessScope;
   query: string;
   limitPerGroup: number;
   viewerUserId: string;
@@ -151,6 +156,7 @@ interface ListThreadSearchMatchRowsArgs {
   allTokensMatchQuery: string;
   anyTokenMatchQuery: string;
   limitPerGroup: number;
+  projectAccess: ProjectAccessScope | undefined;
   tokenMatchQueries: readonly string[];
 }
 
@@ -426,6 +432,7 @@ export interface ThreadMentionRow {
 export function listThreadMentionRowsByIds(
   db: DbQueryConnection,
   threadIds: readonly string[],
+  projectAccess?: ProjectAccessScope,
 ): ThreadMentionRow[] {
   if (threadIds.length === 0) {
     return [];
@@ -444,9 +451,32 @@ export function listThreadMentionRowsByIds(
         inArray(threads.id, [...threadIds]),
         isNull(threads.deletedAt),
         isNull(projects.deletedAt),
+        projectAccessFilter(projectAccess),
       ),
     )
     .all();
+}
+
+function projectAccessFilter(
+  projectAccess: ProjectAccessScope | undefined,
+): SQL | undefined {
+  return projectAccess === undefined
+    ? undefined
+    : accessibleProjectIdCondition(threads.projectId, projectAccess);
+}
+
+function rawThreadProjectAccessFilter(
+  projectIdColumn: SQL,
+  projectAccess: ProjectAccessScope | undefined,
+): SQL {
+  if (projectAccess === undefined) {
+    return sql``;
+  }
+  const condition = accessibleProjectIdCondition(
+    projectIdColumn,
+    projectAccess,
+  );
+  return condition === undefined ? sql`` : sql` AND ${condition}`;
 }
 
 export interface ListThreadsOptions {
@@ -464,6 +494,7 @@ export interface ListThreadsOptions {
   limit?: number;
   offset?: number;
   includeHidden?: boolean;
+  projectAccess?: ProjectAccessScope;
   viewerUserId: string;
 }
 
@@ -667,9 +698,12 @@ function threadWithPendingInteractionBaseQuery(
 export function listActiveVisiblePinnedThreadRootsWithPendingInteractionState(
   db: DbConnection,
   userId: string,
+  projectAccess?: ProjectAccessScope,
 ): ThreadWithPendingInteractionState[] {
   const pinnedThreads = threadWithPendingInteractionBaseQuery(db, userId)
-    .where(liveThreads(pinnedThreadWhere()))
+    .where(
+      and(liveThreads(pinnedThreadWhere()), projectAccessFilter(projectAccess)),
+    )
     .orderBy(asc(threadUserState.pinSortKey), asc(threads.id))
     .all()
     .map(toThreadWithPendingInteractionState);
@@ -810,6 +844,7 @@ function buildListThreadsFilters(options: ListThreadsOptions) {
       : options.hasParent === false
         ? isNull(threads.parentThreadId)
         : undefined,
+    projectAccessFilter(options.projectAccess),
   ].filter((value) => value !== undefined);
 }
 
@@ -1135,7 +1170,7 @@ function listThreadSearchMatchRows(
       FROM matching_threads
       JOIN threads AS t ON t.id = matching_threads.threadId
       WHERE t.deleted_at IS NULL
-        AND t.visibility = 'visible'
+        AND t.visibility = 'visible'${rawThreadProjectAccessFilter(sql`t.project_id`, args.projectAccess)}
     ),
     ordered_threads AS (
       SELECT
@@ -1276,6 +1311,7 @@ export function searchThreadsWithPendingInteractionState(
     allTokensMatchQuery: tokenMatchQueries.join(" AND "),
     anyTokenMatchQuery,
     limitPerGroup,
+    projectAccess: args.projectAccess,
     tokenMatchQueries,
   });
 
@@ -1313,6 +1349,7 @@ export interface CountThreadsOptions {
   includeArchived?: boolean;
   /** Hidden rows are excluded unless this is true. */
   includeHidden?: boolean;
+  projectAccess?: ProjectAccessScope;
 }
 
 export interface ThreadCountGroupRow {
@@ -1364,6 +1401,7 @@ export function countThreads(
     options.hostId !== undefined
       ? eq(environments.hostId, options.hostId)
       : undefined,
+    projectAccessFilter(options.projectAccess),
   ].filter((value) => value !== undefined);
 
   const groupColumn =
@@ -1449,7 +1487,10 @@ export interface RunningThreadRow {
  * `archived_at IS NULL` is the leading equality and the status set is the
  * range that follows.
  */
-export function listRunningThreads(db: DbQueryConnection): RunningThreadRow[] {
+export function listRunningThreads(
+  db: DbQueryConnection,
+  projectAccess?: ProjectAccessScope,
+): RunningThreadRow[] {
   return db
     .select({
       id: threads.id,
@@ -1461,6 +1502,7 @@ export function listRunningThreads(db: DbQueryConnection): RunningThreadRow[] {
       and(
         liveThreads(),
         inArray(threads.status, [...OCCUPYING_THREAD_STATUSES]),
+        projectAccessFilter(projectAccess),
       ),
     )
     .orderBy(asc(threads.id))
@@ -1551,6 +1593,7 @@ export function listThreadsWithPendingInteractionState(
 export function hasActiveThreadAttention(
   db: DbConnection,
   userId: string,
+  projectAccess?: ProjectAccessScope,
 ): boolean {
   const unreadThread = or(
     isNull(viewerLastReadAt),
@@ -1572,6 +1615,7 @@ export function hasActiveThreadAttention(
       liveThreads(
         eq(threads.visibility, "visible"),
         or(unreadThread, isNotNull(pendingInteractions.id)),
+        projectAccessFilter(projectAccess),
       ),
     )
     .limit(1)
@@ -2176,13 +2220,15 @@ export function deleteThread(
 export function listThreadAncestors(
   db: DbQueryConnection,
   threadIds: readonly string[],
+  projectAccess?: ProjectAccessScope,
 ): Array<{ threadId: string; ancestorIds: string[] }> {
   if (threadIds.length === 0) return [];
   const rows = db.all<{ id: string; parentId: string | null }>(sql`
     WITH RECURSIVE chain(id, parent_id) AS (
-      SELECT id, parent_thread_id FROM threads WHERE ${inArray(threads.id, [...threadIds])}
+      SELECT id, parent_thread_id FROM threads WHERE ${inArray(threads.id, [...threadIds])}${rawThreadProjectAccessFilter(sql`threads.project_id`, projectAccess)}
       UNION
       SELECT t.id, t.parent_thread_id FROM threads t JOIN chain c ON t.id = c.parent_id
+      WHERE 1 = 1${rawThreadProjectAccessFilter(sql`t.project_id`, projectAccess)}
     )
     SELECT id, parent_id AS parentId FROM chain
   `);
@@ -2209,6 +2255,7 @@ export function listThreadAncestors(
 export interface ListThreadDescendantsOptions {
   includeArchived: boolean;
   includeHidden: boolean;
+  projectAccess?: ProjectAccessScope;
 }
 
 export function listThreadDescendants(
@@ -2225,11 +2272,11 @@ export function listThreadDescendants(
   }>(sql`
     WITH RECURSIVE tree(id, parent_id, archived, hidden) AS (
       SELECT id, parent_thread_id, archived_at IS NOT NULL, visibility = 'hidden' FROM threads
-      WHERE ${inArray(threads.id, [...threadIds])} AND deleted_at IS NULL
+      WHERE ${inArray(threads.id, [...threadIds])} AND deleted_at IS NULL${rawThreadProjectAccessFilter(sql`threads.project_id`, options.projectAccess)}
       UNION
       SELECT t.id, t.parent_thread_id, t.archived_at IS NOT NULL, t.visibility = 'hidden'
       FROM threads t JOIN tree ON t.parent_thread_id = tree.id
-      WHERE t.deleted_at IS NULL
+      WHERE t.deleted_at IS NULL${rawThreadProjectAccessFilter(sql`t.project_id`, options.projectAccess)}
     )
     SELECT id, parent_id AS parentId, archived, hidden FROM tree
   `);

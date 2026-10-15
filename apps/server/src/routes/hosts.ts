@@ -24,8 +24,13 @@ import { SYSTEM_PLUGIN_CALLER } from "../services/plugins/plugin-invocation.js";
 import { COMMAND_TIMEOUT_MS } from "../constants.js";
 import { ApiError } from "../errors.js";
 import {
+  assertHostPathsVisible,
+  projectAccessScopeFor,
+} from "../services/projects/project-access.js";
+import {
   assertAdmin,
   getGateAuthKind,
+  requirePrincipal,
   type GateAuthHeaderReader,
   type PrincipalReader,
 } from "../request-context.js";
@@ -357,11 +362,11 @@ export function registerHostRoutes(
       repos: result.repos.map((repo) => ({
         ...repo,
         projectId:
-          getPublicProjectByLocalPathSource(deps.db, {
-            type: "local_path",
-            hostId,
-            path: repo.path,
-          })?.id ?? null,
+          getPublicProjectByLocalPathSource(
+            deps.db,
+            { type: "local_path", hostId, path: repo.path },
+            projectAccessScopeFor(requirePrincipal(context)),
+          )?.id ?? null,
       })),
       truncated: result.truncated,
     });
@@ -370,6 +375,11 @@ export function registerHostRoutes(
   get(routes.directory, async (context, query) => {
     const hostId = context.req.param("id");
     assertUsableHostId(deps, { hostId });
+    if (query.path) {
+      assertHostPathsVisible(deps.db, requirePrincipal(context), hostId, [
+        query.path,
+      ]);
+    }
     const result = await callHostRetryableOnlineRpc(deps, {
       hostId,
       timeoutMs: COMMAND_TIMEOUT_MS,

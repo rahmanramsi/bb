@@ -343,7 +343,9 @@ const shortcut = useSidebarThreadShortcut(thread.id); // { label, ariaKeyshortcu
 const draftIds = useSidebarThreadDraftIds(); // ReadonlySet<string>, for group rollups
 const rowStatuses = useSidebarThreadRowStatuses(); // ReadonlyMap, for group rollups
 const splitLayout = useSidebarSplitLayout(); // { panes: [{ paneId, rect, threadId, isFocused }] } | null
-// projects: PluginSidebarProject[] — { id, name, isPersonal, href, settingsHref }
+// projects: PluginSidebarProject[] — { id, name, isPersonal, href, settingsHref, experimental_visibility?, experimental_viewerCanManage? }
+// experimental_visibility is "public" | "private" on multi-user servers and absent otherwise
+// experimental_viewerCanManage is false when the user cannot rename, remove, or change access to the project
 
 // Titles can contain @project:, @section:, and @thread: mentions. `displayTitle`
 // is the resolved plain text (sort on it, use it for aria-label); <ThreadTitle>

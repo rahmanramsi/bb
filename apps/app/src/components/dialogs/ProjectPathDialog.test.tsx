@@ -3,6 +3,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { makeHost as host } from "@bb/test-helpers/domain-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AuthSessionResponse } from "@bb/server-contract";
+import { AuthContext } from "@/hooks/useAuth";
 import { ProjectPathDialog } from "./ProjectPathDialog";
 
 vi.mock("@/components/dialogs/RemotePathBrowser", () => ({
@@ -198,5 +200,91 @@ describe("ProjectPathDialog machine selection", () => {
         .hasAttribute("disabled"),
     ).toBe(true);
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+});
+
+function authSession(authMode: "multi" | "local"): AuthSessionResponse {
+  return {
+    user: {
+      id: "usr_sam",
+      name: "Sam",
+      email: "sam@example.com",
+      role: "member",
+    },
+    authMode,
+    needsBootstrap: false,
+    principalKind: authMode === "local" ? "local" : "user",
+  };
+}
+
+describe("ProjectPathDialog project access", () => {
+  function renderCreateDialog(authMode: "multi" | "local") {
+    const onSubmit = vi.fn();
+    render(
+      <AuthContext.Provider value={authSession(authMode)}>
+        <ProjectPathDialog
+          target={{ kind: "create" }}
+          platform="linux"
+          hostId={atum.id}
+          hostName={atum.name}
+          hosts={[atum]}
+          onOpenChange={vi.fn()}
+          onSubmit={onSubmit}
+        />
+      </AuthContext.Provider>,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Choose folder on host_atum" }),
+    );
+    return onSubmit;
+  }
+
+  it("submits a public project by default on a multi-user server", () => {
+    const onSubmit = renderCreateDialog("multi");
+
+    expect(
+      screen
+        .getByRole("radio", { name: "Public" })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Add project" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      { kind: "create", visibility: "public" },
+      "/home/deploy/repos/givecare",
+      "host_atum",
+    );
+  });
+
+  it("submits the private choice", () => {
+    const onSubmit = renderCreateDialog("multi");
+
+    fireEvent.click(screen.getByRole("radio", { name: "Private" }));
+    expect(
+      screen.getByText(
+        "Only you, members you add, and admins can see this project.",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add project" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      { kind: "create", visibility: "private" },
+      "/home/deploy/repos/givecare",
+      "host_atum",
+    );
+  });
+
+  it("hides the access choice in single-user mode", () => {
+    const onSubmit = renderCreateDialog("local");
+
+    expect(screen.queryByRole("group", { name: "Project access" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "Private" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Add project" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      { kind: "create" },
+      "/home/deploy/repos/givecare",
+      "host_atum",
+    );
   });
 });

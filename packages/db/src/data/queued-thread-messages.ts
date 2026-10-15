@@ -53,6 +53,10 @@ import {
 } from "../ids.js";
 import { createOrderKeyAfter, createOrderKeyBetween } from "./order-keys.js";
 import { queryInSqliteVariableBatches } from "./sqlite-variable-batches.js";
+import {
+  accessibleProjectIdCondition,
+  type ProjectAccessScope,
+} from "./project-access.js";
 
 export interface CreateQueuedThreadMessageInput {
   threadId: string;
@@ -1667,6 +1671,7 @@ function drainableQueuedThreadMessage() {
 }
 
 export interface ListQueuedThreadMessagesForApiArgs {
+  projectAccess?: ProjectAccessScope;
   threadId?: string;
   waitHolder?: QueuedMessageWaitHolder;
 }
@@ -1692,6 +1697,20 @@ export function listQueuedThreadMessagesForApi(
         ...(args.waitHolder === undefined
           ? []
           : [eq(queuedThreadMessages.waitHolder, args.waitHolder)]),
+        args.projectAccess === undefined
+          ? undefined
+          : inArray(
+              queuedThreadMessages.threadId,
+              db
+                .select({ id: threads.id })
+                .from(threads)
+                .where(
+                  accessibleProjectIdCondition(
+                    threads.projectId,
+                    args.projectAccess,
+                  ),
+                ),
+            ),
       ),
     )
     .orderBy(asc(queuedThreadMessages.createdAt), asc(queuedThreadMessages.id))

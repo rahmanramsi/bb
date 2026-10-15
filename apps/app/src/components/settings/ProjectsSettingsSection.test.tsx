@@ -86,6 +86,9 @@ function stubSidebarBootstrapFetch(
             gitRemoteUrl: project.gitRemoteUrl,
             createdAt: NOW,
             updatedAt: NOW,
+            visibility: "public",
+            ownerUserId: null,
+            viewerCanManage: true,
             sources: project.hostIds.map((hostId, index) => ({
               id: `src_${project.id}_${index}`,
               projectId: project.id,
@@ -109,6 +112,9 @@ function stubSidebarBootstrapFetch(
             gitRemoteUrl: null,
             createdAt: NOW,
             updatedAt: NOW,
+            visibility: "public",
+            ownerUserId: null,
+            viewerCanManage: false,
             sources: [],
             defaultExecutionOptions: null,
             threads: [],
@@ -335,6 +341,9 @@ describe("ProjectsSettingsSection", () => {
       createdAt: NOW,
       updatedAt: NOW,
       sources: [],
+      visibility: "public",
+      ownerUserId: null,
+      viewerCanManage: true,
     });
 
     renderSection();

@@ -7,6 +7,8 @@ import {
 } from "@bb/server-contract";
 import { ApiError } from "../errors.js";
 import type { AppDeps } from "../types.js";
+import { requirePrincipal } from "../request-context.js";
+import { projectAccessScopeFor } from "../services/projects/project-access.js";
 import { toThreadQueuedMessage } from "../services/threads/thread-queued-messages.js";
 
 /**
@@ -31,6 +33,7 @@ export function registerQueueRoutes(app: Hono, deps: AppDeps): void {
         ...(query.waitHolder !== undefined
           ? { waitHolder: query.waitHolder }
           : {}),
+        projectAccess: projectAccessScopeFor(requirePrincipal(context)),
       }).map(toThreadQueuedMessage),
     );
   });

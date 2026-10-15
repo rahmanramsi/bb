@@ -16,6 +16,7 @@ import {
   requirePrincipal,
   type PrincipalReader,
 } from "../request-context.js";
+import { listProjectIdsOwnedByUser, listProjectIdsWithMember } from "@bb/db";
 import { UserAuthError } from "../services/user-auth.js";
 import type { ServerAppDeps } from "../types.js";
 
@@ -246,14 +247,22 @@ export function registerAuthRoutes(app: Hono, deps: AuthRouteDeps): void {
 
   del(publicApiRoutes.users.remove, (context) => {
     assertAdmin(context);
+    const userId = context.req.param("id");
+    const affectedProjectIds = new Set([
+      ...listProjectIdsOwnedByUser(deps.db, userId),
+      ...listProjectIdsWithMember(deps.db, userId),
+    ]);
     let queueChangedThreadIds: string[];
     try {
-      queueChangedThreadIds = deps.userAuth.removeUser(context.req.param("id"));
+      queueChangedThreadIds = deps.userAuth.removeUser(userId);
     } catch (error) {
       throw toApiError(error);
     }
     for (const threadId of queueChangedThreadIds) {
       deps.hub.notifyThread(threadId, ["queue-changed"]);
+    }
+    for (const projectId of affectedProjectIds) {
+      deps.hub.notifyProjectAccessChanged(projectId);
     }
     return context.json({ ok: true as const });
   });

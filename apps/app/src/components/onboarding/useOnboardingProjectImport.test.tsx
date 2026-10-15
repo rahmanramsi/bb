@@ -63,7 +63,11 @@ describe("onboarding project imports", () => {
     async (count, expected) => {
       const view = arrange();
       await act(() =>
-        view.result.current.importProjects("host_local", repos.slice(0, count)),
+        view.result.current.importProjects(
+          "host_local",
+          repos.slice(0, count),
+          null,
+        ),
       );
       expect(view.result.current.selection[0]).toBe(expected);
       expect(view.onContinue).toHaveBeenCalledOnce();
@@ -75,14 +79,38 @@ describe("onboarding project imports", () => {
     async (selected) => {
       window.localStorage.setItem("bb.root-compose.project-id", selected);
       const view = arrange();
-      await act(() => view.result.current.importProjects("host_local", repos));
+      await act(() =>
+        view.result.current.importProjects("host_local", repos, null),
+      );
       expect(view.result.current.selection[0]).toBe(selected);
     },
   );
 
+  it("creates imported projects with the chosen access", async () => {
+    const view = arrange();
+    await act(() =>
+      view.result.current.importProjects(
+        "host_local",
+        repos.slice(0, 2),
+        "private",
+      ),
+    );
+    expect(createProject.mock.calls.map(([input]) => input.visibility)).toEqual(
+      ["private", "private"],
+    );
+
+    createProject.mockClear();
+    await act(() =>
+      view.result.current.importProjects("host_local", repos.slice(2), null),
+    );
+    expect(createProject.mock.calls[0]?.[0]).not.toHaveProperty("visibility");
+  });
+
   it("does not preselect imports when the setup guide is replayed", async () => {
     const view = arrange("replay");
-    await act(() => view.result.current.importProjects("host_local", repos));
+    await act(() =>
+      view.result.current.importProjects("host_local", repos, null),
+    );
     expect(view.result.current.selection[0]).toBe(PERSONAL_PROJECT_ID);
   });
 
@@ -94,7 +122,11 @@ describe("onboarding project imports", () => {
       const view = arrange();
       let imported: Promise<void>;
       act(() => {
-        imported = view.result.current.importProjects("host_local", repos);
+        imported = view.result.current.importProjects(
+          "host_local",
+          repos,
+          null,
+        );
       });
       act(() => {
         if (interruption === "close") view.unmount();
@@ -125,11 +157,13 @@ describe("onboarding project imports", () => {
       .mockResolvedValueOnce({ id: "proj_atlas-web" })
       .mockRejectedValueOnce(new Error("Import failed"));
     const view = arrange();
-    await act(() => view.result.current.importProjects("host_local", repos));
+    await act(() =>
+      view.result.current.importProjects("host_local", repos, null),
+    );
     expect(view.result.current.selection[0]).toBe("proj_atlas-web");
     expect(view.onContinue).not.toHaveBeenCalled();
     await act(() =>
-      view.result.current.importProjects("host_local", repos.slice(1)),
+      view.result.current.importProjects("host_local", repos.slice(1), null),
     );
     expect(view.result.current.selection[0]).toBe("proj_docs-site");
     expect(view.onContinue).toHaveBeenCalledOnce();
@@ -140,10 +174,12 @@ describe("onboarding project imports", () => {
       .mockResolvedValueOnce({ id: "proj_atlas-web" })
       .mockRejectedValueOnce(new Error("Import failed"));
     const view = arrange();
-    await act(() => view.result.current.importProjects("host_local", repos));
+    await act(() =>
+      view.result.current.importProjects("host_local", repos, null),
+    );
     act(() => view.result.current.selection[1]("proj_atlas-web"));
     await act(() =>
-      view.result.current.importProjects("host_local", repos.slice(1)),
+      view.result.current.importProjects("host_local", repos.slice(1), null),
     );
     expect(view.result.current.selection[0]).toBe("proj_atlas-web");
   });

@@ -1902,8 +1902,10 @@ On a fresh `multi` server the first account registered with
 "email"?: …}`), which only admins can create. Invites expire after seven days
 and work once; an invite with an email only registers that address.
 
-Every signed-in user sees all projects, threads, machines, and secrets on the
-server. Roles only guard administration: admins manage users and invites,
+Every signed-in user sees all public projects and their threads, plus all
+machines and secrets on the server; private projects are described in
+[Project ownership and visibility](#project-ownership-and-visibility). Roles
+otherwise only guard administration: admins manage users and invites,
 machine enrollment and removal, plugin installs, enablement, and settings,
 provider and AI service selection, global machine environment secrets, and
 server settings, updates, and moves. Members get `403` on those actions.
@@ -1924,8 +1926,8 @@ setting the plugin marks per user, which members may change for themselves.
 Changing them affects only that user, and realtime updates for them reach only
 that user's connected apps. Removing a user deletes their per-user plugin data
 and settings. A user who has never opened a thread
-sees it as read up to its creation. Projects, threads, and everything else stay
-shared. Admins list users with `GET /api/v1/users` (`bb user list`).
+sees it as read up to its creation. Public projects, their threads, and
+everything else stay shared. Admins list users with `GET /api/v1/users` (`bb user list`).
 Authenticated clients use `GET /api/v1/users/directory` to resolve attribution: threads record `createdByUserId`, queued
 messages record `authorUserId`, and resolved interactions record
 `resolvedByUserId`. In `local` mode all of this belongs to the local owner.
@@ -1952,6 +1954,58 @@ The colocated launcher and in-process plugins use a server credential that
 rotates on each server start and is stored in the owner-only
 `server-service-token` file under the server data directory. The launcher sends
 it only to a loopback server when preparing the local daemon's enrollment.
+
+### Project ownership and visibility
+
+In `multi` mode a project created by a signed-in user is owned by that user.
+Projects that existed before ownership was introduced, Personal, and projects
+created by the local machine or a machine credential have no owner
+(`ownerUserId` is `null`) and are team projects that admins manage. When an
+admin removes a user, that user's projects become team projects.
+
+Each project is `public` (the default) or `private`:
+
+- Everyone on the server can see and use a public project.
+- A private project is visible only to its owner, the members the owner adds,
+  and admins. Its threads, environments, terminals, files, attachments, queued
+  messages, search results, and realtime updates are hidden from everyone
+  else, and requests that name it answer `404` (`project_not_found`,
+  `thread_not_found`, and so on) so its existence is not revealed. Creating a
+  thread in, forking into, or moving a thread into a project requires access
+  to it.
+- Only the owner and admins can rename or delete a project, change its
+  visibility, or manage its members. Other users who can see the project get
+  `403` (`project_manage_forbidden`).
+- Personal is always public and has no members.
+
+Agents in threads act as the user whose `BB_TOKEN` they hold, so they see the
+same projects as that user. Lists refresh in connected apps when a project's
+visibility or members change. In `local` mode every project is visible to and
+manageable by the local owner, and these settings have no effect.
+
+In the app, choose Public or Private when creating a project, change it later
+in the project's settings, and add or remove members there. The sidebar filter
+shows All, Public, or Private projects, and private projects show a lock.
+
+From the CLI:
+
+- `bb project create --name NAME --root PATH --visibility private --member USER`
+  creates a private project; `--member` takes a user id or email and repeats.
+- `bb project list --visibility public|private` filters the list. Both the
+  table and `--json` include each project's visibility and owner.
+- `bb project visibility PROJECT public|private` changes access.
+- `bb project member list|add|remove PROJECT [USER]` manages members. Adding
+  the owner or an existing member does nothing.
+
+The API exposes `visibility`, `ownerUserId`, and `viewerCanManage` on every
+project. `POST /api/v1/projects` accepts optional `visibility` and
+`memberUserIds`; `PATCH /api/v1/projects/:id` accepts `visibility`;
+`GET /api/v1/projects` and `GET /api/v1/sidebar-bootstrap` accept a
+`visibility` query parameter. `GET /api/v1/projects/:id/members` returns the
+owner and members, and `PUT` or `DELETE /api/v1/projects/:id/members/:userId`
+adds or removes a member. The SDK exposes these through `projects.create`,
+`projects.list`, `projects.update`, `projects.sidebarBootstrap`, and
+`projects.experimental_members`.
 
 ### CLI login and account management
 
@@ -2441,6 +2495,13 @@ The Thread list plugin's `threadLifecycles` preference selects `["active"]`
 (the default), `["archived"]`, or `["active","archived"]`. Set it with
 `bb thread-list prefs set threadLifecycles '["archived"]'` or the header's
 Filter menu. It syncs to every window and rejects empty or duplicate values.
+
+On a multi-user server, the Filter menu also has a Projects group: All
+projects, Public, or Private. It is stored as the `projectVisibility`
+preference (`all`, the default, `public`, or `private`), for example
+`bb thread-list prefs set projectVisibility private`. Threads in hidden
+projects are hidden too, and private projects show a lock next to their name.
+Single-user servers show every project whatever the preference says.
 
 ## Desktop browser cookie discovery
 

@@ -6,7 +6,7 @@ description: "Inspect or change the sidebar thread list's layout preferences: or
 # Thread list preferences
 
 The Thread list plugin owns the sidebar's layout state. Read it with
-`bb thread-list prefs list --json`; keys are `showProviderIcons`, `threadLifecycles`, `organizationMode`,
+`bb thread-list prefs list --json`; keys are `showProviderIcons`, `threadLifecycles`, `projectVisibility`, `organizationMode`,
 `environmentGrouping`, `groupByReadStatus`, `chronologicalSort`, `sortDirection`, `sectionOrder`,
 `manualSectionOrder`, `machineSectionOrder`, `hiddenGroups` (including the
 built-in `threads` group), `rowActions`,
@@ -38,6 +38,12 @@ remain selected. `bb thread-list prefs set threadLifecycles '["archived"]'`
 shows archived threads, and `'["active","archived"]'` shows both. The default
 is `'["active"]'`. Archived results load in pages; use Show more at the end
 of the list. The same preference is available through `setPreference` RPC.
+
+On a multi-user server the Filter menu also offers All projects, Public, or
+Private, stored as `projectVisibility` (`all` by default, `public`, or
+`private`): `bb thread-list prefs set projectVisibility private` shows only
+private projects and their threads. Private projects show a lock next to their
+name. Single-user servers ignore the preference and show every project.
 
 `rowActions` picks up to three quick-action buttons a thread row shows on
 hover, left to right before its actions menu, as thread action keys: bb's

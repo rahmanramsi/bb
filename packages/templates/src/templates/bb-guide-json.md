@@ -77,10 +77,14 @@ Fields beyond those shown exist; these are the ones scripts use.
     bare arrays
 
   bb project list --json
-    [{id, kind, name, gitRemoteUrl, sources: [{id, hostId, path, isDefault}]}]    (bare array)
+    [{id, kind, name, visibility, ownerUserId, viewerCanManage, gitRemoteUrl, sources: [{id, hostId, path, isDefault}]}]    (bare array; ownerUserId is null for team projects)
 
   bb project show <id> --json
-    {id, kind, name, gitRemoteUrl, sources}
+    {id, kind, name, visibility, ownerUserId, viewerCanManage, gitRemoteUrl, sources}
+
+  bb project member list <projectId> --json
+    {owner: {userId, name, email, addedAt} | null, members: [{userId, name, email, addedAt}]}
+    (member add and member remove print the same shape after the change)
 
   bb machine list --json
     [{id, name, type, status, lifecycle, maxPermissionMode, lastSeenAt}]    (bare array)

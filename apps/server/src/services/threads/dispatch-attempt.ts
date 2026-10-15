@@ -10,6 +10,7 @@ import {
   isThreadQueueAutoSendPaused,
   listRunningThreads,
   type ClaimedQueuedThreadMessageRow,
+  type ProjectAccessScope,
   type RunningThreadRow,
 } from "@bb/db";
 import {
@@ -203,8 +204,9 @@ export function threadTargetHostId(
  */
 export function listRunningThreadsWithIntendedHosts(
   deps: Pick<LoggedPendingInteractionWorkSessionDeps, "db">,
+  projectAccess: ProjectAccessScope,
 ): RunningThreadRow[] {
-  return listRunningThreads(deps.db).map((row) =>
+  return listRunningThreads(deps.db, projectAccess).map((row) =>
     row.hostId !== null
       ? row
       : { ...row, hostId: intendedThreadHostId(deps, row.id) },

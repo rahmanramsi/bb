@@ -506,6 +506,33 @@ describe("ProjectRow interactions", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("offers only settings to users who cannot manage the project", async () => {
+    const store = createStore();
+    store.set(sidebarOrganizationModeAtom, "project");
+    renderTree(
+      <ProjectRow
+        project={makeSidebarProject({ canManage: false })}
+        threadListState={{ status: "ready", threads: [] }}
+        isActive={false}
+        isCollapsed={false}
+        compareThreads={() => 0}
+        collapsedThreadIds={new Set()}
+        collapsedEnvironmentIds={new Set()}
+        onToggleProjectCollapsed={vi.fn()}
+        onToggleThreadCollapsed={vi.fn()}
+        onToggleEnvironmentCollapsed={vi.fn()}
+      />,
+      { threads: [], store },
+    );
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Test project actions" }),
+      { button: 0 },
+    );
+    await screen.findByRole("menuitem", { name: "Project settings" });
+    expect(screen.queryByRole("menuitem", { name: "Rename" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Remove" })).toBeNull();
+  });
+
   it("links project settings and confirms removal through the SDK", async () => {
     const remove = vi.fn(sdkResult({ ok: true }));
     const { sdkCalls } = renderProjectRow(

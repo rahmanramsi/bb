@@ -1051,6 +1051,13 @@
       "when": 1792025883690,
       "tag": "0149_turn_author_grant_provenance",
       "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "6",
+      "when": 1792035922272,
+      "tag": "0150_project_visibility",
+      "breakpoints": true
     }
   ]
 }

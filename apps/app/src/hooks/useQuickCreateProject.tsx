@@ -19,6 +19,7 @@ import {
   getRootComposeRoutePath,
 } from "@/lib/route-paths";
 import { useSetRootComposeProjectId } from "@/lib/root-compose-selection";
+import { useAuth } from "@/hooks/useAuth";
 import type {
   ProjectPathDialogSubmitHandler,
   ProjectPathDialogTarget,
@@ -55,6 +56,7 @@ export function useQuickCreateProject(): QuickCreateProjectController {
   const navigate = useNavigate();
   const location = useLocation();
   const setRootComposeProjectId = useSetRootComposeProjectId();
+  const multiUser = useAuth()?.authMode === "multi";
   const shouldReplaceRoute = location.pathname === APP_ROOT_ROUTE_PATH;
 
   const submit = useCallback(
@@ -67,6 +69,9 @@ export function useQuickCreateProject(): QuickCreateProjectController {
         {
           name,
           source: { type: "local_path", hostId, path },
+          ...(target.visibility === undefined
+            ? {}
+            : { visibility: target.visibility }),
         },
         {
           onSuccess: (project) => {
@@ -88,8 +93,12 @@ export function useQuickCreateProject(): QuickCreateProjectController {
   });
 
   const openCreateDialog = useCallback(() => {
+    if (multiUser) {
+      controller.projectPathDialog.onOpen({ kind: "create" });
+      return;
+    }
     controller.openPathEntry({ kind: "create" });
-  }, [controller]);
+  }, [controller, multiUser]);
 
   return useMemo(
     () => ({

@@ -1,14 +1,19 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type {
+  ProjectMembersResponse,
   ProjectResponse,
   ProjectWithThreadsResponse,
   SidebarBootstrapResponse,
 } from "@bb/server-contract";
 import {
+  projectMembersQueryKey,
   projectsQueryKey,
   sidebarNavigationQueryKey,
 } from "../queries/query-keys";
-import { invalidateProjectDeleteQueries } from "./mutation-cache-effects";
+import {
+  invalidateProjectDeleteQueries,
+  invalidateProjectListQueries,
+} from "./mutation-cache-effects";
 import { patchCachedQueryData } from "./cache-effect-utils";
 
 interface ApplyProjectCreateResultArgs {
@@ -167,4 +172,17 @@ export function applyProjectDeleteResult({
         : currentNavigation,
   );
   invalidateProjectDeleteQueries({ queryClient });
+}
+
+export function applyProjectMembersResult({
+  projectId,
+  members,
+  queryClient,
+}: {
+  projectId: string;
+  members: ProjectMembersResponse;
+  queryClient: QueryClient;
+}): void {
+  queryClient.setQueryData(projectMembersQueryKey(projectId), members);
+  invalidateProjectListQueries({ queryClient });
 }

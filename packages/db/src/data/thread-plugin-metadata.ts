@@ -9,7 +9,11 @@ import type {
   DbQueryConnection,
   DbTransaction,
 } from "../connection.js";
-import { threadPluginMetadata } from "../schema.js";
+import { threadPluginMetadata, threads } from "../schema.js";
+import {
+  accessibleProjectIdCondition,
+  type ProjectAccessScope,
+} from "./project-access.js";
 
 export interface ThreadPluginMetadataPatch {
   threadId: string;
@@ -76,6 +80,7 @@ export function listPluginThreadMetadata(
   db: DbQueryConnection,
   pluginId: string,
   threadIds: readonly string[],
+  projectAccess?: ProjectAccessScope,
 ): {
   threads: Array<{ threadId: string; metadata: JsonObject }>;
   corruptThreadIds: string[];
@@ -91,6 +96,17 @@ export function listPluginThreadMetadata(
       and(
         eq(threadPluginMetadata.pluginId, pluginId),
         inArray(threadPluginMetadata.threadId, [...threadIds]),
+        projectAccess === undefined
+          ? undefined
+          : inArray(
+              threadPluginMetadata.threadId,
+              db
+                .select({ id: threads.id })
+                .from(threads)
+                .where(
+                  accessibleProjectIdCondition(threads.projectId, projectAccess),
+                ),
+            ),
       ),
     )
     .all();

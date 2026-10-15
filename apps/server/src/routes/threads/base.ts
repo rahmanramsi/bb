@@ -73,6 +73,7 @@ import { handleThreadOwnershipChange } from "../../services/threads/thread-owner
 import { applyThreadExecutionOverride } from "../../services/threads/thread-execution-override.js";
 import { applyThreadSessionOptionPatch } from "../../services/threads/thread-session-options.js";
 import { emitPluginThreadDeleted } from "../../services/plugins/plugin-thread-events.js";
+import { projectAccessScopeFor } from "../../services/projects/project-access.js";
 
 function parseThreadIncludes(query: ThreadGetQuery): Set<ThreadIncludeOption> {
   const includes = new Set<ThreadIncludeOption>();
@@ -259,6 +260,7 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
       ...(query.groupBy !== undefined ? { groupBy: query.groupBy } : {}),
       includeArchived: query.includeArchived === "true",
       includeHidden: query.includeHidden === "true",
+      projectAccess: projectAccessScopeFor(requirePrincipal(context)),
     });
     const response: ThreadCountResponse = {
       total: result.total,
@@ -269,7 +271,11 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
 
   post(routes.ancestors, (context, payload) => {
     return context.json({
-      threads: listThreadAncestors(deps.db, payload.threadIds),
+      threads: listThreadAncestors(
+        deps.db,
+        payload.threadIds,
+        projectAccessScopeFor(requirePrincipal(context)),
+      ),
     } satisfies ThreadAncestorsListResponse);
   });
 
@@ -278,6 +284,7 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
       threads: listThreadDescendants(deps.db, payload.threadIds, {
         includeArchived: payload.includeArchived ?? false,
         includeHidden: payload.includeHidden ?? false,
+        projectAccess: projectAccessScopeFor(requirePrincipal(context)),
       }),
     } satisfies ThreadDescendantsListResponse);
   });
@@ -287,6 +294,7 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
       deps.db,
       payload.pluginId,
       payload.threadIds,
+      projectAccessScopeFor(requirePrincipal(context)),
     );
     for (const threadId of corruptThreadIds) {
       deps.logger.warn(
@@ -298,7 +306,10 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
 
   get(routes.running, (context) => {
     return context.json(
-      listRunningThreadsWithIntendedHosts(deps) satisfies ThreadRunningResponse,
+      listRunningThreadsWithIntendedHosts(
+        deps,
+        projectAccessScopeFor(requirePrincipal(context)),
+      ) satisfies ThreadRunningResponse,
     );
   });
 
@@ -337,6 +348,7 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
         query.hasParent === undefined ? undefined : query.hasParent === "true",
       ...(limit !== undefined ? { limit } : {}),
       ...(offset !== undefined ? { offset } : {}),
+      projectAccess: projectAccessScopeFor(requirePrincipal(context)),
       viewerUserId: requireThreadViewerId(context),
     });
     return context.json(
@@ -359,6 +371,7 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
         ...searchThreadsWithPendingInteractionState(deps.db, {
           query: searchQuery,
           limitPerGroup,
+          projectAccess: projectAccessScopeFor(requirePrincipal(context)),
           viewerUserId: requireThreadViewerId(context),
         }),
       }) satisfies ThreadSearchResponse,
@@ -368,10 +381,11 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
   post(routes.resolveMentions, (context, payload) => {
     const uniqueThreadIds = [...new Set(payload.threadIds)];
     const rowsById = new Map(
-      listThreadMentionRowsByIds(deps.db, uniqueThreadIds).map((thread) => [
-        thread.id,
-        thread,
-      ]),
+      listThreadMentionRowsByIds(
+        deps.db,
+        uniqueThreadIds,
+        projectAccessScopeFor(requirePrincipal(context)),
+      ).map((thread) => [thread.id, thread]),
     );
     const resolved = uniqueThreadIds.flatMap((threadId) => {
       const thread = rowsById.get(threadId);

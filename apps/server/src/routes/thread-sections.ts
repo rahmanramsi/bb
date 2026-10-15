@@ -1,6 +1,7 @@
 import {
   createThreadSection,
   deleteThreadSection,
+  getThreadSectionAccess,
   listThreadSections,
   normalizeThreadSectionName,
   renameThreadSection,
@@ -13,6 +14,8 @@ import {
 import type { Hono } from "hono";
 import type { AppDeps } from "../types.js";
 import { ApiError } from "../errors.js";
+import { requirePrincipal, type PrincipalReader } from "../request-context.js";
+import { projectAccessScopeFor } from "../services/projects/project-access.js";
 
 function requireSectionName(name: string): string {
   const normalized = normalizeThreadSectionName(name);
@@ -30,13 +33,44 @@ function throwDuplicateSectionName(): never {
   );
 }
 
+function throwSectionNotFound(): never {
+  throw new ApiError(404, "section_not_found", "Section not found");
+}
+
 export function registerThreadSectionRoutes(app: Hono, deps: AppDeps): void {
   const { del, get, patch, post } = typedRoutes<PublicApiSchema>(app, {
     onValidationError: (msg) => new ApiError(400, "invalid_request", msg),
   });
   const routes = publicApiRoutes.threadSections;
 
-  get(routes.list, (context) => context.json(listThreadSections(deps.db)));
+  const assertCanChangeSection = (
+    context: PrincipalReader,
+    id: string,
+  ): void => {
+    const access = getThreadSectionAccess(deps.db, {
+      id,
+      projectAccess: projectAccessScopeFor(requirePrincipal(context)),
+    });
+    if (access === "hidden") {
+      throwSectionNotFound();
+    }
+    if (access === "shared_with_hidden") {
+      throw new ApiError(
+        409,
+        "section_in_use",
+        "This section is also used by threads in projects you cannot access",
+      );
+    }
+  };
+
+  get(routes.list, (context) =>
+    context.json(
+      listThreadSections(
+        deps.db,
+        projectAccessScopeFor(requirePrincipal(context)),
+      ),
+    ),
+  );
 
   post(routes.create, (context, payload) => {
     const result = createThreadSection(deps.db, deps.hub, {
@@ -49,12 +83,13 @@ export function registerThreadSectionRoutes(app: Hono, deps: AppDeps): void {
   });
 
   patch(routes.update, (context, payload) => {
+    assertCanChangeSection(context, payload.id);
     const result = renameThreadSection(deps.db, deps.hub, {
       id: payload.id,
       name: requireSectionName(payload.name),
     });
     if (result.status === "not_found") {
-      throw new ApiError(404, "section_not_found", "Section not found");
+      throwSectionNotFound();
     }
     if (result.status === "duplicate") {
       throwDuplicateSectionName();
@@ -63,9 +98,10 @@ export function registerThreadSectionRoutes(app: Hono, deps: AppDeps): void {
   });
 
   del(routes.delete, (context, payload) => {
+    assertCanChangeSection(context, payload.id);
     const result = deleteThreadSection(deps.db, deps.hub, { id: payload.id });
     if (!result) {
-      throw new ApiError(404, "section_not_found", "Section not found");
+      throwSectionNotFound();
     }
     return context.json(result);
   });

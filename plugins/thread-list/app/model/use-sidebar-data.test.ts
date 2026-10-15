@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { makeSidebarThread } from "./fixtures.js";
+import { makePluginProject, makeSidebarThread } from "./fixtures.js";
 import {
   buildSidebarData,
   getSidebarData,
@@ -144,6 +144,106 @@ describe("buildSidebarData structural sharing", () => {
     expect(getSidebarData({ ...state, threads: [...state.threads] })).not.toBe(
       data,
     );
+    resetSidebarDataCacheForTest();
+  });
+});
+
+describe("project visibility filter", () => {
+  const projects = [
+    makePluginProject({ id: "proj_open", experimental_visibility: "public" }),
+    makePluginProject({
+      id: "proj_secret",
+      experimental_visibility: "private",
+    }),
+    makePluginProject({
+      id: "proj_me",
+      isPersonal: true,
+      experimental_visibility: "public",
+    }),
+  ];
+  const state = {
+    status: "ready" as const,
+    threads: [
+      makeSidebarThread({ id: "t_open", projectId: "proj_open" }),
+      makeSidebarThread({ id: "t_secret", projectId: "proj_secret" }),
+      makeSidebarThread({ id: "t_me", projectId: "proj_me" }),
+    ],
+    experimental_hosts: [],
+    projects,
+    sections: [],
+    experimental_archived: null,
+  };
+
+  function visibleThreadIds(data: ReturnType<typeof getSidebarData>) {
+    return data.projects.flatMap((project) =>
+      project.threads.map((thread) => thread.id),
+    );
+  }
+
+  it.each([
+    ["all", ["proj_open", "proj_secret", "proj_me"], "proj_me"],
+    ["public", ["proj_open", "proj_me"], "proj_me"],
+    ["private", ["proj_secret"], null],
+  ] as const)(
+    "keeps %s projects and only their threads",
+    (filter, projectIds, personalProjectId) => {
+      resetSidebarDataCacheForTest();
+      const data = getSidebarData(state, filter);
+
+      expect(data.projects.map((project) => project.id)).toEqual(projectIds);
+      expect(visibleThreadIds(data)).toEqual(
+        projectIds.map((id) => `t_${id.slice("proj_".length)}`),
+      );
+      expect(data.personalProject?.id ?? null).toBe(personalProjectId);
+      resetSidebarDataCacheForTest();
+    },
+  );
+
+  it("marks private projects for the lock indicator", () => {
+    resetSidebarDataCacheForTest();
+    const data = getSidebarData(state);
+
+    expect(
+      data.projects.map((project) => [project.id, project.visibility]),
+    ).toEqual([
+      ["proj_open", "public"],
+      ["proj_secret", "private"],
+      ["proj_me", "public"],
+    ]);
+    resetSidebarDataCacheForTest();
+  });
+
+  it("carries management rights and treats a missing value as manageable", () => {
+    resetSidebarDataCacheForTest();
+    const data = getSidebarData({
+      ...state,
+      projects: [
+        makePluginProject({
+          id: "proj_shared",
+          experimental_viewerCanManage: false,
+        }),
+        makePluginProject({ id: "proj_legacy" }),
+      ],
+    });
+
+    expect(
+      data.projects.map((project) => [project.id, project.canManage]),
+    ).toEqual([
+      ["proj_shared", false],
+      ["proj_legacy", true],
+    ]);
+    resetSidebarDataCacheForTest();
+  });
+
+  it("shows every project when the server does not report visibility", () => {
+    resetSidebarDataCacheForTest();
+    const data = getSidebarData(
+      { ...state, projects: [makePluginProject({ id: "proj_open" })] },
+      "private",
+    );
+
+    expect(data.projects.map((project) => project.id)).toEqual(["proj_open"]);
+    expect(data.projects[0]?.visibility).toBeNull();
     resetSidebarDataCacheForTest();
   });
 });

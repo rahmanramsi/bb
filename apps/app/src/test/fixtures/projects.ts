@@ -15,6 +15,9 @@ export function makeProjectResponse(
     sources: [],
     createdAt: 0,
     updatedAt: 0,
+    visibility: "public",
+    ownerUserId: null,
+    viewerCanManage: true,
     ...overrides,
   };
 }

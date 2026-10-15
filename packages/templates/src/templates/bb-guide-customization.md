@@ -66,10 +66,15 @@ registered on a `multi` server becomes an admin; later sign-ups need an admin's
 invite. Admin-only actions return `403` to members.
 
 Read and unread state, pins and pin order, UI preferences, appearance, and
-prompt history are kept per user; projects and threads are shared. Threads,
-queued messages, and resolved interactions record who created, wrote, or
-answered them (`createdByUserId`, `authorUserId`, `resolvedByUserId`);
-`bb user list` maps those ids to names for admins.
+prompt history are kept per user; public projects and their threads are
+shared. Threads, queued messages, and resolved interactions record who
+created, wrote, or answered them (`createdByUserId`, `authorUserId`,
+`resolvedByUserId`); `bb user list` maps those ids to names for admins.
+
+Projects created by a signed-in user are owned by that user and are `public`
+or `private`. A private project is visible only to its owner, members, and
+admins; only the owner and admins manage it. See `bb guide projects` for the
+visibility and member commands.
 
 Sign in to a multi-user server with `bb login --email EMAIL`. The CLI prompts
 for the password and creates a PAT. Use `--password-file PATH` for unattended

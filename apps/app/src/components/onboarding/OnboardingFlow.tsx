@@ -2,14 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
 import {
+  DEFAULT_PROJECT_VISIBILITY,
   findLocalPathProjectSourceForHost,
   isActiveTerminalSessionStatus,
   mobileAppDownloads,
+  type ProjectVisibility,
 } from "@bb/domain";
 import type { TerminalOutputChunk, TerminalSession } from "@bb/server-contract";
 import { useMediaQuery } from "@bb/shared-ui/hooks/use-media-query";
 import { AddMachineDialog } from "@/components/dialogs/AddMachineDialog";
 import { ProjectPathDialog } from "@/components/dialogs/ProjectPathDialog";
+import { ProjectVisibilityChoice } from "@/components/project/ProjectVisibilityChoice";
 import { PluginSettingsSections } from "@/components/plugin/PluginSettingsSections";
 import { useSetPluginEnabled } from "@/components/plugin/useSetPluginEnabled";
 import {
@@ -51,6 +54,7 @@ import {
   useCreateTerminal,
 } from "@/hooks/queries/thread-terminal-queries";
 import { useDesktopWindowState } from "@/hooks/useDesktopWindowState";
+import { useAuth } from "@/hooks/useAuth";
 import { useHostDaemon } from "@/hooks/useHostDaemon";
 import { useQuickCreateProjectController } from "@/hooks/useQuickCreateProject";
 import {
@@ -533,6 +537,11 @@ function ProjectsStepContainer({
   const [rescanning, setRescanning] = useState(false);
   const [now] = useState(() => Date.now());
 
+  const auth = useAuth();
+  const showVisibilityChoice = auth?.authMode === "multi";
+  const [visibility, setVisibility] = useState<ProjectVisibility>(
+    DEFAULT_PROJECT_VISIBILITY,
+  );
   const { refetch: refetchRepos } = reposQuery;
   const { importing, importProjects } = useOnboardingProjectImport({
     entry,
@@ -618,7 +627,11 @@ function ProjectsStepContainer({
     const chosen = discovered.filter(
       (repo) => repo.projectId === null && selectedPaths.has(repo.path),
     );
-    void importProjects(hostId, chosen);
+    void importProjects(
+      hostId,
+      chosen,
+      showVisibilityChoice ? visibility : null,
+    );
   };
 
   const scanning = hostId === null || reposQuery.isPending || rescanning;
@@ -678,6 +691,15 @@ function ProjectsStepContainer({
           void refetchRepos().finally(() => setRescanning(false));
         }}
       />
+      {showVisibilityChoice && !scanning && selectedPaths.size > 0 ? (
+        <ProjectVisibilityChoice
+          value={visibility}
+          disabled={importing}
+          privateDescription="Only you, members you add later, and admins can see the imported projects."
+          publicDescription="Everyone on this server can see the imported projects."
+          onChange={setVisibility}
+        />
+      ) : null}
       <ProjectPathDialog
         target={quickCreateProject.projectPathDialog.target}
         pending={quickCreateProject.isCreating}

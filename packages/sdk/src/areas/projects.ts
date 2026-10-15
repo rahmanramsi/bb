@@ -10,6 +10,7 @@ import type {
   ProjectBranchesQuery,
   ProjectCommandsQuery,
   ProjectFilesQuery,
+  ProjectMembersResponse,
   ProjectResponse,
   ProjectWithThreadsResponse,
   ProjectListQuery,
@@ -25,13 +26,18 @@ import type {
   WorkspaceFileListResponse,
 } from "@bb/server-contract";
 import { uploadedPromptAttachmentSchema } from "@bb/server-contract";
-import type { ProjectExecutionDefaults, ProjectSource } from "@bb/domain";
+import type {
+  ProjectExecutionDefaults,
+  ProjectSource,
+  ProjectVisibility,
+} from "@bb/domain";
 import { signalRequestArgs, type CreateSdkAreaArgs } from "./common.js";
 
 export interface ProjectListArgs {
   include?: ProjectListQuery["include"];
   includePersonal?: boolean;
   signal?: AbortSignal;
+  visibility?: ProjectVisibility;
 }
 
 export interface ProjectCreateArgs extends CreateProjectRequest {}
@@ -99,6 +105,22 @@ export interface ProjectDefaultExecutionOptionsArgs {
 
 export interface ProjectSidebarBootstrapArgs {
   signal?: AbortSignal;
+  visibility?: ProjectVisibility;
+}
+
+export interface ProjectMembersListArgs {
+  projectId: string;
+  signal?: AbortSignal;
+}
+
+export interface ProjectMemberAddArgs {
+  projectId: string;
+  userId: string;
+}
+
+export interface ProjectMemberRemoveArgs {
+  projectId: string;
+  userId: string;
 }
 
 export interface ProjectAttachmentFileLike {
@@ -184,6 +206,13 @@ export type ProjectSourceAddResult = ProjectSource;
 export type ProjectSourceDeleteResult = { ok: true };
 export type ProjectSourceUpdateResult = ProjectSource;
 export type ProjectUpdateResult = ProjectResponse;
+export type ProjectMembersResult = ProjectMembersResponse;
+
+export interface ProjectMembersArea {
+  add(args: ProjectMemberAddArgs): Promise<ProjectMembersResult>;
+  list(args: ProjectMembersListArgs): Promise<ProjectMembersResult>;
+  remove(args: ProjectMemberRemoveArgs): Promise<ProjectMembersResult>;
+}
 
 export interface ProjectSourcesArea {
   add(args: ProjectSourceAddArgs): Promise<ProjectSourceAddResult>;
@@ -225,6 +254,7 @@ export interface ProjectsArea {
   files(args: ProjectFilesArgs): Promise<ProjectFilesResult>;
   get(args: ProjectGetArgs): Promise<ProjectGetResult>;
   list(args?: ProjectListArgs): Promise<ProjectListResult>;
+  experimental_members: ProjectMembersArea;
   paths(args: ProjectPathsArgs): Promise<ProjectPathsResult>;
   promptHistory(
     args: ProjectPromptHistoryArgs,
@@ -239,7 +269,8 @@ export interface ProjectsArea {
 
 function projectUpdateJson(args: ProjectUpdateArgs): UpdateProjectRequest {
   return {
-    name: args.name,
+    ...(args.name === undefined ? {} : { name: args.name }),
+    ...(args.visibility === undefined ? {} : { visibility: args.visibility }),
   };
 }
 
@@ -282,6 +313,7 @@ function projectListQuery(input: ProjectListArgs): ProjectListQuery {
     ...(input.includePersonal === undefined
       ? {}
       : { includePersonal: input.includePersonal ? "true" : "false" }),
+    ...(input.visibility === undefined ? {} : { visibility: input.visibility }),
   };
 }
 
@@ -449,6 +481,33 @@ export function createProjectsArea(args: CreateSdkAreaArgs): ProjectsArea {
     },
   };
 
+  const members: ProjectMembersArea = {
+    async add(input) {
+      return transport.readJson(
+        transport.api.v1.projects[":id"].members[":userId"].$put({
+          param: { id: input.projectId, userId: input.userId },
+        }),
+      );
+    },
+    async list(input) {
+      return transport.readJson(
+        transport.api.v1.projects[":id"].members.$get(
+          {
+            param: { id: input.projectId },
+          },
+          ...signalRequestArgs(input.signal),
+        ),
+      );
+    },
+    async remove(input) {
+      return transport.readJson(
+        transport.api.v1.projects[":id"].members[":userId"].$delete({
+          param: { id: input.projectId, userId: input.userId },
+        }),
+      );
+    },
+  };
+
   return {
     attachments,
     async branches(input) {
@@ -596,6 +655,7 @@ export function createProjectsArea(args: CreateSdkAreaArgs): ProjectsArea {
         ),
       );
     },
+    experimental_members: members,
     async paths(input) {
       const { projectId, signal, ...query } = input;
       return transport.readJson(
@@ -633,7 +693,12 @@ export function createProjectsArea(args: CreateSdkAreaArgs): ProjectsArea {
     async sidebarBootstrap(input = {}) {
       return transport.readJson(
         transport.api.v1["sidebar-bootstrap"].$get(
-          {},
+          {
+            query:
+              input.visibility === undefined
+                ? {}
+                : { visibility: input.visibility },
+          },
           ...signalRequestArgs(input.signal),
         ),
       );

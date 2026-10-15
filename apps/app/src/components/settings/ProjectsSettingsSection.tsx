@@ -34,6 +34,7 @@ import { selectHosts, useHosts } from "@/hooks/queries/host-queries";
 import { useSidebarNavigation } from "@/hooks/queries/sidebar-navigation-query";
 import { useQuickCreateProject } from "@/hooks/useQuickCreateProject";
 import { getSettingsProjectRoutePath } from "@/lib/route-paths";
+import { ProjectPrivateBadge } from "./ProjectAccessSettings";
 import {
   SortableSettingsRowList,
   useSortableSettingsRow,
@@ -170,6 +171,7 @@ function SortableProjectRow({
               <span className="min-w-0 truncate text-sm font-medium text-foreground">
                 {project.name}
               </span>
+              <ProjectPrivateBadge visibility={project.visibility} />
               {needsSetup ? <SettingsBadge>needs setup</SettingsBadge> : null}
               {allOffline ? <SettingsBadge>offline</SettingsBadge> : null}
             </div>
@@ -193,18 +195,20 @@ function SortableProjectRow({
           </div>
         </Link>
         <div className="flex shrink-0 items-center gap-1">
-          <ResourceOverflowMenu
-            label={`${project.name} actions`}
-            items={[
-              { label: "Rename", icon: "Edit", onSelect: onRename },
-              {
-                label: "Delete project",
-                icon: "Trash2",
-                tone: "destructive",
-                onSelect: onDelete,
-              },
-            ]}
-          />
+          {project.viewerCanManage ? (
+            <ResourceOverflowMenu
+              label={`${project.name} actions`}
+              items={[
+                { label: "Rename", icon: "Edit", onSelect: onRename },
+                {
+                  label: "Delete project",
+                  icon: "Trash2",
+                  tone: "destructive",
+                  onSelect: onDelete,
+                },
+              ]}
+            />
+          ) : null}
           <ResourceRowDetailChevron />
         </div>
       </div>

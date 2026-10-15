@@ -11,6 +11,7 @@ import {
 } from "@bb/server-contract";
 import { ApiError } from "../errors.js";
 import { requirePrincipal } from "../request-context.js";
+import { projectAccessScopeFor } from "../services/projects/project-access.js";
 import { parseBoundedPositiveOptionalInteger } from "../services/lib/validation.js";
 import {
   decodePromptHistoryCursor,
@@ -42,11 +43,13 @@ export function registerPromptHistoryRoutes(app: Hono, deps: AppDeps): void {
         );
       }
     }
+    const principal = requirePrincipal(context);
     return context.json(
       listPromptHistory(deps, {
         before,
         limit,
-        userId: requirePrincipal(context).userId,
+        projectAccess: projectAccessScopeFor(principal),
+        userId: principal.userId,
       }),
     );
   });

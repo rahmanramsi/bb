@@ -109,7 +109,14 @@ describe.each(["project", "thread", "preference"] as const)(
               revision: row.revision,
               updated_at: row.updated_at,
             }));
-          const projects = db.$client.prepare("SELECT * FROM projects").all();
+          const projects = db.$client
+            .prepare<[], Record<string, unknown>>("SELECT * FROM projects")
+            .all()
+            .map((project) => ({
+              ...project,
+              owner_user_id: null,
+              visibility: "public",
+            }));
           const threads = db.$client
             .prepare<[], Record<string, unknown>>("SELECT * FROM threads")
             .all()

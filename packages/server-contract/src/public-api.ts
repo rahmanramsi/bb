@@ -202,6 +202,8 @@ import type {
   SendQueuedMessageRequest,
   SendQueuedMessageResponse,
   SidebarBootstrapResponse,
+  SidebarBootstrapQuery,
+  ProjectMembersResponse,
   SystemAttentionResponse,
   SystemConfigReloadResponse,
   SystemConfigResponse,
@@ -357,6 +359,7 @@ import {
   projectDefaultExecutionOptionsQuerySchema,
   projectFilesQuerySchema,
   projectListQuerySchema,
+  sidebarBootstrapQuerySchema,
   projectPathsQuerySchema,
   projectSkillsQuerySchema,
   deleteSkillRequestSchema,
@@ -458,6 +461,7 @@ import {
 import type { ApiError } from "./errors.js";
 
 type PathProjectSourceId = { param: { id: string; sourceId: string } };
+type PathProjectMember = { param: { id: string; userId: string } };
 type PathThreadMessage = { param: { id: string; seq: string } };
 type PathThreadInteractionId = {
   param: { id: string; interactionId: string };
@@ -673,8 +677,28 @@ export const publicApiRoutes = {
     sidebarBootstrap: defineRoute({
       path: "/sidebar-bootstrap",
       method: "get",
-      request: noRequest(),
+      request: optionalQueryRequest<EmptyInput, SidebarBootstrapQuery>(
+        sidebarBootstrapQuerySchema,
+      ),
       response: jsonResponse<SidebarBootstrapResponse>(),
+    }),
+    listMembers: defineRoute({
+      path: "/projects/:id/members",
+      method: "get",
+      request: noRequest<PathProjectId>(),
+      response: jsonResponse<ProjectMembersResponse>(),
+    }),
+    addMember: defineRoute({
+      path: "/projects/:id/members/:userId",
+      method: "put",
+      request: noRequest<PathProjectMember>(),
+      response: jsonResponse<ProjectMembersResponse>(),
+    }),
+    removeMember: defineRoute({
+      path: "/projects/:id/members/:userId",
+      method: "delete",
+      request: noRequest<PathProjectMember>(),
+      response: jsonResponse<ProjectMembersResponse>(),
     }),
     get: defineRoute({
       path: "/projects/:id",

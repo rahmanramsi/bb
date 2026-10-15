@@ -5,14 +5,41 @@ export {
   getPersonalProject,
   getProject,
   getPublicProjectByLocalPathSource,
-  listPublicProjects,
+  listActiveProjects,
   markProjectDeleted,
   reorderProject,
   setProjectGitRemoteUrlIfMissing,
   updateProject,
   deleteProject,
 } from "./projects.js";
-export type { ReorderProjectResult } from "./projects.js";
+export type {
+  CreateProjectAccessInput,
+  ProjectListFilter,
+  ReorderProjectResult,
+} from "./projects.js";
+export {
+  accessibleProjectIdCondition,
+  addProjectMember,
+  canScopeViewProject,
+  getAuthUserIdentity,
+  isProjectMember,
+  listInaccessibleProjectPathsOnHost,
+  listProjectIdsOwnedByUser,
+  listProjectIdsWithMember,
+  listProjectMemberUserIds,
+  listProjectMembers,
+  projectVisibleToScopeCondition,
+  removeProjectMember,
+  UNRESTRICTED_PROJECT_ACCESS,
+} from "./project-access.js";
+export type {
+  AddProjectMemberArgs,
+  AuthUserIdentityRow,
+  ProjectAccessRow,
+  ProjectAccessScope,
+  ProjectMemberRow,
+  ProjectMembershipArgs,
+} from "./project-access.js";
 
 export {
   getThreadConversationOutlineRecord,
@@ -22,11 +49,13 @@ export {
 export {
   createThreadSection,
   deleteThreadSection,
+  getThreadSectionAccess,
   getThreadSectionById,
   listThreadSections,
   normalizeThreadSectionName,
   renameThreadSection,
 } from "./thread-sections.js";
+export type { ThreadSectionAccess } from "./thread-sections.js";
 export {
   createPromptHistoryEntry,
   listPromptHistoryPage,

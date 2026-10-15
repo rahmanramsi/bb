@@ -1119,6 +1119,18 @@ export interface PluginSidebarProject {
   href: string;
   /** The app-relative URL of the project's settings page. */
   settingsHref: string;
+  /**
+   * Who can see the project on a multi-user server: everyone (`public`) or
+   * only its owner, members, and admins (`private`). Absent when the server
+   * runs in single-user mode, where every project is visible.
+   */
+  experimental_visibility?: "public" | "private";
+  /**
+   * Whether the current user can rename, remove, or change access to the
+   * project. `false` for the personal project and for projects the user can
+   * see but does not own on a multi-user server. Older hosts omit it.
+   */
+  experimental_viewerCanManage?: boolean;
 }
 
 /**
