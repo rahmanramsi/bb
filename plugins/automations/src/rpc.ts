@@ -1,4 +1,5 @@
 import {
+  adoptAutomationInputSchema,
   automationDetailReadResultSchema,
   automationDetailResponseSchema,
   automationListResponseSchema,
@@ -51,6 +52,10 @@ export const automationRpcContract = defineRpcContract({
     input: updateAutomationInputSchema,
     output: automationDetailResponseSchema,
     experimental_requiredRole: "admin",
+  },
+  automations_adopt: {
+    input: adoptAutomationInputSchema,
+    output: automationDetailResponseSchema,
   },
   automations_delete: {
     input: projectAutomationInputSchema,
@@ -143,6 +148,12 @@ export function createRpcHandlers(service: AutomationService) {
       ctx: ExperimentalPluginRpcHandlerContext,
     ) {
       return service.update(input, ctx);
+    },
+    automations_adopt(
+      input: z.output<typeof adoptAutomationInputSchema>,
+      ctx: ExperimentalPluginRpcHandlerContext,
+    ) {
+      return service.adopt(input, ctx);
     },
     automations_delete(input: z.output<typeof projectAutomationInputSchema>) {
       return service.delete(input);

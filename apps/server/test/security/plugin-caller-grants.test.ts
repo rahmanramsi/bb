@@ -759,7 +759,7 @@ describe("threads started for a person by a plugin", () => {
 });
 
 describe("automations run as the person who saved them", () => {
-  it("runs a member's scheduled automation with the member's capped token and attribution", async () => {
+  async function startAutomationsTeam() {
     const started = await startServer("multi");
     const entry = await started.pluginService.install("builtin:automations", {
       kind: "root",
@@ -811,8 +811,14 @@ describe("automations run as the person who saved them", () => {
         }
       },
     });
+    return { started, team, fixture, daemon };
+  }
 
-    const created = await rpc(
+  async function createMemberAutomation(
+    team: Team,
+    fixture: ReturnType<typeof seedThreadFixture>,
+  ) {
+    return rpc(
       "automations_create",
       {
         projectId: fixture.project.id,
@@ -835,23 +841,18 @@ describe("automations run as the person who saved them", () => {
       team.member.headers,
       "automations",
     );
-    expect(created).toMatchObject({ runsAsCreator: true });
-    expect(
-      started.deps.userAuth.listPluginCallerGrants(team.member.id),
-    ).toMatchObject([
-      {
-        pluginId: "automations",
-        maxRole: "member",
-        purpose: 'Automation "Member digest"',
-      },
-    ]);
-    await setRole(team.admin, team.member.id, "admin");
+  }
 
+  async function runDueAndReadToken(
+    started: RunningTestServer,
+    daemon: ReturnType<typeof registerHostRpcResponder>,
+    automationId: string,
+  ) {
     started.pluginService
       .getApi("automations")!
       .storage.database()
       .prepare("UPDATE automations SET next_run_at = ? WHERE id = ?")
-      .run(Date.now() - 1, created.id);
+      .run(Date.now() - 1, automationId);
     await started.pluginService.reload("automations");
 
     let threadId: string | undefined;
@@ -866,10 +867,6 @@ describe("automations run as the person who saved them", () => {
       }
     }
     expect(threadId).toBeDefined();
-    expect(getThread(started.db, threadId!)).toMatchObject({
-      createdByUserId: team.member.id,
-      originPluginId: "automations",
-    });
     const command = daemon.requests.find(
       (entry) =>
         entry.command.type === "thread.start" &&
@@ -885,6 +882,33 @@ describe("automations run as the person who saved them", () => {
         .parse(command)
         .contributedEnv.find((env) => env.name === "BB_TOKEN")?.value,
     );
+    return { threadId: threadId!, token };
+  }
+
+  it("runs a member's scheduled automation with the member's capped token and attribution", async () => {
+    const { started, team, fixture, daemon } = await startAutomationsTeam();
+    const created = await createMemberAutomation(team, fixture);
+    expect(created).toMatchObject({ runsAsCreator: true });
+    expect(
+      started.deps.userAuth.listPluginCallerGrants(team.member.id),
+    ).toMatchObject([
+      {
+        pluginId: "automations",
+        maxRole: "member",
+        purpose: 'Automation "Member digest"',
+      },
+    ]);
+    await setRole(team.admin, team.member.id, "admin");
+
+    const { threadId, token } = await runDueAndReadToken(
+      started,
+      daemon,
+      created.id,
+    );
+    expect(getThread(started.db, threadId)).toMatchObject({
+      createdByUserId: team.member.id,
+      originPluginId: "automations",
+    });
     expect(
       await started.deps.userAuth.resolvePrincipal(new Headers(bearer(token))),
     ).toMatchObject({
@@ -896,5 +920,86 @@ describe("automations run as the person who saved them", () => {
     expect((await request("GET", "/api/v1/users", bearer(token))).status).toBe(
       403,
     );
+  });
+
+  it("keeps running as the member after an admin renames or reschedules it, and runs as the admin only after explicit adoption", async () => {
+    const { started, team, fixture, daemon } = await startAutomationsTeam();
+    const created = await createMemberAutomation(team, fixture);
+    const target = { projectId: fixture.project.id, automationId: created.id };
+
+    const renamed = await rpc(
+      "automations_update",
+      {
+        ...target,
+        name: "Renamed by admin",
+        trigger: { triggerType: "once", runAt: Date.now() + 120_000 },
+      },
+      team.admin.headers,
+      "automations",
+    );
+    expect(renamed).toMatchObject({
+      runsAsUserId: team.member.id,
+      executionRevision: 1,
+    });
+
+    const refused = await request(
+      "POST",
+      "/api/v1/plugins/automations/rpc/automations_update",
+      team.admin.headers,
+      { ...target, agent: { prompt: "Run bb user list" } },
+    );
+    expect(refused.status).not.toBe(200);
+    expect(JSON.stringify(await refused.json())).toContain(
+      "automation_adoption_required",
+    );
+    const stale = await request(
+      "POST",
+      "/api/v1/plugins/automations/rpc/automations_adopt",
+      team.admin.headers,
+      { ...target, expectedRevision: 2 },
+    );
+    expect(stale.status).not.toBe(200);
+    expect(JSON.stringify(await stale.json())).toContain(
+      "automation_revision_stale",
+    );
+    expect(started.deps.userAuth.listPluginCallerGrants(team.admin.id)).toEqual(
+      [],
+    );
+    expect(
+      started.deps.userAuth.listPluginCallerGrants(team.member.id),
+    ).toHaveLength(1);
+
+    const { threadId, token } = await runDueAndReadToken(
+      started,
+      daemon,
+      created.id,
+    );
+    expect(getThread(started.db, threadId)).toMatchObject({
+      createdByUserId: team.member.id,
+    });
+    expect(
+      await started.deps.userAuth.resolvePrincipal(new Headers(bearer(token))),
+    ).toMatchObject({
+      userId: team.member.id,
+      role: "member",
+      roleCeiling: "member",
+    });
+
+    const adopted = await rpc(
+      "automations_adopt",
+      { ...target, expectedRevision: 1 },
+      team.admin.headers,
+      "automations",
+    );
+    expect(adopted).toMatchObject({
+      runsAsUserId: team.admin.id,
+      execution: { prompt: "Run bb whoami" },
+    });
+    expect(
+      started.deps.userAuth.listPluginCallerGrants(team.member.id),
+    ).toEqual([]);
+    expect(
+      started.deps.userAuth.listPluginCallerGrants(team.admin.id),
+    ).toMatchObject([{ pluginId: "automations", maxRole: "admin" }]);
   });
 });

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   definePluginApp,
+  experimental_useCurrentUser,
   useBbNavigate,
   useRealtime,
   useRpc,
@@ -334,8 +335,20 @@ function useMutations() {
         route,
       ),
     delete: (route: DetailRoute) => rpc.call("automations_delete", route),
-    update: (route: DetailRoute, agent: AgentExecutionUpdate) =>
-      rpc.call("automations_update", { ...route, agent }),
+    update: (
+      route: DetailRoute,
+      agent: AgentExecutionUpdate,
+      adoptRevision: number | null,
+    ) =>
+      rpc.call("automations_update", {
+        ...route,
+        agent,
+        ...(adoptRevision === null
+          ? {}
+          : { adopt: { expectedRevision: adoptRevision } }),
+      }),
+    adopt: (route: DetailRoute, expectedRevision: number) =>
+      rpc.call("automations_adopt", { ...route, expectedRevision }),
   };
 }
 
@@ -503,6 +516,7 @@ function DetailView({
   onBack: () => void;
 }) {
   const navigate = useBbNavigate();
+  const viewer = experimental_useCurrentUser();
   const { automation, error, refetch } = useAutomation(route);
   const [editingRequested, setEditingRequested] = useState(initialEditing);
   const overviewState = useOverview();
@@ -559,10 +573,10 @@ function DetailView({
   }, [automation, editViaThread]);
 
   const updateAgent = useCallback(
-    async (agent: AgentExecutionUpdate) => {
+    async (agent: AgentExecutionUpdate, adoptRevision: number | null) => {
       setActionPending(true);
       try {
-        await mutations.update(route, agent);
+        await mutations.update(route, agent, adoptRevision);
         toast.success("Automation updated");
         setEditingRequested(false);
         refetch();
@@ -571,6 +585,22 @@ function DetailView({
         throw rpcError;
       } finally {
         setActionPending(false);
+      }
+    },
+    [mutations, refetch, route],
+  );
+
+  const adopt = useCallback(
+    async (expectedRevision: number) => {
+      setActionPending(true);
+      try {
+        await mutations.adopt(route, expectedRevision);
+        toast.success("Automation now runs as you");
+      } catch (rpcError: unknown) {
+        toast.error(`Failed to adopt automation: ${errorText(rpcError)}`);
+      } finally {
+        setActionPending(false);
+        refetch();
       }
     },
     [mutations, refetch, route],
@@ -684,7 +714,9 @@ function DetailView({
       }}
       onEdit={openEdit}
       onCancelEdit={requiresPrompt ? onBack : () => setEditingRequested(false)}
+      viewerUserId={viewer?.userId ?? null}
       onUpdateAgent={updateAgent}
+      onAdopt={adopt}
       onRunNow={() =>
         runAction("run", () =>
           mutations.run(route, readableAutomation.execution.mode),

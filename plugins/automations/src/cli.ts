@@ -9,7 +9,7 @@ import {
   type PluginCliResult,
 } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import type { AutomationService } from "./service.js";
+import { AutomationIdentityError, type AutomationService } from "./service.js";
 import type {
   AgentEnvironment,
   AgentExecutionUpdate,
@@ -67,7 +67,15 @@ automation-storage, project, or an absolute server-host path with
 --working-directory. An unavailable selected directory fails the run.
 
 On a multi-user server only admins can create, update, run, pause, or resume
-script automations. Members can manage agent automations.`;
+script automations. Members can manage agent automations.
+
+An agent automation runs as the person who last saved its execution or
+adopted it (\`bb automation show\` prints "Runs as"). Renaming it,
+rescheduling it, or pausing it keeps that person. Changing its prompt,
+target, provider, model, reasoning, service tier, or permission mode as
+someone else is refused with automation_adoption_required until you adopt it:
+review it with \`bb automation adopt <id>\`, then adopt that exact revision
+with --revision, or pass --adopt-revision to update.`;
 
 const JSON_OPTION = {
   type: "boolean",
@@ -275,6 +283,12 @@ async function attempt(
     return await work();
   } catch (error) {
     if (error instanceof PluginCliError) throw error;
+    if (error instanceof AutomationIdentityError) {
+      throw new PluginCliError(error.message, {
+        code: error.code,
+        hint: error.hint,
+      });
+    }
     throw new PluginCliError(
       error instanceof Error ? error.message : String(error),
       { code: "automation_failed" },
@@ -881,8 +895,29 @@ type PrintableAutomation =
   | AutomationDetailResponse
   | Extract<AutomationReadProblem, { problem: "missing-agent-prompt" }>;
 
+function viewerUserId(ctx: Pick<PluginCliContext, "experimental_caller">) {
+  return ctx.experimental_caller?.kind === "client"
+    ? ctx.experimental_caller.userId
+    : null;
+}
+
+function formatRunsAs(
+  automation: PrintableAutomation,
+  viewer: string | null,
+): string {
+  if (automation.execution.mode === "script") {
+    return "the automations plugin (scripts never run as a person)";
+  }
+  if (!automation.runsAsCreator) return "no person (the automations plugin)";
+  if (automation.runsAsUserId === null) return "a person bb did not record";
+  return automation.runsAsUserId === viewer
+    ? `you (${automation.runsAsUserId})`
+    : automation.runsAsUserId;
+}
+
 function printAutomation(
   automation: PrintableAutomation,
+  viewer: string | null,
   status?: string,
 ): string {
   const lines = [
@@ -897,6 +932,8 @@ function printAutomation(
     `  Last run:  ${formatTimestamp(automation.lastRunAt)}`,
     `  Runs:      ${automation.runCount}`,
     `  Origin:    ${automation.origin}`,
+    `  Runs as:   ${formatRunsAs(automation, viewer)}`,
+    `  Revision:  ${automation.executionRevision}`,
   ];
   if (
     automation.execution.mode === "script" &&
@@ -998,9 +1035,45 @@ function table(head: string[], rows: string[][]): string {
   return ["", format(head), ...rows.map(format), ""].join("\n") + "\n";
 }
 
-function printAutomationProblem(automation: AutomationReadProblem): string {
+function printAdoptionPreview(
+  automation: AutomationDetailResponse,
+  viewer: string | null,
+): string {
+  if (automation.execution.mode !== "agent") {
+    throw cliError(
+      `Automation "${automation.name}" runs a script, which never runs as a person; only agent automations can be adopted`,
+      "invalid_argument",
+    );
+  }
+  const execution = automation.execution;
+  const command = `bb automation adopt ${automation.id} --project ${automation.projectId} --revision ${automation.executionRevision}`;
+  return [
+    "",
+    `Automation "${automation.name}" (${automation.id}) runs as ${formatRunsAs(automation, viewer)}.`,
+    "Adopting it means every run uses your identity and permissions: this automation will run as you.",
+    "",
+    `  Revision:   ${automation.executionRevision}`,
+    `  Target:     ${execution.targetThreadId !== undefined ? `existing thread ${execution.targetThreadId}` : JSON.stringify(execution.environment)}`,
+    `  Provider:   ${execution.providerId}`,
+    `  Model:      ${execution.model}`,
+    `  Reasoning:  ${execution.reasoningLevel}`,
+    `  Tier:       ${execution.serviceTier ?? "-"}`,
+    `  Permission: ${execution.permissionMode}`,
+    "  Prompt:",
+    ...execution.prompt.split("\n").map((line) => `    ${line}`),
+    "",
+    "To adopt exactly this revision, run:",
+    `  ${command}`,
+    "",
+  ].join("\n");
+}
+
+function printAutomationProblem(
+  automation: AutomationReadProblem,
+  viewer: string | null,
+): string {
   if (automation.problem === "missing-agent-prompt") {
-    return printAutomation(automation, "Prompt required");
+    return printAutomation(automation, viewer, "Prompt required");
   }
   return (
     [
@@ -1153,7 +1226,7 @@ export function registerAutomationCli(args: {
                 exitCode: 0,
                 stdout: input.options.json
                   ? jsonOutput(created)
-                  : `Automation created: ${created.id}\n${printAutomation(created)}${printScriptFileSnapshotNote(created, scriptSource)}`,
+                  : `Automation created: ${created.id}\n${printAutomation(created, viewerUserId(ctx))}${printScriptFileSnapshotNote(created, scriptSource)}`,
               };
             }),
         }),
@@ -1172,8 +1245,8 @@ export function registerAutomationCli(args: {
                 stdout: input.options.json
                   ? jsonOutput(found)
                   : "problem" in found
-                    ? printAutomationProblem(found)
-                    : printAutomation(found),
+                    ? printAutomationProblem(found, viewerUserId(ctx))
+                    : printAutomation(found, viewerUserId(ctx)),
               };
             }),
         }),
@@ -1192,6 +1265,14 @@ export function registerAutomationCli(args: {
             ...SCHEDULE_OPTIONS,
             ...AGENT_OPTIONS,
             ...SCRIPT_OPTIONS,
+            "adopt-revision": {
+              type: "integer",
+              min: 1,
+              max: Number.MAX_SAFE_INTEGER,
+              placeholder: "revision",
+              description:
+                "Adopt the automation at this execution revision so it runs as you; required to change another person's prompt, target, provider, model, or permissions",
+            },
             json: JSON_OPTION,
           },
           constraints: [
@@ -1219,12 +1300,70 @@ export function registerAutomationCli(args: {
                 input.positionals.automationId,
                 ctx,
               );
-              const updated = await service.update(request, ctx);
+              const adoptRevision = input.options["adopt-revision"];
+              const updated = await service.update(
+                adoptRevision === undefined
+                  ? request
+                  : { ...request, adopt: { expectedRevision: adoptRevision } },
+                ctx,
+              );
               return {
                 exitCode: 0,
                 stdout: input.options.json
                   ? jsonOutput(updated)
-                  : `Automation ${updated.id} updated\n${printAutomation(updated)}${printScriptFileSnapshotNote(updated, scriptSource)}`,
+                  : `Automation ${updated.id} updated\n${printAutomation(updated, viewerUserId(ctx))}${printScriptFileSnapshotNote(updated, scriptSource)}`,
+              };
+            }),
+        }),
+        adopt: cliCommand({
+          summary: "Make an agent automation run as you",
+          description:
+            "Without --revision, print the full execution (prompt, target, provider, model, permissions) and its revision without changing anything. With --revision, adopt that exact revision: the automation runs as you and the previous person's grant is revoked. Adoption fails with automation_revision_stale if the execution changed since that revision.",
+          positionals: [AUTOMATION_ID_POSITIONAL],
+          options: {
+            project: PROJECT_OPTION,
+            revision: {
+              type: "integer",
+              min: 1,
+              max: Number.MAX_SAFE_INTEGER,
+              placeholder: "revision",
+              description:
+                "Execution revision you reviewed, from `bb automation adopt <id>` or `bb automation show`",
+            },
+            json: JSON_OPTION,
+          },
+          run: (input, ctx) =>
+            attempt(async () => {
+              const target = {
+                projectId: requireProjectId(input.options.project, ctx),
+                automationId: input.positionals.automationId,
+              };
+              const viewer = viewerUserId(ctx);
+              const expectedRevision = input.options.revision;
+              if (expectedRevision === undefined) {
+                const found = await service.get(target);
+                if ("problem" in found) {
+                  return {
+                    exitCode: 1,
+                    stderr: printAutomationProblem(found, viewer),
+                  };
+                }
+                return {
+                  exitCode: 0,
+                  stdout: input.options.json
+                    ? jsonOutput(found)
+                    : printAdoptionPreview(found, viewer),
+                };
+              }
+              const adopted = await service.adopt(
+                { ...target, expectedRevision },
+                ctx,
+              );
+              return {
+                exitCode: 0,
+                stdout: input.options.json
+                  ? jsonOutput(adopted)
+                  : `Automation ${adopted.id} adopted; it now runs as you\n${printAutomation(adopted, viewer)}`,
               };
             }),
         }),

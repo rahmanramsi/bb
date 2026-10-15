@@ -35,6 +35,7 @@ const rpcMethods = [
   "automations_list",
   "automations_get",
   "automations_create",
+  "automations_adopt",
   "automations_create_script",
   "automations_update",
   "automations_update_script",
@@ -2113,40 +2114,432 @@ describe("automations run as the person who saved them", () => {
     await harness.dispose();
   });
 
-  it("replaces the grant when someone saves the automation and revokes it on delete", async () => {
+  async function updateAs(
+    harness: FakePluginHost["harness"],
+    caller:
+      | typeof MEMBER_CALLER
+      | typeof ADMIN_CALLER
+      | { readonly kind: "system" },
+    input: Record<string, unknown>,
+  ) {
+    return automationDetailResponseSchema.parse(
+      await harness.callRpc(
+        "automations_update",
+        { projectId: PROJECT_ID, ...input },
+        { experimental_caller: caller },
+      ),
+    );
+  }
+
+  async function adoptAs(
+    harness: FakePluginHost["harness"],
+    caller: typeof MEMBER_CALLER | typeof ADMIN_CALLER,
+    automationId: string,
+    expectedRevision: number,
+  ) {
+    return automationDetailResponseSchema.parse(
+      await harness.callRpc(
+        "automations_adopt",
+        { projectId: PROJECT_ID, automationId, expectedRevision },
+        { experimental_caller: caller },
+      ),
+    );
+  }
+
+  async function readAutomation(
+    harness: FakePluginHost["harness"],
+    automationId: string,
+  ) {
+    return automationDetailResponseSchema.parse(
+      await harness.callRpc("automations_get", {
+        projectId: PROJECT_ID,
+        automationId,
+      }),
+    );
+  }
+
+  function spawnsThrough(harness: FakePluginHost["harness"]) {
+    return harness.sdk.calls
+      .filter((call) => call.path === "threads.spawn")
+      .map((call) => ({
+        grantId: call.experimental_grantId,
+        userId:
+          call.experimental_caller?.kind === "client"
+            ? call.experimental_caller.userId
+            : null,
+        prompt: (call.args[0] as { prompt?: string }).prompt,
+      }));
+  }
+
+  it("keeps the member's grant when an admin renames or reschedules it, so the run stays the member's", async () => {
+    const { harness } = await bootAutomationsPlugin();
+    const automation = await createAs(harness, MEMBER_CALLER);
+    const [memberGrant] = harness.experimental_callerGrants;
+    expect(automation).toMatchObject({
+      runsAsCreator: true,
+      runsAsUserId: "usr_member",
+      executionRevision: 1,
+    });
+
+    const renamed = await updateAs(harness, ADMIN_CALLER, {
+      automationId: automation.id,
+      name: "Renamed by admin",
+      trigger: {
+        triggerType: "schedule",
+        cron: "0 9 * * *",
+        timezone: "UTC",
+      },
+    });
+    const unchanged = await updateAs(harness, ADMIN_CALLER, {
+      automationId: automation.id,
+      agent: {
+        prompt: "summarize the inbox",
+        providerId: "codex",
+        model: "gpt-5",
+        permissionMode: "accept-edits",
+      },
+    });
+
+    expect(harness.experimental_callerGrants).toEqual([memberGrant]);
+    for (const saved of [renamed, unchanged]) {
+      expect(saved).toMatchObject({
+        name: "Renamed by admin",
+        runsAsUserId: "usr_member",
+        executionRevision: 1,
+      });
+    }
+    await runNow(harness, automation.id);
+    expect(spawnsThrough(harness)).toEqual([
+      {
+        grantId: memberGrant!.grantId,
+        userId: "usr_member",
+        prompt: expect.stringContaining("summarize the inbox"),
+      },
+    ]);
+    expect(memberGrant).toMatchObject({ maxRole: "member" });
+    await harness.dispose();
+  });
+
+  it("refuses an admin's execution change to a member's automation unless the admin adopts it", async () => {
     const { harness } = await bootAutomationsPlugin();
     const automation = await createAs(harness, MEMBER_CALLER);
     const [memberGrant] = harness.experimental_callerGrants;
 
-    await harness.callRpc(
-      "automations_update",
-      { projectId: PROJECT_ID, automationId: automation.id, name: "Renamed" },
-      { experimental_caller: { kind: "system" } },
-    );
-    expect(harness.experimental_callerGrants).toEqual([memberGrant]);
-
-    await harness.callRpc(
-      "automations_update",
+    for (const change of [
+      { agent: { prompt: "summarize the outbox" } },
+      { agent: { model: "gpt-5-pro" } },
+      { agent: { permissionMode: "full" } },
+      { agent: { target: { type: "target-thread", threadId: THREAD_ID } } },
       {
-        projectId: PROJECT_ID,
+        execution: { ...agentExecution(), prompt: "summarize the outbox" },
+      },
+    ]) {
+      await expect(
+        updateAs(harness, ADMIN_CALLER, {
+          automationId: automation.id,
+          name: "Sneaky rename",
+          ...change,
+        }),
+      ).rejects.toThrow("automation_adoption_required");
+    }
+
+    expect(harness.experimental_callerGrants).toEqual([memberGrant]);
+    expect(await readAutomation(harness, automation.id)).toMatchObject({
+      name: "Nightly triage",
+      runsAsUserId: "usr_member",
+      executionRevision: 1,
+      execution: { prompt: "summarize the inbox", model: "gpt-5" },
+    });
+
+    await expect(
+      updateAs(harness, ADMIN_CALLER, {
         automationId: automation.id,
         agent: { prompt: "summarize the outbox" },
-      },
-      { experimental_caller: ADMIN_CALLER },
+        adopt: { expectedRevision: 2 },
+      }),
+    ).rejects.toThrow("automation_revision_stale");
+    expect(harness.experimental_callerGrants).toEqual([memberGrant]);
+
+    const adopted = await updateAs(harness, ADMIN_CALLER, {
+      automationId: automation.id,
+      agent: { prompt: "summarize the outbox" },
+      adopt: { expectedRevision: 1 },
+    });
+    expect(adopted).toMatchObject({
+      runsAsUserId: "usr_admin",
+      executionRevision: 2,
+      execution: { prompt: "summarize the outbox" },
+    });
+    expect(harness.experimental_callerGrants).toEqual([
+      expect.objectContaining({ userId: "usr_admin", maxRole: "admin" }),
+    ]);
+    await harness.dispose();
+  });
+
+  it("adopts only the execution revision the adopter saw", async () => {
+    const { harness } = await bootAutomationsPlugin();
+    const automation = await createAs(harness, MEMBER_CALLER);
+    const [memberGrant] = harness.experimental_callerGrants;
+
+    await expect(
+      adoptAs(harness, ADMIN_CALLER, automation.id, 7),
+    ).rejects.toThrow("automation_revision_stale");
+    expect(harness.experimental_callerGrants).toEqual([memberGrant]);
+
+    const shown = await readAutomation(harness, automation.id);
+    await updateAs(harness, MEMBER_CALLER, {
+      automationId: automation.id,
+      agent: { prompt: "delete every branch" },
+    });
+    const [memberRegrant] = harness.experimental_callerGrants;
+    await expect(
+      adoptAs(harness, ADMIN_CALLER, automation.id, shown.executionRevision),
+    ).rejects.toThrow("automation_revision_stale");
+    expect(harness.experimental_callerGrants).toEqual([memberRegrant]);
+    expect(memberRegrant).toMatchObject({ userId: "usr_member" });
+
+    const current = await readAutomation(harness, automation.id);
+    const adopted = await adoptAs(
+      harness,
+      ADMIN_CALLER,
+      automation.id,
+      current.executionRevision,
     );
+    expect(adopted).toMatchObject({
+      runsAsUserId: "usr_admin",
+      executionRevision: current.executionRevision,
+      execution: { prompt: "delete every branch" },
+    });
+    const [adminGrant] = harness.experimental_callerGrants;
     expect(harness.experimental_callerGrants).toEqual([
       expect.objectContaining({
         userId: "usr_admin",
         maxRole: "admin",
-        purpose: 'Automation "Renamed"',
+        purpose: 'Automation "Nightly triage"',
       }),
     ]);
+    await runNow(harness, automation.id);
+    expect(spawnsThrough(harness)).toEqual([
+      {
+        grantId: adminGrant!.grantId,
+        userId: "usr_admin",
+        prompt: expect.stringContaining("delete every branch"),
+      },
+    ]);
+    await harness.dispose();
+  });
+
+  it("fails an adoption when a member edit lands while the adopter's grant is being created", async () => {
+    const host = await bootAutomationsPlugin();
+    const { harness } = host;
+    const automation = await createAs(harness, MEMBER_CALLER);
+    const sdk = host.bb.sdk;
+    const revoked: string[] = [];
+    const racing = createAutomationService({
+      bb: {
+        log: host.bb.log,
+        realtime: host.bb.realtime,
+        sdk: {
+          system: sdk.system,
+          projects: sdk.projects,
+          providers: sdk.providers,
+          threads: sdk.threads,
+          experimental_asGrant: (grantId) => sdk.experimental_asGrant(grantId),
+          async experimental_createCallerGrant() {
+            await updateAs(harness, MEMBER_CALLER, {
+              automationId: automation.id,
+              agent: { prompt: "exfiltrate secrets" },
+            });
+            return { grantId: "grant_admin_race" };
+          },
+          async experimental_revokeCallerGrant(grantId) {
+            revoked.push(grantId);
+          },
+        },
+      },
+      db: host.bb.storage.database(),
+      pluginDataDir: "/tmp/bb-automations-adopt-race",
+      serverUrl: "http://127.0.0.1:38886",
+    });
+
+    await expect(
+      racing.adopt(
+        {
+          projectId: PROJECT_ID,
+          automationId: automation.id,
+          expectedRevision: 1,
+        },
+        { experimental_caller: ADMIN_CALLER },
+      ),
+    ).rejects.toThrow("automation_revision_stale");
+    expect(revoked).toEqual(["grant_admin_race"]);
+    expect(harness.experimental_callerGrants).toEqual([
+      expect.objectContaining({ userId: "usr_member" }),
+    ]);
+    expect(await readAutomation(harness, automation.id)).toMatchObject({
+      runsAsUserId: "usr_member",
+      executionRevision: 2,
+      execution: { prompt: "exfiltrate secrets" },
+    });
+    await harness.dispose();
+  });
+
+  it("re-grants the owner's own execution changes without adoption", async () => {
+    const { harness } = await bootAutomationsPlugin();
+    const automation = await createAs(harness, MEMBER_CALLER);
+    const [firstGrant] = harness.experimental_callerGrants;
+
+    const updated = await updateAs(harness, MEMBER_CALLER, {
+      automationId: automation.id,
+      agent: { prompt: "summarize the outbox" },
+    });
+
+    expect(updated).toMatchObject({
+      runsAsUserId: "usr_member",
+      executionRevision: 2,
+    });
+    expect(harness.experimental_callerGrants).toEqual([
+      expect.objectContaining({ userId: "usr_member", maxRole: "member" }),
+    ]);
+    expect(harness.experimental_callerGrants[0]!.grantId).not.toBe(
+      firstGrant!.grantId,
+    );
+    await harness.dispose();
+  });
+
+  it("keeps local mode's owner editing without adoption", async () => {
+    const { harness } = await bootAutomationsPlugin();
+    const automation = await createAgentAutomation(harness);
+    const result = await harness.runCli([
+      "update",
+      automation.id,
+      "--project",
+      PROJECT_ID,
+      "--prompt",
+      "summarize the outbox",
+      "--json",
+    ]);
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(
+      automationDetailResponseSchema.parse(JSON.parse(result.stdout!)),
+    ).toMatchObject({
+      runsAsUserId: "usr_local_owner",
+      executionRevision: 2,
+      execution: { prompt: "summarize the outbox" },
+    });
+    expect(harness.experimental_callerGrants).toEqual([
+      expect.objectContaining({ userId: "usr_local_owner" }),
+    ]);
+    await harness.dispose();
+  });
+
+  it("revokes the person's grant when a plugin or bb changes the execution, and keeps it for a rename", async () => {
+    const { harness } = await bootAutomationsPlugin();
+    const automation = await createAs(harness, MEMBER_CALLER);
+    const [memberGrant] = harness.experimental_callerGrants;
+
+    await updateAs(
+      harness,
+      { kind: "system" },
+      {
+        automationId: automation.id,
+        name: "Renamed",
+      },
+    );
+    expect(harness.experimental_callerGrants).toEqual([memberGrant]);
+
+    const changed = await updateAs(
+      harness,
+      { kind: "system" },
+      {
+        automationId: automation.id,
+        agent: { prompt: "summarize the outbox" },
+      },
+    );
+    expect(changed).toMatchObject({
+      runsAsCreator: false,
+      runsAsUserId: null,
+      executionRevision: 2,
+    });
+    expect(harness.experimental_callerGrants).toEqual([]);
+
+    await expect(
+      updateAs(harness, MEMBER_CALLER, {
+        automationId: automation.id,
+        agent: { prompt: "summarize the inbox" },
+      }),
+    ).rejects.toThrow("automation_adoption_required");
 
     await harness.callRpc("automations_delete", {
       projectId: PROJECT_ID,
       automationId: automation.id,
     });
     expect(harness.experimental_callerGrants).toEqual([]);
+    await harness.dispose();
+  });
+
+  it("shows who an automation runs as and adopts it from the CLI", async () => {
+    const { harness } = await bootAutomationsPlugin();
+    const automation = await createAs(harness, MEMBER_CALLER);
+    const asAdmin = { experimental_caller: ADMIN_CALLER } as const;
+
+    const shown = await harness.runCli(
+      ["show", automation.id, "--project", PROJECT_ID],
+      asAdmin,
+    );
+    expect(shown.stdout).toContain("Runs as:   usr_member");
+    expect(shown.stdout).toContain("Revision:  1");
+
+    const refused = await harness.runCli(
+      [
+        "update",
+        automation.id,
+        "--project",
+        PROJECT_ID,
+        "--prompt",
+        "summarize the outbox",
+      ],
+      asAdmin,
+    );
+    expect(refused.exitCode).not.toBe(0);
+    expect(refused.stderr).toContain("automation_adoption_required");
+
+    const preview = await harness.runCli(
+      ["adopt", automation.id, "--project", PROJECT_ID],
+      asAdmin,
+    );
+    expect(preview.exitCode).toBe(0);
+    expect(preview.stdout).toContain("summarize the inbox");
+    expect(preview.stdout).toContain("will run as you");
+    expect(preview.stdout).toContain("--revision 1");
+    expect(harness.experimental_callerGrants).toEqual([
+      expect.objectContaining({ userId: "usr_member" }),
+    ]);
+
+    const adopted = await harness.runCli(
+      ["adopt", automation.id, "--project", PROJECT_ID, "--revision", "1"],
+      asAdmin,
+    );
+    expect(adopted.exitCode, adopted.stderr).toBe(0);
+    expect(adopted.stdout).toContain("Runs as:   you (usr_admin)");
+    expect(harness.experimental_callerGrants).toEqual([
+      expect.objectContaining({ userId: "usr_admin" }),
+    ]);
+
+    const updated = await harness.runCli(
+      [
+        "update",
+        automation.id,
+        "--project",
+        PROJECT_ID,
+        "--prompt",
+        "summarize the outbox",
+        "--adopt-revision",
+        "1",
+      ],
+      asAdmin,
+    );
+    expect(updated.exitCode, updated.stderr).toBe(0);
     await harness.dispose();
   });
 
@@ -2185,10 +2578,10 @@ describe("automations run as the person who saved them", () => {
       PROJECT_ID,
     ]);
     expect(shown.stdout).toContain(
-      "Note:      Runs without a user identity until it is saved again",
+      "Note:      Runs without a user identity until someone adopts it",
     );
 
-    const resaved = await harness.runCli([
+    const renamed = await harness.runCli([
       "update",
       automation.id,
       "--project",
@@ -2197,11 +2590,25 @@ describe("automations run as the person who saved them", () => {
       "Re-saved",
       "--json",
     ]);
-    expect(resaved.exitCode).toBe(0);
+    expect(renamed.exitCode).toBe(0);
     expect(
-      automationDetailResponseSchema.parse(JSON.parse(resaved.stdout!))
+      automationDetailResponseSchema.parse(JSON.parse(renamed.stdout!))
         .runsAsCreator,
-    ).toBe(true);
+    ).toBe(false);
+
+    const adopted = await harness.runCli([
+      "adopt",
+      automation.id,
+      "--project",
+      PROJECT_ID,
+      "--revision",
+      "1",
+      "--json",
+    ]);
+    expect(adopted.exitCode, adopted.stderr).toBe(0);
+    expect(
+      automationDetailResponseSchema.parse(JSON.parse(adopted.stdout!)),
+    ).toMatchObject({ runsAsCreator: true, runsAsUserId: "usr_local_owner" });
     await harness.dispose();
   });
 });

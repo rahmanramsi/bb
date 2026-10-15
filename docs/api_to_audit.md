@@ -326,13 +326,23 @@ the app should list grants per plugin and notify plugins of revocation,
 request-log attribution of grant-backed requests, whether grants need a
 default expiry, and whether admins need a server-wide grant list.
 
-Core callers: Automations records a grant from the person who creates or
-saves an agent automation, revokes the replaced grant and the grant of a
-deleted automation, and spawns or messages every scheduled and manual run
-through `experimental_asGrant`, so the run gets that person's `BB_TOKEN` and
-attribution. Automations saved before grants existed keep running through
+Core callers: Automations records a grant from the person who creates an
+agent automation, revokes the replaced grant and the grant of a deleted
+automation, and spawns or messages every scheduled and manual run through
+`experimental_asGrant`, so the run gets that person's `BB_TOKEN` and
+attribution. It stores the grant's user id and an execution revision. Name,
+schedule, pause, and resume never touch the grant. An execution change (prompt,
+target, environment, provider, model, reasoning, tier, or permission mode)
+bumps the revision; by the grant's person it re-grants, by another `client`
+caller it is refused with `automation_adoption_required` unless it carries
+`adopt.expectedRevision`, and by a `plugin` or `system` caller it revokes the
+grant. `automations_adopt` (`bb automation adopt`, Run as me in the app) takes
+`expectedRevision`, creates the adopter's grant, and installs it with one
+`UPDATE` conditioned on the revision and the replaced grant id, so a
+concurrent edit fails the adoption with `automation_revision_stale` and the
+new grant is revoked. Automations without a grant keep running through
 `bb.sdk` and report `runsAsCreator: false`, shown in the app and
-`bb automation show` until saved again. `bb user grants` and the routes use
+`bb automation show` until someone adopts them. `bb user grants` and the routes use
 the `experimental_users` SDK area. The server suite
 `plugin-caller-grants.test.ts` covers promotion and demotion, revocation,
 expiry, user and plugin removal, cross-plugin use, PAT and grant minting from a
