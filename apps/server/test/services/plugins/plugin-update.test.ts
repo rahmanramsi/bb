@@ -101,6 +101,7 @@ describe("plugin update scheduling", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -135,6 +136,7 @@ describe("plugin update scheduling", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem,
       },
       logger,
@@ -254,6 +256,7 @@ describe("plugin update scheduling", () => {
         hub: {
           getDaemonSessionIdForHost: () => null,
           notifyPluginSignal: () => 0,
+          notifyUserSystem: () => {},
           notifySystem: () => {},
         },
         logger,
@@ -353,6 +356,7 @@ describe("plugin update service and routes", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -827,6 +831,7 @@ describe("plugin update service and routes", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -929,6 +934,7 @@ describe("plugin update service and routes", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -967,6 +973,7 @@ describe("plugin update service and routes", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -1084,6 +1091,7 @@ describe("plugin update service and routes", () => {
         hub: {
           getDaemonSessionIdForHost: () => null,
           notifyPluginSignal: () => 0,
+          notifyUserSystem: () => {},
           notifySystem: () => {},
         },
         logger,

@@ -48,6 +48,8 @@ describe("errored thread correction", () => {
       const { environment, thread } = seedErroredThread(harness);
 
       await sendThreadMessage(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
@@ -85,6 +87,8 @@ describe("errored thread correction", () => {
 
       await expect(
         sendThreadMessage(harness.deps, {
+          authorGrantId: null,
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           environment,
           payload: {

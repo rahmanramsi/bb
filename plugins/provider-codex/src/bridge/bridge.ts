@@ -477,6 +477,7 @@ interface CodexBridgeSession {
   translator: CodexEventTranslator;
   construction: CodexSessionConstruction;
   constructionSignature: string;
+  shellEnvironmentSignature: string;
   turnPermissionSettings: ReturnType<typeof toCodexPermissionSettings>;
   openCodexTurnIds: Set<string>;
   responseOpenedTurns: Map<string, ResponseOpenedTurn>;
@@ -603,6 +604,20 @@ function constructionSignature(
             tokenHash: createHash("sha256").update(poolToken).digest("hex"),
           },
   });
+}
+
+function shellEnvironmentSignature(
+  envVars: Readonly<Record<string, string>> | undefined,
+): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify(
+        Object.entries(envVars ?? {}).sort(([left], [right]) =>
+          left.localeCompare(right),
+        ),
+      ),
+    )
+    .digest("hex");
 }
 
 function sendThreadDeltas(
@@ -1223,6 +1238,9 @@ async function constructThreadSession(
       args.cwd,
       decoded.sessionOptions,
     ),
+    shellEnvironmentSignature: shellEnvironmentSignature(
+      decoded.sessionOptions.envVars,
+    ),
     turnPermissionSettings: toCodexPermissionSettings({
       additionalWorkspaceWriteRoots: decoded.additionalWorkspaceWriteRoots,
       gitWritableRoots: [],
@@ -1435,6 +1453,7 @@ function registerResumableSession(session: CodexBridgeSession): void {
     translator: session.translator,
     construction: session.construction,
     constructionSignature: session.constructionSignature,
+    shellEnvironmentSignature: session.shellEnvironmentSignature,
     turnPermissionSettings: session.turnPermissionSettings,
     openCodexTurnIds: new Set(),
     responseOpenedTurns: new Map(),
@@ -1733,6 +1752,16 @@ async function requireLiveSessionForTurn(
       session,
       params.options,
       "Execution settings changed; the codex session was rebuilt to apply them.",
+    );
+  } else if (
+    decoded.sessionOptions.envVars !== undefined &&
+    shellEnvironmentSignature(decoded.sessionOptions.envVars) !==
+      session.shellEnvironmentSignature
+  ) {
+    session = await rebuildThreadSession(
+      session,
+      params.options,
+      "The thread environment changed; the codex session was rebuilt to apply it.",
     );
   }
   if (session.connection === null) {

@@ -67,6 +67,8 @@ describe("ask-user-question builtin plugin", () => {
       { threadId: thread.id },
     );
     const command = await buildThreadStartCommand(harness.deps, {
+      authorGrantId: null,
+      authorRoleCeiling: null,
       authorUserId: null,
       environment,
       execution,

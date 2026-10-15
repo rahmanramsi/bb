@@ -983,7 +983,16 @@ describe("who may use bb account", () => {
 
     for (const caller of [
       undefined,
-      { experimental_caller: { kind: "client" } } as const,
+      {
+        experimental_caller: {
+          kind: "client",
+          userId: "usr_admin",
+          role: "admin",
+          roleCeiling: null,
+          effectiveRole: "admin",
+        },
+      } as const,
+      { experimental_caller: { kind: "system" } } as const,
       {
         experimental_caller: { kind: "plugin", pluginId: "bb-ai" },
       } as const,

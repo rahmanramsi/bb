@@ -3496,6 +3496,28 @@ export interface ExperimentalAppPanel {
   ): boolean;
 }
 
+/** An account role. Experimental: see docs/api_to_audit.md. */
+export type ExperimentalUserRole = "admin" | "member";
+
+/**
+ * The person signed in to this app window. Experimental: see
+ * docs/api_to_audit.md.
+ *
+ * `role` is the account role; `effectiveRole` is the role this window's
+ * credential acts with, which is `member` under a member `roleCeiling`. Gate
+ * admin-only controls on `effectiveRole === "admin"`: the server still refuses
+ * members, so hiding a control is presentation, not authorization. `email` is
+ * null for the local owner, which has no real address.
+ */
+export interface ExperimentalCurrentUser {
+  readonly userId: string;
+  readonly displayName: string;
+  readonly email: string | null;
+  readonly role: ExperimentalUserRole;
+  readonly effectiveRole: ExperimentalUserRole;
+  readonly roleCeiling: "member" | null;
+}
+
 /** Current app selection, derived from the route. */
 export interface BbContext {
   projectId: string | null;
@@ -3627,6 +3649,22 @@ export interface PluginSdkApp {
    * docs/api_to_audit.md.
    */
   experimental_usePluginId(): string;
+  /**
+   * The signed-in user, the same value bb's own role checks read. Local mode
+   * reports the local owner as an admin. Null only while nobody is signed in.
+   * Re-renders when the user's role changes or they sign out. Experimental:
+   * see docs/api_to_audit.md.
+   */
+  experimental_useCurrentUser(): ExperimentalCurrentUser | null;
+  /**
+   * `key` scoped to the signed-in user, for browser storage that must not be
+   * shared between people using the same browser: `${key}:user:${userId}` in
+   * multi-user mode and `key` unchanged in local mode. Null while nobody is
+   * signed in or the session is still loading; skip reads and writes then. Combine it with
+   * `experimental_usePluginId()` like any other key. Experimental: see
+   * docs/api_to_audit.md.
+   */
+  experimental_useUserStorageKey(key: string): string | null;
   /**
    * The answer shortcuts bb binds while a pending interaction is open. Inside
    * a `pendingInteraction` component the form shows each option's shortcut and

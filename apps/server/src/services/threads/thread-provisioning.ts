@@ -1,6 +1,7 @@
 import {
   getLatestThreadSequence,
   getNonDestroyedHostByLaunchKey,
+  getTurnRequestAuthor,
 } from "@bb/db";
 import { sweepProviderMachine } from "../machines/provider-orchestration.js";
 import { cancelProviderEnvironmentCreation } from "../environments/environment-engine.js";
@@ -15,6 +16,7 @@ import {
   type ThreadRecord,
   type ThreadTurnInitiator,
   type TurnRequestTarget,
+  type RoleCeiling,
 } from "@bb/domain";
 import type { StartedOnBehalfOf } from "@bb/domain";
 import type { AppDeps } from "../../types.js";
@@ -32,6 +34,7 @@ import {
 } from "./thread-lifecycle.js";
 import { resolveDispatchAuthor } from "./dispatch-author.js";
 import { resolvePermissionEscalation } from "./thread-runtime-config.js";
+import { appendTurnRequestAuthorUnknownEventInTransaction } from "./turn-authority.js";
 import {
   createThreadStartup,
   type ThreadForkDescriptor,
@@ -57,6 +60,8 @@ import { recordAcceptedPromptHistoryEntry } from "../prompt-history.js";
 import { NotificationBuffer } from "../lib/notification-buffer.js";
 
 interface RequestThreadProvisionArgs {
+  authorGrantId: string | null;
+  authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   environmentIntent: ThreadProvisionEnvironmentIntent;
   execution: ResolvedThreadExecutionOptions;
@@ -69,6 +74,8 @@ interface RequestThreadProvisionArgs {
 }
 
 interface RequestThreadTargetReprovisionArgs {
+  authorGrantId: string | null;
+  authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   beforeRequestAppendInTransaction?: (args: { tx: DbTransaction }) => void;
   environment: EnvironmentRow;
@@ -138,19 +145,26 @@ function getCurrentProvisioningFailureThread(
   return currentThread;
 }
 
-interface SettleSeededThreadProvisioningArgs {
+interface SettleThreadProvisioningWithoutRunArgs {
+  authorUnknown: boolean;
   context: ThreadProvisionContext;
   environmentId: string;
   threadId: string;
 }
 
-function settleSeededThreadProvisioning(
+function settleThreadProvisioningWithoutRun(
   deps: ThreadProvisioningDeps,
-  args: SettleSeededThreadProvisioningArgs,
+  args: SettleThreadProvisioningWithoutRunArgs,
 ): void {
   const settled = deps.db.transaction(
     (tx) => {
       const current = getThreadProvisionContext(tx, args.threadId);
+      if (args.authorUnknown) {
+        appendTurnRequestAuthorUnknownEventInTransaction(
+          { db: tx, hub: deps.hub },
+          { threadId: args.threadId, environmentId: args.environmentId },
+        );
+      }
       const outcome = applyLoggedThreadLifecycleEventInTransaction(
         { db: tx, logger: deps.logger },
         { threadId: args.threadId, event: { type: "run.succeeded" } },
@@ -176,7 +190,7 @@ function settleSeededThreadProvisioning(
   if (!settled.outcome.applied) {
     deps.logger.warn(
       { threadId: args.threadId },
-      "Seed-without-run thread was no longer starting; idle settle skipped",
+      "Thread provisioning without a run was no longer starting; idle settle skipped",
     );
     return;
   }
@@ -253,7 +267,8 @@ async function startThreadIfEnvironmentReady(
     args.context.request.seedWithoutRun &&
     args.context.request.fork === null
   ) {
-    settleSeededThreadProvisioning(deps, {
+    settleThreadProvisioningWithoutRun(deps, {
+      authorUnknown: false,
       context: args.context,
       environmentId: args.environment.id,
       threadId: args.thread.id,
@@ -266,8 +281,23 @@ async function startThreadIfEnvironmentReady(
     throw new Error("Thread provisioning that starts a run has no execution");
   }
 
+  const author = getTurnRequestAuthor(deps.db, {
+    requestId: args.context.request.clientRequestId,
+    threadId: args.thread.id,
+  });
+  if (author === null && deps.config.authMode === "multi") {
+    settleThreadProvisioningWithoutRun(deps, {
+      authorUnknown: true,
+      context: args.context,
+      environmentId: args.environment.id,
+      threadId: args.thread.id,
+    });
+    return;
+  }
   await requestThreadStart(deps, {
-    authorUserId: null,
+    authorGrantId: author?.authorGrantId ?? null,
+    authorRoleCeiling: author?.authorRoleCeiling ?? null,
+    authorUserId: author?.authorUserId ?? null,
     thread: args.thread,
     environment: {
       id: args.environment.id,
@@ -303,6 +333,11 @@ export function requestThreadProvision(
     });
     const target: TurnRequestTarget = { kind: "thread-start" };
     const request = appendClientTurnEvent(deps, {
+      author: {
+        authorGrantId: args.authorGrantId,
+        authorRoleCeiling: args.authorRoleCeiling,
+        authorUserId: args.authorUserId,
+      },
       threadId: args.thread.id,
       environmentId: args.thread.environmentId,
       type: "client/turn/requested",
@@ -442,6 +477,11 @@ function appendReprovisionTurnRequest(
         appendPreparedClientTurnRequestedEventWithNotificationInTransaction(
           tx,
           {
+            author: {
+              authorGrantId: args.authorGrantId,
+              authorRoleCeiling: args.authorRoleCeiling,
+              authorUserId: args.authorUserId,
+            },
             threadId: args.thread.id,
             environmentId: args.environment.id,
             type: "client/turn/requested",

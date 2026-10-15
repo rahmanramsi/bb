@@ -4,6 +4,8 @@ import {
   defineRpcContract,
   PluginCliError,
   type BbPluginApi,
+  type ExperimentalPluginRpcHandlerContext,
+  type PluginCliContext,
 } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
@@ -57,11 +59,18 @@ function kvKey(key: PreferenceKey): string {
   return `${PREFERENCE_KV_PREFIX}${key}`;
 }
 
-export function createPreferenceStore(bb: BbPluginApi) {
+const USER_REQUIRED_MESSAGE =
+  "Sidebar preferences belong to a signed-in user; call this as a user, not as a plugin or bb itself.";
+
+export function createPreferenceStore(bb: BbPluginApi, userId: string) {
+  const userKv = bb.storage.experimental_forUser(userId).kv;
+
   async function read<Key extends PreferenceKey>(
     key: Key,
   ): Promise<PreferenceValue<Key>> {
-    const stored = await bb.storage.kv.get<unknown>(kvKey(key));
+    const stored =
+      (await userKv.get<unknown>(kvKey(key))) ??
+      (await bb.storage.kv.get<unknown>(kvKey(key)));
     if (stored === undefined) return getPreferenceDefault(key);
     const parsed = parseStoredPreferenceValue(key, stored);
     if (parsed.success) return parsed.value;
@@ -89,21 +98,26 @@ export function createPreferenceStore(bb: BbPluginApi) {
     if (!parsed.success) {
       throw new PreferenceValidationError(key, parsed.message);
     }
-    await bb.storage.kv.set(kvKey(key), parsed.value);
-    bb.realtime.publish(PREFERENCES_CHANGED_CHANNEL, {
-      key,
-      value: parsed.value,
-    });
+    await userKv.set(kvKey(key), parsed.value);
+    publish(key, parsed.value);
     return parsed.value;
   }
 
   async function reset<Key extends PreferenceKey>(
     key: Key,
   ): Promise<PreferenceValue<Key>> {
-    await bb.storage.kv.delete(kvKey(key));
     const value = getPreferenceDefault(key);
-    bb.realtime.publish(PREFERENCES_CHANGED_CHANNEL, { key, value });
+    await userKv.set(kvKey(key), value);
+    publish(key, value);
     return value;
+  }
+
+  function publish(key: PreferenceKey, value: unknown): void {
+    bb.realtime.publish(
+      PREFERENCES_CHANGED_CHANNEL,
+      { key, value },
+      { experimental_userId: userId },
+    );
   }
 
   return { read, readAll, write, reset };
@@ -180,18 +194,36 @@ const JSON_OPTION = {
   description: "Emit machine-readable JSON",
 } as const;
 
-export default async function threadListPlugin(bb: BbPluginApi) {
-  const store = createPreferenceStore(bb);
+function rpcStore(
+  bb: BbPluginApi,
+  context: ExperimentalPluginRpcHandlerContext,
+): ReturnType<typeof createPreferenceStore> {
+  if (context.experimental_caller.kind !== "client") {
+    throw new Error(USER_REQUIRED_MESSAGE);
+  }
+  return createPreferenceStore(bb, context.experimental_caller.userId);
+}
 
+function cliStore(
+  bb: BbPluginApi,
+  ctx: PluginCliContext,
+): ReturnType<typeof createPreferenceStore> {
+  if (ctx.experimental_caller?.kind !== "client") {
+    throw new PluginCliError(USER_REQUIRED_MESSAGE, { code: "user_required" });
+  }
+  return createPreferenceStore(bb, ctx.experimental_caller.userId);
+}
+
+export default async function threadListPlugin(bb: BbPluginApi) {
   bb.rpc.register(threadListRpcContract, {
-    async listPreferences() {
-      return { preferences: await store.readAll() };
+    async listPreferences(_input, context) {
+      return { preferences: await rpcStore(bb, context).readAll() };
     },
-    async setPreference({ key, value }) {
-      return { key, value: await store.write(key, value) };
+    async setPreference({ key, value }, context) {
+      return { key, value: await rpcStore(bb, context).write(key, value) };
     },
-    async resetPreference({ key }) {
-      return { key, value: await store.reset(key) };
+    async resetPreference({ key }, context) {
+      return { key, value: await rpcStore(bb, context).reset(key) };
     },
   });
 
@@ -205,8 +237,8 @@ export default async function threadListPlugin(bb: BbPluginApi) {
         "prefs list": cliCommand({
           summary: "List every preference and its current value",
           options: { json: JSON_OPTION },
-          async run(input) {
-            const values = await store.readAll();
+          async run(input, ctx) {
+            const values = await cliStore(bb, ctx).readAll();
             if (input.options.json) {
               return { exitCode: 0, stdout: JSON.stringify(values) };
             }
@@ -225,9 +257,9 @@ export default async function threadListPlugin(bb: BbPluginApi) {
             { name: "key", description: "Preference name", required: true },
           ],
           options: { json: JSON_OPTION },
-          async run(input) {
+          async run(input, ctx) {
             const key = requireCliPreferenceKey(input.positionals.key);
-            const value = await store.read(key);
+            const value = await cliStore(bb, ctx).read(key);
             return {
               exitCode: 0,
               stdout: input.options.json
@@ -247,10 +279,10 @@ export default async function threadListPlugin(bb: BbPluginApi) {
             },
           ],
           options: { json: JSON_OPTION },
-          async run(input) {
+          async run(input, ctx) {
             const key = requireCliPreferenceKey(input.positionals.key);
             try {
-              const value = await store.write(
+              const value = await cliStore(bb, ctx).write(
                 key,
                 parseCliValue(input.positionals.value),
               );
@@ -277,9 +309,9 @@ export default async function threadListPlugin(bb: BbPluginApi) {
             { name: "key", description: "Preference name", required: true },
           ],
           options: { json: JSON_OPTION },
-          async run(input) {
+          async run(input, ctx) {
             const key = requireCliPreferenceKey(input.positionals.key);
-            const value = await store.reset(key);
+            const value = await cliStore(bb, ctx).reset(key);
             return {
               exitCode: 0,
               stdout: input.options.json

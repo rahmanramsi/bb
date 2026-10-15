@@ -25,6 +25,21 @@ export interface PluginRpcError {
 }
 
 /**
+ * Thrown by an rpc handler to refuse its caller, for methods that need an
+ * admin only for some inputs. The host answers HTTP 403 with error code
+ * `forbidden` and this message, the same reply as a contract's
+ * `experimental_requiredRole`. Every other thrown error stays `handler_error`.
+ */
+export class experimental_PluginRpcForbiddenError extends Error {
+  readonly code = "forbidden";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "PluginRpcForbiddenError";
+  }
+}
+
+/**
  * The validator-neutral subset of Standard Schema v1 used by plugin contracts.
  * Zod 4 schemas implement this interface directly; other validators can do
  * the same without becoming part of BB's public protocol.
@@ -94,19 +109,52 @@ export function defineRpcContract<const Contract extends PluginRpcContract>(
 }
 
 /**
- * Who invoked an rpc method. `plugin` means another loaded plugin (or this
- * one) called through its own `bb.sdk.plugins.callRpc`; the host verifies
- * that with a per-load token only the server knows. Every other caller — the
- * app, the `bb` CLI, agents, and bb itself — is `client`.
+ * Who invoked a plugin entry point (rpc method, HTTP or WebSocket route, CLI
+ * command, or agent tool).
+ *
+ * - `client`: an authenticated person through the app, the `bb` CLI, a
+ *   thread's `BB_TOKEN`, or another credential. `role` is the account's
+ *   server role, `roleCeiling` is the cap the credential carries (`"member"`
+ *   for a capped `BB_TOKEN`, otherwise `null`), and `effectiveRole` is the
+ *   authority the request actually has. For an agent tool it is the author of
+ *   the turn that called the tool. In local mode every client is the local
+ *   owner admin. The server takes `userId` from the request's credential,
+ *   never from its body; key `bb.storage.experimental_forUser`,
+ *   `bb.settings.experimental_getForUser`, and `bb.realtime.publish`'s
+ *   `experimental_userId` with it.
+ * - `plugin`: a loaded plugin (or this one) called through its own
+ *   `bb.sdk.plugins.callRpc`; the host verifies that with a per-load token
+ *   only the server knows.
+ * - `system`: bb itself, with no person behind the request (the server
+ *   service credential, or an agent tool called from a turn that has no human
+ *   author).
  */
-export type ExperimentalPluginRpcCaller =
+export type ExperimentalPluginCaller =
+  | {
+      readonly kind: "client";
+      readonly userId: string;
+      readonly role: "admin" | "member";
+      readonly roleCeiling: "member" | null;
+      readonly effectiveRole: "admin" | "member";
+    }
   | { readonly kind: "plugin"; readonly pluginId: string }
-  | { readonly kind: "client" };
+  | { readonly kind: "system" };
+
+/** The caller of an rpc method; the same shape as every other entry point's. */
+export type ExperimentalPluginRpcCaller = ExperimentalPluginCaller;
+
+/**
+ * The identity of one plugin entry-point invocation. Pass it to
+ * `bb.sdk.experimental_asCaller` to act as that caller while the invocation
+ * runs.
+ */
+export interface ExperimentalPluginCallerContext {
+  readonly experimental_caller: ExperimentalPluginCaller;
+}
 
 /** Second argument of every rpc handler. */
-export interface ExperimentalPluginRpcHandlerContext {
-  readonly experimental_caller: ExperimentalPluginRpcCaller;
-}
+export type ExperimentalPluginRpcHandlerContext =
+  ExperimentalPluginCallerContext;
 
 export type PluginRpcHandlers<Contract extends PluginRpcContract> = {
   [Method in keyof Contract]: (

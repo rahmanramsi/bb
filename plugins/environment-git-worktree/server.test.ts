@@ -71,6 +71,7 @@ async function setup(
     gitRemote: null,
     inputs: { branch: { kind: "default" } },
     suggestedBranchName: "bb/test",
+    experimental_requester: null,
     attempt: 1,
     pathKey: THREAD_ID,
     experimental_claimPath: async () => true,
@@ -86,7 +87,11 @@ function restoreContext(
   context: PluginEnvironmentProviderCreateContext,
   branchName: string | null,
 ): PluginEnvironmentProviderRestoreContext {
-  const { suggestedBranchName: _suggested, ...operation } = context;
+  const {
+    suggestedBranchName: _suggested,
+    experimental_requester: _requester,
+    ...operation
+  } = context;
   return {
     ...operation,
     pathKey: "replacement",

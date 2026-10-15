@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "38b3d300-de36-4cec-a551-25b592af34d5",
+  "id": "03507d1d-8a68-4ca1-bfaa-e32ca50a1725",
   "prevId": "eed90161-3be6-4d0e-bb21-59fc80277f31",
   "tables": {
     "app_settings": {
@@ -3342,100 +3342,6 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "project_members": {
-      "name": "project_members",
-      "columns": {
-        "project_id": {
-          "name": "project_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "added_by_user_id": {
-          "name": "added_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "project_members_user_idx": {
-          "name": "project_members_user_idx",
-          "columns": [
-            "user_id"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "project_members_project_id_projects_id_fk": {
-          "name": "project_members_project_id_projects_id_fk",
-          "tableFrom": "project_members",
-          "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "project_members_user_id_user_id_fk": {
-          "name": "project_members_user_id_user_id_fk",
-          "tableFrom": "project_members",
-          "tableTo": "user",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "project_members_added_by_user_id_user_id_fk": {
-          "name": "project_members_added_by_user_id_user_id_fk",
-          "tableFrom": "project_members",
-          "tableTo": "user",
-          "columnsFrom": [
-            "added_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "project_members_project_id_user_id_pk": {
-          "columns": [
-            "project_id",
-            "user_id"
-          ],
-          "name": "project_members_project_id_user_id_pk"
-        }
-      },
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
     "project_sources": {
       "name": "project_sources",
       "columns": {
@@ -3606,21 +3512,6 @@
           "autoincrement": false,
           "default": "'V'"
         },
-        "owner_user_id": {
-          "name": "owner_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "visibility": {
-          "name": "visibility",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'public'"
-        },
         "deleted_at": {
           "name": "deleted_at",
           "type": "integer",
@@ -3651,13 +3542,6 @@
           ],
           "isUnique": false
         },
-        "projects_owner_idx": {
-          "name": "projects_owner_idx",
-          "columns": [
-            "owner_user_id"
-          ],
-          "isUnique": false
-        },
         "projects_deleted_idx": {
           "name": "projects_deleted_idx",
           "columns": [
@@ -3682,21 +3566,7 @@
           "where": "\"projects\".\"kind\" = 'personal'"
         }
       },
-      "foreignKeys": {
-        "projects_owner_user_id_user_id_fk": {
-          "name": "projects_owner_user_id_user_id_fk",
-          "tableFrom": "projects",
-          "tableTo": "user",
-          "columnsFrom": [
-            "owner_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
@@ -3969,6 +3839,13 @@
         },
         "author_user_id": {
           "name": "author_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "author_role_ceiling": {
+          "name": "author_role_ceiling",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

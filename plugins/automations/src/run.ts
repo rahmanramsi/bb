@@ -34,8 +34,20 @@ type AgentThreadsSdk = {
   ): Promise<unknown>;
 };
 export type AgentRunApi = Pick<BbPluginApi, "realtime" | "log"> & {
-  sdk: { threads: AgentThreadsSdk };
+  sdk: {
+    threads: AgentThreadsSdk;
+    experimental_asGrant(grantId: string): { threads: AgentThreadsSdk };
+  };
 };
+
+function threadsForRun(
+  bb: AgentRunApi,
+  automation: AutomationRow,
+): AgentThreadsSdk {
+  return automation.callerGrantId === null
+    ? bb.sdk.threads
+    : bb.sdk.experimental_asGrant(automation.callerGrantId).threads;
+}
 export type ScriptRunApi = Pick<BbPluginApi, "realtime" | "log"> & {
   sdk: { projects: ProjectsSdk };
 };
@@ -110,15 +122,17 @@ export async function executeAgentRun(
   args: AgentRunArgs,
 ): Promise<void> {
   try {
+    const threads = threadsForRun(bb, args.automation);
     if (args.automation.targetThreadId !== null) {
-      await reuseTargetThreadForRun(bb, db, {
+      await reuseTargetThreadForRun(threads, db, {
         ...args,
+        bb,
         targetThreadId: args.automation.targetThreadId,
       });
       return;
     }
     const thread = sdkThreadSchema.parse(
-      await bb.sdk.threads.spawn({
+      await threads.spawn({
         projectId: args.automation.projectId,
         environment: args.execution.environment,
         prompt: renderAutomationDueMessage({
@@ -182,14 +196,18 @@ function settleDispatchFailure(
 }
 
 async function reuseTargetThreadForRun(
-  bb: AgentRunApi,
+  threads: AgentThreadsSdk,
   db: Db,
-  args: AgentRunArgs & { targetThreadId: string },
+  args: AgentRunArgs & {
+    bb: Pick<BbPluginApi, "log">;
+    targetThreadId: string;
+  },
 ): Promise<void> {
+  const { bb } = args;
   let thread: SdkThread;
   try {
     thread = sdkThreadSchema.parse(
-      await bb.sdk.threads.get({ threadId: args.targetThreadId }),
+      await threads.get({ threadId: args.targetThreadId }),
     );
   } catch (error) {
     if (!isThreadGoneError(error)) throw error;
@@ -218,7 +236,7 @@ async function reuseTargetThreadForRun(
     threadId: args.targetThreadId,
     now: Date.now(),
   });
-  await bb.sdk.threads.send({
+  await threads.send({
     threadId: args.targetThreadId,
     mode: "steer-if-active",
     input: [

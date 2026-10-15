@@ -167,6 +167,8 @@ async function sendUserMessage(
   },
 ): Promise<void> {
   await sendThreadMessage(harness.deps, {
+    authorGrantId: null,
+    authorRoleCeiling: null,
     authorUserId: LOCAL_OWNER_USER_ID,
     environment: args.environment,
     payload: {

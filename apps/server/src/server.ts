@@ -152,6 +152,7 @@ import {
   serverMoveFreezeMiddleware,
   serverMoveWriteFreezeMiddleware,
 } from "./services/server-move/freeze.js";
+import type { PluginCallerCredentialArgs } from "./services/user-auth.js";
 import { isServerMoveSnapshotFenced } from "./services/server-move/freeze-state.js";
 import {
   createManualServerImportCompletion,
@@ -773,6 +774,14 @@ export function createApp(
     dataDir: deps.config.dataDir,
     appVersion: deps.config.appVersion,
     getAppUrl: () => deps.config.appUrl ?? null,
+    revokePluginCallerGrant: (args: { id: string; pluginId: string }) =>
+      deps.userAuth.revokePluginCallerGrant(args),
+    ...(deps.config.authMode === "multi"
+      ? {
+          issuePluginCallerCredential: (args: PluginCallerCredentialArgs) =>
+            deps.userAuth.issuePluginCallerCredential(args),
+        }
+      : {}),
     sharedPorts: deps.sharedPorts,
     providerRegistry: deps.providerRegistry,
     pluginHostArtifacts: deps.pluginHostArtifacts,
@@ -875,6 +884,7 @@ export function createApp(
   }
   const authenticatedSockets = createAuthenticatedSocketRegistry();
   const stopAuthorizationWatch = deps.userAuth.onAuthorizationChange(() => {
+    deps.hub.notifySystem(["users-changed"]);
     void authenticatedSockets.revalidate();
   });
   deps.hub.setProjectAccessResolver(

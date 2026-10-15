@@ -17,6 +17,10 @@ import type {
   PluginRuntimeStatus,
 } from "@bb/server-contract";
 import type { ServerLogger } from "../../types.js";
+import type {
+  PluginCallerCredential,
+  PluginCallerCredentialArgs,
+} from "../user-auth.js";
 import type { TelemetryService } from "../system/telemetry.js";
 import type { NotificationHub } from "../../ws/hub.js";
 import type {
@@ -94,7 +98,10 @@ export interface PluginServiceDeps {
    * the `plugins-changed` system broadcast on lifecycle completion. */
   hub: Pick<
     NotificationHub,
-    "getDaemonSessionIdForHost" | "notifyPluginSignal" | "notifySystem"
+    | "getDaemonSessionIdForHost"
+    | "notifyPluginSignal"
+    | "notifySystem"
+    | "notifyUserSystem"
   >;
   logger: ServerLogger;
   telemetry: TelemetryService;
@@ -105,6 +112,10 @@ export interface PluginServiceDeps {
     | "setPluginDirectory"
   >;
   getAppUrl?: () => string | null;
+  revokePluginCallerGrant?: (args: { id: string; pluginId: string }) => boolean;
+  issuePluginCallerCredential?: (
+    args: PluginCallerCredentialArgs,
+  ) => PluginCallerCredential;
   dataDir: string;
   appVersion: string;
   bundledPlugins?: readonly BundledPluginRegistration[];

@@ -11,6 +11,7 @@ import {
   ClientTurnRequestId,
   EnvironmentStatus,
   promptInputHasCommandMention,
+  type RoleCeiling,
 } from "@bb/domain";
 import {
   type HostDaemonCommand,
@@ -70,6 +71,8 @@ interface ThreadUnarchiveCommandEnvironment {
 }
 
 export interface ThreadStartCommandArgs {
+  authorGrantId: string | null;
+  authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   environment: ThreadRuntimeCommandEnvironment;
   execution: ResolvedThreadExecutionOptions;
@@ -102,6 +105,8 @@ interface PreparedTurnSubmitCommandBuildArgs {
 }
 
 interface PrepareTurnSubmitCommandPayloadArgs {
+  authorGrantId: string | null;
+  authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   environment: ThreadRuntimeCommandEnvironment;
   execution: ResolvedThreadExecutionOptions;
@@ -275,6 +280,8 @@ export async function buildThreadStartCommand(
 ): Promise<Extract<HostDaemonCommand, { type: "thread.start" }>> {
   await deps.providerRegistry.whenRegistrationsSettled();
   const runtimeContext = await resolveThreadRuntimeCommandConfig(deps, {
+    authorGrantId: args.authorGrantId,
+    authorRoleCeiling: args.authorRoleCeiling,
     authorUserId: args.authorUserId,
     thread: args.thread,
     environment: args.environment,
@@ -373,6 +380,8 @@ export async function prepareTurnSubmitCommandPayload(
     args.thread.id,
   );
   const runtimeContext = await resolveThreadRuntimeCommandConfig(deps, {
+    authorGrantId: args.authorGrantId,
+    authorRoleCeiling: args.authorRoleCeiling,
     authorUserId: args.authorUserId,
     thread: args.thread,
     environment: args.environment,

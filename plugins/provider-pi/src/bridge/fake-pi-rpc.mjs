@@ -52,6 +52,12 @@ if (process.env.FAKE_PI_ENV_LOG) {
     `${process.env.FAKE_PI_ENV_MARKER ?? ""}\n`,
   );
 }
+if (process.env.FAKE_PI_TOKEN_LOG) {
+  appendFileSync(
+    process.env.FAKE_PI_TOKEN_LOG,
+    `${process.env.BB_TOKEN ?? "<none>"}\n`,
+  );
+}
 if (sessionFile !== undefined) {
   mkdirSync(dirname(sessionFile), { recursive: true });
   if (!existsSync(sessionFile)) {

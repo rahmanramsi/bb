@@ -2371,6 +2371,58 @@ describe("connect plugin", () => {
     });
   });
 
+  it("keeps account servers, desktop sessions, and bulk unshare to admins while members share ports", async () => {
+    const current = await loadPlugin();
+    account.route("gate", "GET", "/api/connect/servers", () => ({
+      status: 200,
+      body: { servers: [] },
+    }));
+    account.route("gate", "POST", "/api/connect/desktop-session", () => ({
+      status: 200,
+      body: {
+        cookie: {
+          domain: ".getbb.app",
+          expiresAt: 2_000_000,
+          name: "__Secure-bb-connect.desktop_session",
+          value: "short-lived-signed-cookie",
+        },
+      },
+    }));
+    await signIn(current);
+    const { harness } = current;
+    const member = { experimental_callerRole: "member" } as const;
+
+    await expect(
+      harness.callRpc("expose", { port: 8000 }, member),
+    ).resolves.toMatchObject({ port: 8000 });
+    for (const [method, input] of [
+      ["listAccountServers", null],
+      ["createDesktopSession", null],
+      ["unexposeAll", { hostId: SERVER_HOST_ID }],
+    ] as const) {
+      await expect(
+        harness.callRpc(method, input, member),
+        method,
+      ).rejects.toMatchObject({ code: "forbidden" });
+    }
+    expect(account.fetches).not.toContainEqual(
+      expect.objectContaining({ target: "gate" }),
+    );
+    await expect(
+      harness.callRpc("unexpose", { port: 8000 }, member),
+    ).resolves.toMatchObject({ removed: true });
+
+    await expect(harness.callRpc("listAccountServers")).resolves.toMatchObject(
+      { servers: [] },
+    );
+    await expect(
+      harness.callRpc("createDesktopSession"),
+    ).resolves.toMatchObject({ cookie: { value: "short-lived-signed-cookie" } });
+    await expect(
+      harness.callRpc("unexposeAll", { hostId: SERVER_HOST_ID }),
+    ).resolves.toEqual({ removed: 0 });
+  });
+
   it("createMachineCode mints through the apex via bb account", async () => {
     const current = await loadPlugin();
     account.route("api", "POST", "/api/connect/machine-code", () => ({
@@ -2622,6 +2674,54 @@ describe("connect CLI", () => {
       expect(result.stderr).toContain("isn't signed in to a bb account");
     }
     expect(account.fetches).toEqual([]);
+  });
+
+  it("servers and unexpose-all require an admin while members can still share ports", async () => {
+    const current = await loadCli();
+    account.route("gate", "GET", "/api/connect/servers", () => ({
+      status: 200,
+      body: { servers: [] },
+    }));
+    await signIn(current);
+    const { harness } = current;
+    const member = { experimental_callerRole: "member" } as const;
+
+    await expect(
+      harness.runCli(["expose", "8000", "--json"], member),
+    ).resolves.toMatchObject({ exitCode: 0 });
+    for (const argv of [
+      ["servers", "--json"],
+      ["unexpose-all", "--host", SERVER_HOST_ID, "--json"],
+    ]) {
+      const refused = await harness.runCli(argv, member);
+      expect(refused.exitCode, argv.join(" ")).toBe(1);
+      expect(JSON.parse(refused.stdout ?? "")).toMatchObject({
+        ok: false,
+        error: { code: "admin_required" },
+      });
+    }
+    expect(await harness.callRpc("listShares")).toEqual([
+      expect.objectContaining({ hostId: SERVER_HOST_ID, port: 8000 }),
+    ]);
+    for (const argv of [
+      ["servers", "--help"],
+      ["unexpose-all", "--help"],
+    ]) {
+      await expect(
+        harness.runCli(argv, member),
+        argv.join(" "),
+      ).resolves.toMatchObject({ exitCode: 0 });
+    }
+    await expect(
+      harness.runCli(["unexpose", "8000", "--json"], member),
+    ).resolves.toMatchObject({ exitCode: 0 });
+
+    await expect(
+      harness.runCli(["servers", "--json"]),
+    ).resolves.toMatchObject({ exitCode: 0 });
+    await expect(
+      harness.runCli(["unexpose-all", "--host", SERVER_HOST_ID, "--json"]),
+    ).resolves.toMatchObject({ exitCode: 0 });
   });
 
   it("servers lists account servers as a table or json", async () => {

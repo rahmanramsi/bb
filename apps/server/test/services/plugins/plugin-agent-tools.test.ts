@@ -1,3 +1,4 @@
+import { SYSTEM_PLUGIN_CALLER } from "../../../src/services/plugins/plugin-invocation.js";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -76,6 +77,7 @@ describe("bb.agents.registerTool", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -180,14 +182,24 @@ describe("bb.agents.registerTool", () => {
     };
     const alpha = service.findAgentTool("alpha_tool")!;
     await expect(
-      service.invokeAgentTool({ ...alpha, input: {}, ctx }),
+      service.invokeAgentTool({
+        ...alpha,
+        input: {},
+        ctx,
+        identity: SYSTEM_PLUGIN_CALLER,
+      }),
     ).resolves.toEqual({
       success: true,
       contentItems: [{ type: "inputText", text: "alpha result" }],
     });
     const beta = service.findAgentTool("beta_tool")!;
     await expect(
-      service.invokeAgentTool({ ...beta, input: {}, ctx }),
+      service.invokeAgentTool({
+        ...beta,
+        input: {},
+        ctx,
+        identity: SYSTEM_PLUGIN_CALLER,
+      }),
     ).resolves.toEqual({
       success: true,
       contentItems: [{ type: "inputText", text: "beta result" }],
@@ -225,7 +237,12 @@ describe("bb.agents.registerTool", () => {
     };
     const found = service.findAgentTool("search_issues")!;
     await expect(
-      service.invokeAgentTool({ ...found, input: { query: "bug" }, ctx }),
+      service.invokeAgentTool({
+        ...found,
+        input: { query: "bug" },
+        ctx,
+        identity: SYSTEM_PLUGIN_CALLER,
+      }),
     ).resolves.toEqual({
       success: true,
       contentItems: [{ type: "inputText", text: "query=bug" }],
@@ -235,6 +252,7 @@ describe("bb.agents.registerTool", () => {
       ...found,
       input: { query: 42 },
       ctx,
+      identity: SYSTEM_PLUGIN_CALLER,
     });
     expect(invalid.success).toBe(false);
     expect(invalid.contentItems[0]).toMatchObject({ type: "inputText" });
@@ -261,6 +279,7 @@ describe("bb.agents.registerTool", () => {
       ...exploder,
       input: {},
       ctx,
+      identity: SYSTEM_PLUGIN_CALLER,
     });
     expect(failed.success).toBe(false);
     expect((failed.contentItems[0] as { text: string }).text).toContain(
@@ -579,6 +598,7 @@ describe("bb.agents.contributeInstructions", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -721,6 +741,8 @@ describe("plugin tools reach thread runtime config", () => {
     );
     const buildCommand = (requestValue: number) =>
       buildThreadStartCommand(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: null,
         environment,
         execution,
@@ -894,6 +916,8 @@ describe("plugin tools reach thread runtime config", () => {
         { threadId: target.thread.id },
       );
       return buildThreadStartCommand(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: null,
         environment: target.environment,
         execution,
@@ -1018,6 +1042,8 @@ describe("plugin tools reach thread runtime config", () => {
       { threadId: beta.thread.id },
     );
     const turnSubmit = await prepareTurnSubmitCommandPayload(harness.deps, {
+      authorGrantId: null,
+      authorRoleCeiling: null,
       authorUserId: null,
       environment: beta.environment,
       execution: betaExecution,

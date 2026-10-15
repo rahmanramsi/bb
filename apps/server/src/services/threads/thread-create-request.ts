@@ -5,6 +5,7 @@ import type {
   ThreadCreateOrigin,
   ThreadOriginKind,
   ThreadVisibility,
+  RoleCeiling,
 } from "@bb/domain";
 import type {
   CreateThreadEnvironmentArgs,
@@ -14,6 +15,8 @@ import type {
 } from "@bb/server-contract";
 
 export interface ThreadCreateServiceRequestInput {
+  createdByGrantId: string | null;
+  createdByRoleCeiling: RoleCeiling | null;
   createdByUserId: string | null;
   environment: CreateThreadEnvironmentArgs;
   executionInputSources?: CreateThreadRequest["executionInputSources"];
@@ -51,6 +54,9 @@ export interface ThreadCreateServiceRequest extends Omit<
   ThreadCreateServiceRequestInput,
   "environment" | "pluginMetadata" | "providerId"
 > {
+  authorGrantId: string | null;
+  authorRoleCeiling: RoleCeiling | null;
+  authorUserId: string | null;
   environment: EnvironmentArgs | ProviderEnvironmentArgs;
   pluginMetadata: { pluginId: string; metadata: JsonObject } | null;
   providerId: string;

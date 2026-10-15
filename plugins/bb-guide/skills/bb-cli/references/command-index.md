@@ -92,7 +92,8 @@ This index lists every command path that the core CLI registers, including alias
 
 `bb login --email EMAIL` creates and saves a CLI PAT for the current server.
 `bb login --token TOKEN` saves an existing PAT. `BB_TOKEN` overrides the saved
-credential. User and invite administration require admin. Invite acceptance
+credential. User and invite administration require admin; `bb user grants`
+works on your own grants and needs admin only for another user's. Invite acceptance
 creates an account without prior sign-in. See [configuration](configuration.md).
 
 ## user
@@ -102,6 +103,9 @@ creates an account without prior sign-in. See [configuration](configuration.md).
 - `bb user connect-members list`
 - `bb user connect-members add`
 - `bb user connect-members remove`
+- `bb user grants`
+- `bb user grants list`
+- `bb user grants revoke`
 - `bb user list`
 - `bb user role`
 - `bb user remove`

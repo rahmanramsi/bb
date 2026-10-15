@@ -77,7 +77,9 @@ import {
   threadStorageLocationQueryKey,
   threadStoragePathsForThreadQueryKeyPrefix,
   threadTimelineQueryKeyPrefix,
+  userDirectoryQueryKey,
 } from "../queries/query-keys";
+import { AUTH_SESSION_QUERY_KEY } from "../useAuth";
 import { systemEnvironmentProvidersQueryKey } from "../queries/environment-provider-queries";
 import { schedulePluginFrontendReconcile } from "../../lib/plugin-frontend-lazy";
 import {
@@ -572,6 +574,9 @@ export const REALTIME_SYSTEM_CHANGE_REGISTRY = {
   },
   "app-update-changed": {
     dirty: [dirtyAppUpdateStatusQueries],
+  },
+  "users-changed": {
+    dirty: [dirtyCurrentUserQueries],
   },
 } satisfies SystemChangeRegistry;
 
@@ -1183,6 +1188,10 @@ function dirtyUiPreferencesQueries({
 
 function dirtyServerMoveStatusQueries(): QueryKey[] {
   return [serverMoveStatusQueryKey()];
+}
+
+function dirtyCurrentUserQueries(): QueryKey[] {
+  return [AUTH_SESSION_QUERY_KEY, userDirectoryQueryKey()];
 }
 
 function dirtyAppUpdateStatusQueries(): QueryKey[] {

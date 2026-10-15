@@ -231,10 +231,44 @@ describe("bb cloud preference", () => {
         { enabled: true },
         { experimental_caller: { kind: "plugin", pluginId: "sneaky" } },
       ),
-    ).rejects.toThrow("only you can turn bb cloud on or off");
+    ).rejects.toThrow("other plugins can't turn bb cloud on or off");
     await expect(
       host.harness.behavior.callRpc("overview", null),
     ).resolves.toMatchObject({ enabled: false });
+  });
+
+  it("keeps turning bb cloud on or off to admins", async () => {
+    const { host } = await setup({ enabled: false, status: SIGNED_OUT });
+    const member = { experimental_callerRole: "member" } as const;
+    await expect(
+      host.harness.behavior.callRpc("setEnabled", { enabled: true }, member),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    for (const argv of [
+      ["on", "--json"],
+      ["off", "--json"],
+    ]) {
+      const refused = await host.harness.behavior.runCli(argv, member);
+      expect(refused.exitCode, argv.join(" ")).toBe(1);
+      expect(JSON.parse(refused.stdout)).toMatchObject({
+        ok: false,
+        error: { code: "admin_required" },
+      });
+    }
+    for (const argv of [["on", "--help"], ["off", "--help"], ["status"]]) {
+      await expect(
+        host.harness.behavior.runCli(argv, member),
+        argv.join(" "),
+      ).resolves.toMatchObject({ exitCode: 0 });
+    }
+    await expect(
+      host.harness.behavior.callRpc("overview", null, member),
+    ).resolves.toMatchObject({ enabled: false });
+    await expect(
+      host.harness.behavior.runCli(["on", "--json"]),
+    ).resolves.toMatchObject({ exitCode: 0 });
+    await expect(
+      host.harness.behavior.callRpc("overview", null),
+    ).resolves.toMatchObject({ enabled: true });
   });
 
   it("turns on through the client RPC", async () => {

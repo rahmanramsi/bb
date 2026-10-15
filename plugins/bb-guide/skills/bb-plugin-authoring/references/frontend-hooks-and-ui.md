@@ -36,6 +36,18 @@ Hooks:
   it (localStorage entries, log prefixes) so a copy published under another
   package name does not share the original's state. `renderSlot` returns its
   `pluginId` option, `test-plugin` by default.
+- `experimental_useCurrentUser()` → `{ userId, displayName, email, role,
+  effectiveRole, roleCeiling } | null`, the signed-in user bb's own role checks
+  read; null only while nobody is signed in. Local mode reports the local owner
+  as an admin with `email: null`. It re-renders on a role change or sign-out.
+  Hide admin-only controls unless `effectiveRole === "admin"` (a member-capped
+  credential has `role: "admin"` but `effectiveRole: "member"`); keep the
+  server's `experimental_requiredRole` check, since hiding is not
+  authorization.
+- `experimental_useUserStorageKey(key)` → `${key}:user:${userId}` in
+  multi-user mode, `key` unchanged in local mode, null while signed out (skip
+  storage then). Use it for localStorage that must not be shared by people on
+  the same browser, combined with `experimental_usePluginId()`.
 - `experimental_useQuestionFormHost()` → `{ shortcuts, registerChoiceHandler }`
   inside a `pendingInteraction` component: the host-owned answer shortcuts by
   zero-based option index, and a way to act when the person presses one. The

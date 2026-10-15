@@ -15,6 +15,7 @@ import {
   releaseQueuedMessageClaim,
   releaseQueuedThreadMessageEditHold,
   releaseStaleQueuedMessageClaims,
+  requeueClaimedQueuedThreadMessages,
   type DbQueryConnection,
   type QueuedThreadMessageGroupClaimPolicy,
   type QueuedThreadMessageGroupEligibility,
@@ -22,6 +23,7 @@ import {
 import {
   flattenPromptInputGroups,
   queuedMessageSystemNoticeSchema,
+  type RoleCeiling,
 } from "@bb/domain";
 import type {
   PromptInput,
@@ -189,6 +191,8 @@ async function requireReadyQueuedMessageEnvironment(
 }
 
 export interface CreateQueuedMessageForThreadArgs {
+  authorGrantId: string | null;
+  authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   payload: CreateQueuedMessageRequest;
   thread: ThreadRecord;
@@ -252,6 +256,8 @@ export async function createQueuedMessageForThread(
           threadId: thread.id,
           content: input,
           senderThreadId,
+          authorGrantId: args.authorGrantId,
+          authorRoleCeiling: args.authorRoleCeiling,
           authorUserId: args.authorUserId,
           model: execution.model,
           reasoningLevel: execution.reasoningLevel,
@@ -531,6 +537,8 @@ async function sendClaimedQueuedMessageForIdleProviderThread(
     hostId: environment.hostId,
   });
   const preparedCommand = await prepareTurnSubmitCommandPayload(deps, {
+    authorGrantId: args.queuedMessages[0]!.authorGrantId,
+    authorRoleCeiling: args.queuedMessages[0]!.authorRoleCeiling,
     authorUserId: queuedMessage.authorUserId,
     environment,
     execution,
@@ -564,6 +572,11 @@ async function sendClaimedQueuedMessageForIdleProviderThread(
         throw createQueuedMessageClaimLostError();
       }
       const request = appendClientTurnEventInTransaction(tx, {
+        author: {
+          authorGrantId: args.queuedMessages[0]!.authorGrantId,
+          authorRoleCeiling: args.queuedMessages[0]!.authorRoleCeiling,
+          authorUserId: queuedMessage.authorUserId,
+        },
         environmentId: thread.environmentId,
         execution,
         initiator,
@@ -651,13 +664,33 @@ async function sendClaimedSystemNotice(
     JSON.parse(lead.systemNotice),
   );
   const queuedMessage = toThreadQueuedMessage(lead);
-  const delivered = await deliverParentSystemMessage(deps, {
+  const delivery = await deliverParentSystemMessage(deps, {
     input: queuedMessage.content,
     parentThread: args.thread,
     systemMessageKind: notice.kind,
     systemMessageSubject: notice.subject,
   });
-  if (!delivered) {
+  if (delivery === "awaiting-running-turn") {
+    const waitingOn: QueuedMessageWaitingOn = { kind: "thread-busy" };
+    requeueClaimedQueuedThreadMessages(deps.db, deps.hub, {
+      claims: args.queuedMessages.map((claimed) => ({
+        id: claimed.id,
+        claimToken: claimed.claimToken,
+      })),
+      threadId: args.thread.id,
+      waitingOn,
+      sendAt: null,
+    });
+    if (args.sendNow) {
+      throw new ApiError(
+        409,
+        "queued_message_still_waiting",
+        `This message cannot be sent yet: ${describeCoreWait(waitingOn)}.`,
+      );
+    }
+    throw createQueuedMessageClaimLostError();
+  }
+  if (delivery === "not-delivered") {
     // The thread changed under the drain. Leave the row claimed-and-released
     // by the caller's error path rather than consuming a notice nobody got.
     throw createQueuedMessageClaimLostError();
@@ -709,6 +742,8 @@ async function sendClaimedQueuedMessageForThread(
   const lead = args.queuedMessages[0]!;
   const outcome = await attemptDispatch(deps, {
     thread: args.thread,
+    authorGrantId: lead.authorGrantId,
+    authorRoleCeiling: lead.authorRoleCeiling,
     authorUserId: lead.authorUserId,
     payload: {
       ...sendQueuedMessagePayload(

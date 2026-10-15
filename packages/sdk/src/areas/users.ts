@@ -3,6 +3,7 @@ import type {
   AddConnectMemberResponse,
   ConnectMemberListResponse,
   AuthUserResponse,
+  PluginCallerGrantListResponse,
   UpdateUserRoleRequest,
   UserListResponse,
 } from "@bb/server-contract";
@@ -36,6 +37,15 @@ export interface ExperimentalUsersArea {
     signal?: AbortSignal;
   }): Promise<{ ok: true }>;
   list(args?: ExperimentalUsersListArgs): Promise<ExperimentalUsersListResult>;
+  listPluginGrants(input: {
+    userId: string;
+    signal?: AbortSignal;
+  }): Promise<PluginCallerGrantListResponse>;
+  revokePluginGrant(input: {
+    userId: string;
+    grantId: string;
+    signal?: AbortSignal;
+  }): Promise<{ ok: true }>;
 }
 
 export function createUsersArea({
@@ -86,6 +96,22 @@ export function createUsersArea({
       return transport.readJson(
         transport.api.v1.users[":id"].$delete(
           { param: { id: input.userId } },
+          ...signalRequestArgs(input.signal),
+        ),
+      );
+    },
+    async listPluginGrants(input) {
+      return transport.readJson(
+        transport.api.v1.users[":id"]["plugin-grants"].$get(
+          { param: { id: input.userId } },
+          ...signalRequestArgs(input.signal),
+        ),
+      );
+    },
+    async revokePluginGrant(input) {
+      return transport.readJson(
+        transport.api.v1.users[":id"]["plugin-grants"][":grantId"].$delete(
+          { param: { id: input.userId, grantId: input.grantId } },
           ...signalRequestArgs(input.signal),
         ),
       );

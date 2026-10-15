@@ -685,7 +685,14 @@ describe("project visibility and members", () => {
           harness.deps.hub,
           socket,
           member.id,
-          projectAccessScopeFor({ kind: "user", role, userId: member.id }),
+          projectAccessScopeFor({
+            delegatedPluginId: null,
+            grantId: null,
+            kind: "user",
+            role,
+            roleCeiling: null,
+            userId: member.id,
+          }),
         );
         harness.deps.hub.subscribe(socket, { kind: "project-list" });
         harness.deps.hub.subscribe(socket, { kind: "thread-list" });

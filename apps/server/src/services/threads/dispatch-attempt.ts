@@ -25,6 +25,7 @@ import {
   type ThreadCreateOrigin,
   type ThreadQueuedMessage,
   TEAM_THREAD_VIEWER_ID,
+  type RoleCeiling,
 } from "@bb/domain";
 import type { SendMessageRequest } from "@bb/server-contract";
 import type {
@@ -89,6 +90,13 @@ import {
 import { resolveDispatchAuthor } from "./dispatch-author.js";
 import type { TurnRequestRetryMarker } from "./thread-events.js";
 import { restoreInterruptedThreadStartupRequest } from "./thread-provisioning.js";
+import { requestThreadInterruptForOtherAuthor } from "./thread-lifecycle.js";
+import {
+  readRunningTurnBinding,
+  runningTurnBindingHolds,
+  sharesRunningTurnAuthority,
+  type RunningTurnBinding,
+} from "./turn-authority.js";
 import { markTurnTraceSpan } from "../system/turn-trace.js";
 
 export const pendingThreadStartContextSchema = z.object({
@@ -230,6 +238,8 @@ export type DispatchAttemptSource =
 
 export interface DispatchAttemptArgs {
   thread: ThreadRecord;
+  authorGrantId: string | null;
+  authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   payload: SendMessageRequest & { inputGroups?: PromptInput[][] };
   source: DispatchAttemptSource;
@@ -372,6 +382,8 @@ async function runDispatchAttempt(
     input: payload.input,
     execution,
     senderThreadId,
+    authorGrantId: args.authorGrantId,
+    authorRoleCeiling: args.authorRoleCeiling,
     authorUserId: args.authorUserId,
     origin: args.origin,
     originPluginId: args.originPluginId,
@@ -411,6 +423,10 @@ async function runDispatchAttempt(
   } = {
     outcome: null,
     reattemptThread: null,
+  };
+
+  const checkedRunningTurn: { value: RunningTurnBinding | null } = {
+    value: null,
   };
 
   const continueThroughCoreWaits = async (): Promise<void> => {
@@ -483,6 +499,33 @@ async function runDispatchAttempt(
       continued.outcome = waitOn({ kind: "thread-busy" }, null);
       return;
     }
+    if (attempt === "join-turn") {
+      checkedRunningTurn.value = readRunningTurnBinding(deps.db, thread.id);
+    }
+    if (
+      checkedRunningTurn.value !== null &&
+      !sharesRunningTurnAuthority(deps, {
+        author: {
+          authorGrantId: args.authorGrantId,
+          authorRoleCeiling: args.authorRoleCeiling,
+          authorUserId: args.authorUserId,
+        },
+        binding: checkedRunningTurn.value,
+        thread,
+      })
+    ) {
+      if (
+        deps.pendingInteractions.hasTurnBoundPendingThreadInteraction(thread.id)
+      ) {
+        continued.outcome = waitOn({ kind: "interaction" }, null);
+        return;
+      }
+      continued.outcome = waitOn({ kind: "thread-busy" }, null);
+      if (dispatchEnvironment !== null) {
+        requestThreadInterruptForOtherAuthor(deps, thread, dispatchEnvironment);
+      }
+      return;
+    }
     if (
       currentThread.status === "active" &&
       resolveDispatchAttemptKind(currentThread, payload.mode) === "join-turn" &&
@@ -516,6 +559,8 @@ async function runDispatchAttempt(
 
     if (firstDispatch) {
       admitted.value = await admitPendingThread(deps, {
+        authorGrantId: args.authorGrantId,
+        authorRoleCeiling: args.authorRoleCeiling,
         authorUserId: args.authorUserId,
         claimed,
         payload: resolvedPayload,
@@ -617,6 +662,8 @@ async function runDispatchAttempt(
   const environment = await requireThreadCommandEnvironment(deps, { thread });
   try {
     await sendThreadMessage(deps, {
+      authorGrantId: args.authorGrantId,
+      authorRoleCeiling: args.authorRoleCeiling,
       authorUserId: args.authorUserId,
       environment,
       payload: resolvedPayload,
@@ -625,6 +672,16 @@ async function runDispatchAttempt(
       ...(args.retryOf !== undefined ? { retryOf: args.retryOf } : {}),
       beforeAppendInTransaction: ({ tx }) => {
         if (getThread(tx, thread.id)?.status !== thread.status) {
+          throw new DispatchThreadStatusChangedError();
+        }
+        if (
+          checkedRunningTurn.value !== null &&
+          !runningTurnBindingHolds(deps, {
+            binding: checkedRunningTurn.value,
+            db: tx,
+            threadId: thread.id,
+          })
+        ) {
           throw new DispatchThreadStatusChangedError();
         }
         if (claimed !== null) {
@@ -699,6 +756,8 @@ function consumeClaimedRows(
 }
 
 interface AdmitPendingThreadArgs {
+  authorGrantId: string | null;
+  authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   claimed: ClaimedQueuedThreadMessageRow[] | null;
   payload: SendMessageRequest & { inputGroups?: PromptInput[][] };
@@ -785,6 +844,8 @@ async function admitPendingThread(
         const starting = getThread(tx, args.thread.id);
         if (starting === null) throw new PendingThreadAdmissionLost();
         requestThreadProvision(deps, {
+          authorGrantId: args.authorGrantId,
+          authorRoleCeiling: args.authorRoleCeiling,
           authorUserId: args.authorUserId,
           thread: starting,
           environmentIntent: startContext.environmentIntent,

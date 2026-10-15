@@ -60,6 +60,7 @@ import {
   type ThreadCreateServiceRequest,
 } from "./thread-create-request.js";
 import { resolveDispatchAuthor } from "./dispatch-author.js";
+import { isSystemUserId } from "../user-auth.js";
 import { deriveForkTitle, deriveTitleFallback } from "./title-generation.js";
 import type { ThreadProvisionEnvironmentIntent } from "./thread-startup-store.js";
 import { resolveSystemProviderModels } from "../system/execution-options.js";
@@ -477,7 +478,9 @@ async function createPendingThreadAndAttemptFirstDispatch(
     );
     await attemptDispatch(deps, {
       thread,
-      authorUserId: args.request.createdByUserId,
+      authorGrantId: args.request.authorGrantId,
+      authorRoleCeiling: args.request.authorRoleCeiling,
+      authorUserId: args.request.authorUserId,
       payload: {
         input: args.request.input,
         mode: "start",
@@ -560,6 +563,26 @@ function resolveCreateThreadPluginMetadata(
     pluginId: request.originPluginId,
     metadata: request.pluginMetadata,
   };
+}
+
+function resolveThreadCreatorUserId(
+  deps: ThreadCreateDeps,
+  args: {
+    ancestorThread: { createdByUserId: string | null } | null;
+    requestedUserId: string | null;
+  },
+): string | null {
+  if (
+    deps.config.authMode !== "multi" ||
+    args.requestedUserId === null ||
+    !isSystemUserId(args.requestedUserId)
+  ) {
+    return args.requestedUserId;
+  }
+  const inheritedUserId = args.ancestorThread?.createdByUserId ?? null;
+  return inheritedUserId === null || isSystemUserId(inheritedUserId)
+    ? args.requestedUserId
+    : inheritedUserId;
 }
 
 export async function createThreadFromRequest(
@@ -713,6 +736,18 @@ export async function createThreadFromRequest(
   }
   const request: ThreadCreateServiceRequest = {
     ...requestRest,
+    authorGrantId: requestInput.createdByGrantId,
+    authorRoleCeiling: requestInput.createdByRoleCeiling,
+    authorUserId: requestInput.createdByUserId,
+    createdByUserId: resolveThreadCreatorUserId(deps, {
+      ancestorThread:
+        sourceThread ??
+        parentThread ??
+        (requestInput.lifecycleOwnerThreadId === undefined
+          ? null
+          : getThread(deps.db, requestInput.lifecycleOwnerThreadId)),
+      requestedUserId: requestInput.createdByUserId,
+    }),
     ...(hierarchyParentThreadId
       ? { parentThreadId: hierarchyParentThreadId }
       : {}),

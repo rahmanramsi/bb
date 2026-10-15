@@ -124,6 +124,11 @@ describe("checkpoint identity through runtime, ingestion, and editing", () => {
           for (const text of ["first", "second"]) {
             const input: PromptInput[] = [{ type: "text", text, mentions: [] }];
             const request = appendClientTurnEvent(harness.deps, {
+              author: {
+                authorGrantId: null,
+                authorRoleCeiling: null,
+                authorUserId: null,
+              },
               type: "client/turn/requested",
               threadId: source.id,
               environmentId: environment.id,
@@ -158,6 +163,8 @@ describe("checkpoint identity through runtime, ingestion, and editing", () => {
           const thread = getThread(harness.db, source.id);
           if (!thread) throw new Error("Missing source thread");
           const edit = editThreadMessage(harness.deps, {
+            authorGrantId: null,
+            authorRoleCeiling: null,
             authorUserId: LOCAL_OWNER_USER_ID,
             environment,
             thread,

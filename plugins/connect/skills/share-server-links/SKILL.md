@@ -34,6 +34,12 @@ The typed plugin RPC is `unexposeAll` with `{ hostId: string }` input and a
 `{ removed: number }` result. Bulk revocation attempts every share on that
 machine; any failures report partial progress and can be retried.
 
+On a multi-user server, members can expose and unexpose ports, but
+`bb connect unexpose-all`, `bb connect servers`, and the `unexposeAll`,
+`listAccountServers`, and `createDesktopSession` RPCs are admin-only. They act
+for the owner's getbb.app account, so members get `admin_required` from the CLI
+and `forbidden` from the RPCs.
+
 `bb connect --help` and `bb connect <command> --help` print the commands and
 their flags and exit 0. Unknown commands and flags fail with a suggestion —
 `bb connect list` points at `bb connect shares` — and with `--json` a failure

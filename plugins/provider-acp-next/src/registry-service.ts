@@ -72,8 +72,16 @@ export const acpRegistryRpcContract = defineRpcContract({
     input: z.object({ refresh: z.boolean() }).strict(),
     output: registryViewSchema,
   },
-  addRegistryAgent: { input: agentIdInputSchema, output: registryViewSchema },
-  removeAgent: { input: agentIdInputSchema, output: registryViewSchema },
+  addRegistryAgent: {
+    input: agentIdInputSchema,
+    output: registryViewSchema,
+    experimental_requiredRole: "admin",
+  },
+  removeAgent: {
+    input: agentIdInputSchema,
+    output: registryViewSchema,
+    experimental_requiredRole: "admin",
+  },
 });
 
 const cachedRegistrySchema = z.object({
@@ -283,6 +291,7 @@ export function registerAcpRegistry(deps: AcpRegistryServiceDeps): void {
             },
           ],
           options: { json: JSON_OPTION },
+          experimental_requiredRole: "admin",
           run: (input) => {
             const id = input.positionals["agent-id"];
             return changeAgents(
@@ -308,6 +317,7 @@ export function registerAcpRegistry(deps: AcpRegistryServiceDeps): void {
             },
           ],
           options: { json: JSON_OPTION },
+          experimental_requiredRole: "admin",
           run: (input) => {
             const id = input.positionals["agent-id"];
             return changeAgents(

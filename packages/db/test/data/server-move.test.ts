@@ -286,7 +286,10 @@ describe("server move data helpers", () => {
         sourceServerHostId: "old-server",
         now,
       }),
-    ).toEqual({ targetHostBecameServer: true, sourceServerHostBecameManual: true });
+    ).toEqual({
+      targetHostBecameServer: true,
+      sourceServerHostBecameManual: true,
+    });
     expect(getHost(db, "target")).toMatchObject({
       machineProviderId: null,
       resource: null,

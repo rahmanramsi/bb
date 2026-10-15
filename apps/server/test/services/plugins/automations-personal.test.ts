@@ -17,7 +17,7 @@ describe("Personal automations", () => {
       expect(entry.status, entry.statusDetail ?? undefined).toBe("running");
 
       const created = await server.app.request(
-        "/api/v1/plugins/automations/rpc/automations_create",
+        "/api/v1/plugins/automations/rpc/automations_create_script",
         {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -54,7 +54,7 @@ describe("Personal automations", () => {
       });
 
       const updated = await server.app.request(
-        "/api/v1/plugins/automations/rpc/automations_update",
+        "/api/v1/plugins/automations/rpc/automations_update_script",
         {
           method: "POST",
           headers: { "content-type": "application/json" },

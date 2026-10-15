@@ -100,10 +100,11 @@ export function registerLoginCommand(
           throw new Error(
             "A personal access token beginning with bbpat_ is required",
           );
-        const result = await createNodeBbSdk({
+        const { user } = await createNodeBbSdk({
           baseUrl,
           context: { authToken: token },
         }).experimental_auth.me();
+        const result = { user };
         await storeCliAuthToken(baseUrl, token);
         if (!outputJson(opts, result))
           console.log(`Signed in as ${result.user.email}`);
@@ -136,14 +137,18 @@ export function registerWhoamiCommand(
 ): void {
   program
     .command("whoami")
-    .description("Show the authenticated user")
+    .description(
+      "Show the authenticated user and the role this credential acts with",
+    )
     .option("--json", "Print machine-readable JSON output")
     .action(
       action(async (opts: JsonOptions) => {
         const result = await createCliBbSdk(getUrl()).experimental_auth.me();
         if (!outputJson(opts, result))
           console.log(
-            `${result.user.id}  ${result.user.email}  ${result.user.role}`,
+            result.roleCeiling === null
+              ? `${result.user.id}  ${result.user.email}  ${result.effectiveRole}`
+              : `${result.user.id}  ${result.user.email}  ${result.effectiveRole} (credential capped at ${result.roleCeiling}; account role ${result.user.role})`,
           );
       }),
     );
@@ -158,7 +163,9 @@ export function registerTokenCommands(
     .description("Manage your personal access tokens");
   command
     .command("create <name>")
-    .description("Create a token and print it once")
+    .description(
+      "Create a token and print it once; refused for a member-capped BB_TOKEN",
+    )
     .option("--json", "Print machine-readable JSON output")
     .action(
       action(async (name: string, opts: JsonOptions) => {

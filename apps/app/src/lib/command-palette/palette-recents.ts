@@ -1,9 +1,10 @@
-const PALETTE_RECENTS_KEY = "bb.palette.recents";
+export const PALETTE_RECENTS_KEY = "bb.palette.recents";
 const PALETTE_RECENTS_LIMIT = 8;
 
-export function readPaletteRecents(): string[] {
+export function readPaletteRecents(storageKey: string | null): string[] {
+  if (storageKey === null) return [];
   try {
-    const stored = window.localStorage.getItem(PALETTE_RECENTS_KEY);
+    const stored = window.localStorage.getItem(storageKey);
     if (stored === null) return [];
     const parsed: unknown = JSON.parse(stored);
     if (!Array.isArray(parsed)) return [];
@@ -16,6 +17,7 @@ export function readPaletteRecents(): string[] {
 }
 
 export function recordPaletteRecent(
+  storageKey: string | null,
   recents: readonly string[],
   actionId: string,
 ): string[] {
@@ -23,8 +25,9 @@ export function recordPaletteRecent(
     actionId,
     ...recents.filter((entry) => entry !== actionId),
   ].slice(0, PALETTE_RECENTS_LIMIT);
+  if (storageKey === null) return next;
   try {
-    window.localStorage.setItem(PALETTE_RECENTS_KEY, JSON.stringify(next));
+    window.localStorage.setItem(storageKey, JSON.stringify(next));
   } catch {}
   return next;
 }

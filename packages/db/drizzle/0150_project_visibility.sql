@@ -10,6 +10,6 @@ CREATE TABLE `project_members` (
 );
 --> statement-breakpoint
 CREATE INDEX `project_members_user_idx` ON `project_members` (`user_id`);--> statement-breakpoint
-ALTER TABLE `projects` ADD `owner_user_id` text REFERENCES `user`(`id`) ON DELETE set null;--> statement-breakpoint
+ALTER TABLE `projects` ADD `owner_user_id` text REFERENCES user(id) ON DELETE SET NULL;--> statement-breakpoint
 ALTER TABLE `projects` ADD `visibility` text DEFAULT 'public' NOT NULL;--> statement-breakpoint
 CREATE INDEX `projects_owner_idx` ON `projects` (`owner_user_id`);

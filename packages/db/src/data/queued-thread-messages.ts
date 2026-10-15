@@ -33,6 +33,7 @@ import type {
   QueuedMessageWaitHolder,
   QueuedMessageWaitingOn,
   QueuedMessageWaitingOnKind,
+  RoleCeiling,
 } from "@bb/domain";
 import type {
   DbConnection,
@@ -62,6 +63,8 @@ export interface CreateQueuedThreadMessageInput {
   content: PromptInput[];
   senderThreadId?: string | null;
   authorUserId?: string | null;
+  authorRoleCeiling?: RoleCeiling | null;
+  authorGrantId?: string | null;
   /**
    * How the dispatch this row is queued from was requested, and the plugin
    * that requested it, so a drained re-attempt carries the provenance its
@@ -94,6 +97,9 @@ export interface CreateQueuedThreadMessageInput {
 
 export interface UpdateQueuedThreadMessageInput {
   content: PromptInput[];
+  editorGrantId: string | null;
+  editorRoleCeiling: RoleCeiling | null;
+  editorUserId: string | null;
   expectedUpdatedAt: number;
   id: string;
   threadId: string;
@@ -371,6 +377,8 @@ function queuedMessageGroupingEnvelopeMatches(
   return (
     firstQueuedMessage !== null &&
     queuedMessage.authorUserId === firstQueuedMessage.authorUserId &&
+    queuedMessage.authorRoleCeiling === firstQueuedMessage.authorRoleCeiling &&
+    queuedMessage.authorGrantId === firstQueuedMessage.authorGrantId &&
     queuedMessage.senderThreadId === firstQueuedMessage.senderThreadId &&
     queuedMessage.model === firstQueuedMessage.model &&
     queuedMessage.reasoningLevel === firstQueuedMessage.reasoningLevel &&
@@ -416,7 +424,9 @@ export function listQueuedThreadMessages(
     .where(
       and(
         eq(queuedThreadMessages.threadId, threadId),
-        userId === undefined ? undefined : eq(queuedThreadMessages.authorUserId, userId),
+        userId === undefined
+          ? undefined
+          : eq(queuedThreadMessages.authorUserId, userId),
         isNull(queuedThreadMessages.claimedAt),
         isNull(queuedThreadMessages.claimToken),
       ),
@@ -563,7 +573,10 @@ function applyQueuedThreadMessageGroupBoundary(
     const hasMixedSender = groupedMessages.some(
       (queuedMessage) =>
         queuedMessage.senderThreadId !== firstQueuedMessage?.senderThreadId ||
-        queuedMessage.authorUserId !== firstQueuedMessage?.authorUserId,
+        queuedMessage.authorUserId !== firstQueuedMessage?.authorUserId ||
+        queuedMessage.authorRoleCeiling !==
+          firstQueuedMessage?.authorRoleCeiling ||
+        queuedMessage.authorGrantId !== firstQueuedMessage?.authorGrantId,
     );
     if (hasMixedSender) {
       return { kind: "invalid_sender" };
@@ -654,6 +667,8 @@ export function createQueuedThreadMessageInTransaction(
       content: JSON.stringify(input.content),
       senderThreadId: input.senderThreadId ?? null,
       authorUserId: input.authorUserId ?? null,
+      authorRoleCeiling: input.authorRoleCeiling ?? null,
+      authorGrantId: input.authorGrantId ?? null,
       origin: input.origin ?? null,
       originPluginId: input.originPluginId ?? null,
       requestedByInitiator: input.requestedBy?.initiator ?? null,
@@ -729,6 +744,22 @@ export function updateQueuedThreadMessage(
         .update(queuedThreadMessages)
         .set({
           content: JSON.stringify(input.content),
+          ...(existing.systemNotice !== null ||
+          existing.authorUserId !== input.editorUserId
+            ? {
+                authorGrantId: input.editorGrantId,
+                authorRoleCeiling: input.editorRoleCeiling,
+                authorUserId: input.editorUserId,
+                systemNotice: null,
+              }
+            : {
+                ...(input.editorRoleCeiling === null
+                  ? {}
+                  : { authorRoleCeiling: input.editorRoleCeiling }),
+                ...(input.editorGrantId === null
+                  ? {}
+                  : { authorGrantId: input.editorGrantId }),
+              }),
           editHeldUntil: null,
           updatedAt: Math.max(Date.now(), existing.updatedAt + 1),
         })
@@ -2179,6 +2210,24 @@ export function listThreadIdsWithHostOfflineQueueWaits(
     )
     .all()
     .map((row) => row.threadId);
+}
+
+export function deleteQueuedThreadMessagesByAuthorInTransaction(
+  db: DbTransaction,
+  authorUserId: string,
+): string[] {
+  const authored = db
+    .select()
+    .from(queuedThreadMessages)
+    .where(eq(queuedThreadMessages.authorUserId, authorUserId))
+    .all();
+  for (const queuedMessage of authored) {
+    clearPreviousQueuedMessageGroupEdgeInTransaction(db, queuedMessage);
+    db.delete(queuedThreadMessages)
+      .where(eq(queuedThreadMessages.id, queuedMessage.id))
+      .run();
+  }
+  return [...new Set(authored.map((queuedMessage) => queuedMessage.threadId))];
 }
 
 export function deleteQueuedThreadMessage(

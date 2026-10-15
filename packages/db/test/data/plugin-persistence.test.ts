@@ -72,7 +72,10 @@ describe("normalized plugin persistence", () => {
       validationResult: "valid",
       validatedAt: 100,
     });
-    upsertInstalledPlugin(db, { ...linearPlugin, activeArtifactId: "artifact-1" });
+    upsertInstalledPlugin(db, {
+      ...linearPlugin,
+      activeArtifactId: "artifact-1",
+    });
     expect(getInstalledPlugin(db, "linear")?.rootDir).toBe(
       "/cache/artifact-1.tgz",
     );
@@ -210,7 +213,10 @@ describe("normalized plugin persistence", () => {
       validationResult: "valid",
       validatedAt: Date.now(),
     });
-    upsertInstalledPlugin(db, { ...retainedPlugin, activeArtifactId: "retained-artifact" });
+    upsertInstalledPlugin(db, {
+      ...retainedPlugin,
+      activeArtifactId: "retained-artifact",
+    });
 
     expect(deleteInstalledPlugin(db, "retained")).toBe(true);
     expect(listPluginArtifacts(db, "retained")).toHaveLength(1);

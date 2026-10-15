@@ -389,7 +389,10 @@ describe("wait lookups", () => {
       "plugin",
     ] as const) {
       expect(
-        listQueuedThreadMessagesWaitingOnKind(db, { kind, threadId: thread.id }),
+        listQueuedThreadMessagesWaitingOnKind(db, {
+          kind,
+          threadId: thread.id,
+        }),
       ).toEqual([]);
     }
   });

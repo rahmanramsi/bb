@@ -5,11 +5,20 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { createConnection } from "../../src/connection.js";
-import { events, threadPruningCursors, threadPruningWork, threads } from "../../src/schema.js";
+import {
+  events,
+  threadPruningCursors,
+  threadPruningWork,
+  threads,
+} from "../../src/schema.js";
 import { noopNotifier } from "../../src/notifier.js";
 import { upsertHost } from "../../src/data/hosts.js";
 import { createProject } from "../../src/data/projects.js";
-import { archiveThread, createThread, unarchiveThread } from "../../src/data/threads.js";
+import {
+  archiveThread,
+  createThread,
+  unarchiveThread,
+} from "../../src/data/threads.js";
 import {
   advanceThreadPruning,
   getNextThreadPruningPolicy,
@@ -95,27 +104,42 @@ describe("thread pruning", () => {
         lifecycleOwnerThreadId: f.thread.id,
       });
       const work = () => f.db.select().from(threadPruningWork).all();
-      expect(() => f.db.transaction((tx) => {
-        archiveThread(tx, noopNotifier, f.thread.id);
-        throw new Error("rollback archive");
-      })).toThrow("rollback archive");
+      expect(() =>
+        f.db.transaction((tx) => {
+          archiveThread(tx, noopNotifier, f.thread.id);
+          throw new Error("rollback archive");
+        }),
+      ).toThrow("rollback archive");
       expect(work()).toEqual([]);
-      expect(f.db.select().from(threads).all().every((thread) => thread.archivedAt === null)).toBe(true);
+      expect(
+        f.db
+          .select()
+          .from(threads)
+          .all()
+          .every((thread) => thread.archivedAt === null),
+      ).toBe(true);
       archiveThread(f.db, noopNotifier, f.thread.id);
       expect(work()).toHaveLength(2);
-      expect(work()).toEqual(expect.arrayContaining([
-        { policy: "rate-limits", threadId: f.thread.id, revision: 1 },
-        { policy: "rate-limits", threadId: child.id, revision: 1 },
-      ]));
+      expect(work()).toEqual(
+        expect.arrayContaining([
+          { policy: "rate-limits", threadId: f.thread.id, revision: 1 },
+          { policy: "rate-limits", threadId: child.id, revision: 1 },
+        ]),
+      );
       archiveThread(f.db, noopNotifier, f.thread.id);
       expect(work().every((row) => row.revision === 1)).toBe(true);
       unarchiveThread(f.db, noopNotifier, f.thread.id);
-      expect(() => f.db.transaction(() => {
-        unarchiveThread(f.db, noopNotifier, child.id);
-        throw new Error("rollback unarchive");
-      })).toThrow("rollback unarchive");
+      expect(() =>
+        f.db.transaction(() => {
+          unarchiveThread(f.db, noopNotifier, child.id);
+          throw new Error("rollback unarchive");
+        }),
+      ).toThrow("rollback unarchive");
       expect(work().find((row) => row.threadId === child.id)?.revision).toBe(1);
-      expect(f.db.select().from(threads).where(eq(threads.id, child.id)).get()?.archivedAt).not.toBeNull();
+      expect(
+        f.db.select().from(threads).where(eq(threads.id, child.id)).get()
+          ?.archivedAt,
+      ).not.toBeNull();
       unarchiveThread(f.db, noopNotifier, child.id);
       expect(work().every((row) => row.revision === 2)).toBe(true);
     } finally {

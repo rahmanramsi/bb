@@ -20,6 +20,7 @@ import type { DiscoveredSkill } from "@bb/host-daemon-contract";
 import { setPluginAgentContributions } from "../../src/services/plugins/plugin-agent-contributions.js";
 import { readSkillTreeManifest } from "../../src/services/skills/injected-skills.js";
 import type { PluginAgentToolContribution } from "../../src/services/plugins/plugin-service.js";
+import { MACHINE_AUTH_SYSTEM_USER_ID } from "../../src/services/machine-auth.js";
 import { resolveThreadRuntimeCommandConfig } from "../../src/services/threads/thread-runtime-config.js";
 import {
   buildExecutionOptions,
@@ -216,6 +217,8 @@ describe("thread runtime config", () => {
         };
 
         const startCommand = await buildThreadStartCommand(harness.deps, {
+          authorGrantId: null,
+          authorRoleCeiling: null,
           authorUserId: null,
           environment,
           execution,
@@ -243,6 +246,8 @@ describe("thread runtime config", () => {
         const submitCommand = await prepareTurnSubmitCommandPayload(
           harness.deps,
           {
+            authorGrantId: null,
+            authorRoleCeiling: null,
             authorUserId: null,
             environment,
             execution,
@@ -344,6 +349,8 @@ describe("thread runtime config", () => {
         } as const;
 
         const startCommand = await buildThreadStartCommand(harness.deps, {
+          authorGrantId: null,
+          authorRoleCeiling: null,
           authorUserId: null,
           environment,
           execution,
@@ -371,6 +378,8 @@ describe("thread runtime config", () => {
         const submitCommand = await prepareTurnSubmitCommandPayload(
           harness.deps,
           {
+            authorGrantId: null,
+            authorRoleCeiling: null,
             authorUserId: null,
             environment,
             execution,
@@ -820,6 +829,8 @@ describe("thread runtime config", () => {
       );
 
       const command = await buildThreadStartCommand(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: null,
         environment,
         execution,
@@ -886,6 +897,8 @@ describe("thread runtime config", () => {
           { threadId: thread.id },
         );
         return buildThreadStartCommand(harness.deps, {
+          authorGrantId: null,
+          authorRoleCeiling: null,
           authorUserId: null,
           environment,
           execution,
@@ -985,6 +998,8 @@ describe("thread runtime config", () => {
         providerId: "hooked",
       });
       const command = await buildThreadStartCommand(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: null,
         environment,
         execution: {
@@ -1057,6 +1072,8 @@ describe("thread runtime config", () => {
       ];
 
       const command = await buildThreadStartCommand(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: null,
         environment,
         execution: {
@@ -1088,6 +1105,8 @@ describe("thread runtime config", () => {
         providerId: "pi",
       });
       const piCommand = await buildThreadStartCommand(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: null,
         environment,
         execution: {
@@ -1152,7 +1171,7 @@ describe("thread runtime config", () => {
     });
   });
 
-  it("issues the turn author's shell credential in multi mode and never falls back to a system user", async () => {
+  it("issues the turn author's shell credential in multi mode, falls back only to a member creator for system authors, and never to a system user", async () => {
     await withTestHarness(async (harness) => {
       const hostId = "host-auth";
       seedHostSession(harness.deps, { id: hostId });
@@ -1198,6 +1217,8 @@ describe("thread runtime config", () => {
         authorUserId: string | null,
       ) => {
         const config = await resolveThreadRuntimeCommandConfig(harness.deps, {
+          authorGrantId: null,
+          authorRoleCeiling: null,
           authorUserId,
           environment: environmentInput,
           model: "test-model",
@@ -1218,11 +1239,26 @@ describe("thread runtime config", () => {
       };
 
       expect(await shellPrincipal("usr_admin_creator", null)).toBeNull();
+      expect(
+        await shellPrincipal("usr_member_author", LOCAL_OWNER_USER_ID),
+      ).toBeNull();
       harness.deps.config.authMode = "multi";
-      expect(await shellPrincipal("usr_admin_creator", null)).toMatchObject({
-        userId: "usr_admin_creator",
-        role: "admin",
+      expect(await shellPrincipal("usr_admin_creator", null)).toBeNull();
+      expect(await shellPrincipal("usr_member_author", null)).toMatchObject({
+        userId: "usr_member_author",
+        role: "member",
       });
+      for (const systemAuthor of [
+        LOCAL_OWNER_USER_ID,
+        MACHINE_AUTH_SYSTEM_USER_ID,
+      ]) {
+        expect(
+          await shellPrincipal("usr_admin_creator", systemAuthor),
+        ).toBeNull();
+      }
+      expect(
+        await shellPrincipal("usr_member_author", "usr_admin_creator"),
+      ).toMatchObject({ userId: "usr_admin_creator", role: "admin" });
       expect(
         await shellPrincipal("usr_admin_creator", "usr_member_author"),
       ).toMatchObject({ userId: "usr_member_author", role: "member" });
@@ -1231,6 +1267,21 @@ describe("thread runtime config", () => {
       expect(
         await shellPrincipal(LOCAL_OWNER_USER_ID, "usr_member_author"),
       ).toMatchObject({ userId: "usr_member_author", role: "member" });
+      for (const systemAuthor of [
+        LOCAL_OWNER_USER_ID,
+        MACHINE_AUTH_SYSTEM_USER_ID,
+      ]) {
+        expect(
+          await shellPrincipal("usr_member_author", systemAuthor),
+        ).toMatchObject({ userId: "usr_member_author", role: "member" });
+        expect(
+          await shellPrincipal(LOCAL_OWNER_USER_ID, systemAuthor),
+        ).toBeNull();
+        expect(
+          await shellPrincipal(MACHINE_AUTH_SYSTEM_USER_ID, systemAuthor),
+        ).toBeNull();
+        expect(await shellPrincipal(null, systemAuthor)).toBeNull();
+      }
     });
   });
 
@@ -1298,6 +1349,8 @@ describe("thread runtime config", () => {
 
       const resolve = async () =>
         resolveThreadRuntimeCommandConfig(harness.deps, {
+          authorGrantId: null,
+          authorRoleCeiling: null,
           authorUserId: userId,
           environment: {
             hostId,
@@ -1376,6 +1429,8 @@ describe("thread runtime config", () => {
       const runtimeConfig = await resolveThreadRuntimeCommandConfig(
         harness.deps,
         {
+          authorGrantId: null,
+          authorRoleCeiling: null,
           authorUserId: null,
           thread,
           model: "test-model",
@@ -1460,7 +1515,14 @@ describe("thread runtime config", () => {
 
       const runtimeConfig = await resolveThreadRuntimeCommandConfig(
         harness.deps,
-        { authorUserId: null, thread, environment, model: "test-model" },
+        {
+          authorGrantId: null,
+          authorRoleCeiling: null,
+          authorUserId: null,
+          thread,
+          environment,
+          model: "test-model",
+        },
       );
 
       expect(runtimeConfig.instructions).toContain(
@@ -1509,7 +1571,14 @@ describe("thread runtime config", () => {
 
       const runtimeConfig = await resolveThreadRuntimeCommandConfig(
         harness.deps,
-        { authorUserId: null, thread, environment, model: "test-model" },
+        {
+          authorGrantId: null,
+          authorRoleCeiling: null,
+          authorUserId: null,
+          thread,
+          environment,
+          model: "test-model",
+        },
       );
 
       expect(runtimeConfig.instructions).not.toContain(
@@ -1571,7 +1640,14 @@ describe("thread runtime config", () => {
 
       const runtimeConfig = await resolveThreadRuntimeCommandConfig(
         harness.deps,
-        { authorUserId: null, thread, environment, model: "test-model" },
+        {
+          authorGrantId: null,
+          authorRoleCeiling: null,
+          authorUserId: null,
+          thread,
+          environment,
+          model: "test-model",
+        },
       );
 
       expect(runtimeConfig.injectedSkillSources).toContainEqual({
@@ -1643,7 +1719,14 @@ describe("thread runtime config", () => {
 
         const runtimeConfig = await resolveThreadRuntimeCommandConfig(
           harness.deps,
-          { authorUserId: null, thread, environment, model: "test-model" },
+          {
+            authorGrantId: null,
+            authorRoleCeiling: null,
+            authorUserId: null,
+            thread,
+            environment,
+            model: "test-model",
+          },
         );
 
         expect(runtimeConfig.injectedSkillSources).toContainEqual({
@@ -1710,6 +1793,8 @@ describe("thread runtime config", () => {
       const runtimeConfig = await resolveThreadRuntimeCommandConfig(
         harness.deps,
         {
+          authorGrantId: null,
+          authorRoleCeiling: null,
           authorUserId: null,
           thread,
           model: "test-model",
@@ -1823,6 +1908,8 @@ describe("thread runtime config", () => {
         const runtimeConfig = await resolveThreadRuntimeCommandConfig(
           harness.deps,
           {
+            authorGrantId: null,
+            authorRoleCeiling: null,
             authorUserId: null,
             thread,
             model: "test-model",
@@ -1907,6 +1994,8 @@ describe("thread runtime config", () => {
         const runtimeConfig = await resolveThreadRuntimeCommandConfig(
           harness.deps,
           {
+            authorGrantId: null,
+            authorRoleCeiling: null,
             authorUserId: null,
             thread,
             model: "test-model",

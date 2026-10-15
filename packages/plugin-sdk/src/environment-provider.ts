@@ -51,6 +51,20 @@ export type PluginEnvironmentProviderAvailability =
   | { status: "setup-required"; message: string }
   | { status: "unavailable"; message: string };
 
+/**
+ * The person a thread's environment is created for: the thread's
+ * `createdByUserId` and the account role core read for them when the create
+ * attempt started. In multi-user mode `role` is `member` unless that same
+ * person asked for the thread without a role ceiling, so a member-capped
+ * credential never reads as an admin. Local mode reports the local owner as
+ * an admin. Use it for per-user git identity or branch prefixes; core still
+ * enforces authorization. Experimental: see docs/api_to_audit.md.
+ */
+export interface PluginEnvironmentProviderRequester {
+  userId: string;
+  role: "admin" | "member";
+}
+
 export interface PluginEnvironmentProviderCreateContext<
   R extends PluginEnvironmentProviderRequirements =
     PluginEnvironmentProviderRequirements,
@@ -59,6 +73,8 @@ export interface PluginEnvironmentProviderCreateContext<
 > extends PluginEnvironmentProviderValidateContext<R, S> {
   thread: ThreadResponse;
   suggestedBranchName: string;
+  /** Null when the thread has no human creator, such as a machine-created thread. */
+  experimental_requester: PluginEnvironmentProviderRequester | null;
   attempt: number;
   pathKey: string;
   experimental_claimPath(path: string): Promise<boolean>;

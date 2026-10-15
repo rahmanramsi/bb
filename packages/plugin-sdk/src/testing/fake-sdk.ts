@@ -1,5 +1,5 @@
 import { validatePluginMetadata } from "@bb/domain";
-import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { BbPluginApi, ExperimentalPluginCaller } from "@get-bb/plugin-sdk";
 
 type BbSdk = BbPluginApi["sdk"];
 
@@ -7,6 +7,32 @@ type BbSdk = BbPluginApi["sdk"];
 export interface FakeSdkCall {
   path: string;
   args: unknown[];
+  /**
+   * The caller a `bb.sdk.experimental_asCaller(ctx)` client acted as; absent
+   * for calls through `bb.sdk` itself, which act as the plugin.
+   */
+  experimental_caller?: ExperimentalPluginCaller;
+  /**
+   * The grant a `bb.sdk.experimental_asGrant(grantId)` client acted through;
+   * `experimental_caller` is then the grant's person.
+   */
+  experimental_grantId?: string;
+}
+
+/**
+ * The host side of `bb.sdk`'s caller grants for {@link createFakeSdk}.
+ * `resolve` returns the person a grant acts as and throws when it cannot be
+ * used.
+ */
+export interface FakeSdkCallerGrants {
+  create(context: unknown, request: unknown): { grantId: string };
+  resolve(grantId: string): ExperimentalPluginCaller;
+  revoke(grantId: string): void;
+}
+
+interface FakeSdkBinding {
+  caller: ExperimentalPluginCaller;
+  grantId: string | null;
 }
 
 /**
@@ -138,6 +164,8 @@ function normalizeCallArgs(
 export function createFakeSdk(options: {
   pluginId: string;
   overrides?: FakeSdkOverrides;
+  resolveCaller?: (context: unknown) => ExperimentalPluginCaller;
+  callerGrants?: FakeSdkCallerGrants;
 }): { sdk: BbSdk; harness: FakeSdkHarness } {
   const calls: FakeSdkCall[] = [];
   const stubs = new Map<string, (...args: unknown[]) => unknown>();
@@ -154,14 +182,75 @@ export function createFakeSdk(options: {
   }
   addOverrides("", options.overrides ?? {});
 
-  function invoke(path: string, rawArgs: unknown[]): unknown {
+  const delegationMethods = new Set([
+    "experimental_asCaller",
+    "experimental_asGrant",
+    "experimental_createCallerGrant",
+    "experimental_revokeCallerGrant",
+  ]);
+
+  function delegate(path: string, rawArgs: unknown[]): unknown {
+    if (path === "experimental_asCaller") {
+      if (options.resolveCaller === undefined) {
+        throw new Error("bb.sdk.experimental_asCaller is not available here");
+      }
+      return root({
+        caller: options.resolveCaller(rawArgs[0]),
+        grantId: null,
+      });
+    }
+    const grants = options.callerGrants;
+    if (grants === undefined) {
+      throw new Error(`bb.sdk.${path} is not available here`);
+    }
+    const grantId = String(rawArgs[0]);
+    if (path === "experimental_asGrant") {
+      return root({ caller: grants.resolve(grantId), grantId });
+    }
+    if (path === "experimental_createCallerGrant") {
+      try {
+        return Promise.resolve(grants.create(rawArgs[0], rawArgs[1]));
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    }
+    grants.revoke(grantId);
+    return Promise.resolve();
+  }
+
+  function invoke(
+    path: string,
+    rawArgs: unknown[],
+    binding: FakeSdkBinding | null,
+  ): unknown {
+    if (delegationMethods.has(path)) {
+      if (binding !== null) {
+        throw new Error(
+          `bb.sdk.${path} is not available on a ${
+            binding.grantId === null ? "caller" : "grant"
+          }-bound SDK`,
+        );
+      }
+      return delegate(path, rawArgs);
+    }
     let args: unknown[];
     try {
       args = normalizeCallArgs(options.pluginId, path, rawArgs);
     } catch (error) {
       return Promise.reject(error);
     }
-    calls.push({ path, args });
+    calls.push(
+      binding === null
+        ? { path, args }
+        : {
+            path,
+            args,
+            experimental_caller: binding.caller,
+            ...(binding.grantId === null
+              ? {}
+              : { experimental_grantId: binding.grantId }),
+          },
+    );
     const stub = stubs.get(path);
     if (!stub) {
       throw new Error(
@@ -172,23 +261,33 @@ export function createFakeSdk(options: {
     return stub(...args);
   }
 
-  const nodes = new Map<string, unknown>();
+  const nodesByBinding = new Map<FakeSdkBinding | null, Map<string, unknown>>();
   /** Callable-and-traversable proxy: `sdk.threads.spawn(...)` and `sdk.subscribe(...)` both work. */
-  function node(path: string): unknown {
+  function node(path: string, binding: FakeSdkBinding | null): unknown {
+    let nodes = nodesByBinding.get(binding);
+    if (nodes === undefined) {
+      nodes = new Map();
+      nodesByBinding.set(binding, nodes);
+    }
     const cached = nodes.get(path);
     if (cached) return cached;
     const created = new Proxy(function () {}, {
       get(_target, prop) {
         // Not thenable: an accidentally awaited node must not hang.
         if (typeof prop !== "string" || prop === "then") return undefined;
-        return node(path === "" ? prop : `${path}.${prop}`);
+        return node(path === "" ? prop : `${path}.${prop}`, binding);
       },
       apply(_target, _thisArg, args: unknown[]) {
-        return invoke(path, args);
+        return invoke(path, args, binding);
       },
     });
     nodes.set(path, created);
     return created;
+  }
+  function root(binding: FakeSdkBinding | null): BbSdk {
+    // The proxy is the genuinely unknowable boundary: it answers any BbSdk
+    // shape at runtime, and the type is re-imposed here once.
+    return node("", binding) as BbSdk;
   }
 
   const harness: FakeSdkHarness = {
@@ -203,7 +302,5 @@ export function createFakeSdk(options: {
     },
   };
 
-  // The proxy is the genuinely unknowable boundary: it answers any BbSdk
-  // shape at runtime, and the type is re-imposed here once.
-  return { sdk: node("") as BbSdk, harness };
+  return { sdk: root(null), harness };
 }

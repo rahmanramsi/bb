@@ -987,18 +987,19 @@ export class NotificationHub implements DbNotifier {
     pluginId: string,
     channel: string,
     payload: unknown,
+    userId: string | null,
   ): number {
-    return this.broadcastToAllClients(
-      null,
-      JSON.stringify(
-        pluginSignalSchema.parse({
-          type: "plugin-signal",
-          pluginId,
-          channel,
-          payload,
-        }),
-      ),
+    const message = JSON.stringify(
+      pluginSignalSchema.parse({
+        type: "plugin-signal",
+        pluginId,
+        channel,
+        payload,
+      }),
     );
+    return userId === null
+      ? this.broadcastToAllClients(null, message)
+      : this.broadcastToUserClients(userId, message);
   }
 
   private broadcastToAllClients(
@@ -1011,6 +1012,16 @@ export class NotificationHub implements DbNotifier {
       if (!canReceive(socket)) {
         continue;
       }
+      socket.send(payload);
+      delivered += 1;
+    }
+    return delivered;
+  }
+
+  private broadcastToUserClients(userId: string, payload: string): number {
+    let delivered = 0;
+    for (const [socket, socketUserId] of this.clientUserIdsBySocket) {
+      if (socketUserId !== userId) continue;
       socket.send(payload);
       delivered += 1;
     }

@@ -1,11 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   PLUGIN_CLI_OUTPUT_MAX_BYTES,
   type BbPluginApi,
   type PluginAgentConfigurationContext,
 } from "../../backend-contract.js";
-import { defineRpcContract } from "../../rpc-contract.js";
+import {
+  defineRpcContract,
+  type ExperimentalPluginCaller,
+} from "../../rpc-contract.js";
 import { RESERVED_BB_CLI_COMMANDS } from "../../internal/host-policy.js";
 import {
   createFakePluginHost,
@@ -2560,5 +2563,629 @@ describe("environment targets", () => {
       entry: makeQueueEntry({ id: "qm_1" }),
     });
     expect(seen).toEqual(["qm_1"]);
+  });
+});
+
+describe("user-scoped plugin data", () => {
+  const ALICE = "usr_alice";
+  const BOB = "usr_bob";
+
+  it("keeps each user's kv rows apart from each other and from team kv", async () => {
+    const { bb } = createFakePluginHost({
+      experimental_userIds: [ALICE, BOB],
+    });
+    const alice = bb.storage.experimental_forUser(ALICE);
+    const bob = bb.storage.experimental_forUser(BOB);
+    await alice.kv.set("pref:sort", "alpha");
+    await bob.kv.set("pref:sort", "updated");
+    await bb.storage.kv.set("pref:sort", "team");
+
+    await expect(alice.kv.get("pref:sort")).resolves.toBe("alpha");
+    await expect(bob.kv.get("pref:sort")).resolves.toBe("updated");
+    await expect(bb.storage.kv.get("pref:sort")).resolves.toBe("team");
+    await expect(alice.kv.list("pref:")).resolves.toEqual(["pref:sort"]);
+    await bob.kv.delete("pref:sort");
+    await expect(bob.kv.get("pref:sort")).resolves.toBeUndefined();
+    await expect(alice.kv.get("pref:sort")).resolves.toBe("alpha");
+  });
+
+  it("refuses unknown users and deletes a removed user's rows", async () => {
+    const { bb, harness } = createFakePluginHost({
+      experimental_userIds: [ALICE, BOB],
+      settings: {},
+    });
+    const settings = bb.settings.define({
+      density: {
+        type: "select",
+        label: "Density",
+        options: ["compact", "cozy"],
+        default: "cozy",
+        experimental_scope: "user",
+      },
+    });
+    await bb.storage.experimental_forUser(ALICE).kv.set("k", 1);
+    await harness.behavior.experimental_setUserSettings(ALICE, {
+      density: "compact",
+    });
+    expect(() => bb.storage.experimental_forUser("usr_nobody")).toThrow(
+      /unknown user "usr_nobody"/,
+    );
+
+    harness.behavior.experimental_removeUser(ALICE);
+
+    expect(() => bb.storage.experimental_forUser(ALICE)).toThrow(
+      /unknown user/,
+    );
+    await expect(bb.settings.experimental_getForUser(ALICE)).rejects.toThrow(
+      /unknown user/,
+    );
+    await expect(settings.get()).resolves.toEqual({ density: "cozy" });
+  });
+
+  it("stores user-scoped settings per user and keeps them out of team writes", async () => {
+    const { bb, harness } = createFakePluginHost({
+      experimental_userIds: [ALICE, BOB],
+    });
+    const settings = bb.settings.define({
+      density: {
+        type: "select",
+        label: "Density",
+        options: ["compact", "cozy"],
+        default: "cozy",
+        experimental_scope: "user",
+      },
+      teamName: { type: "string", label: "Team name", default: "eng" },
+    });
+    const changes: unknown[] = [];
+    settings.onChange((next) => changes.push(next));
+
+    await harness.behavior.experimental_setUserSettings(ALICE, {
+      density: "compact",
+    });
+
+    await expect(bb.settings.experimental_getForUser(ALICE)).resolves.toEqual({
+      density: "compact",
+      teamName: "eng",
+    });
+    await expect(bb.settings.experimental_getForUser(BOB)).resolves.toEqual({
+      density: "cozy",
+      teamName: "eng",
+    });
+    await expect(settings.get()).resolves.toEqual({
+      density: "cozy",
+      teamName: "eng",
+    });
+    expect(changes).toEqual([]);
+    await expect(
+      harness.behavior.experimental_setUserSettings(ALICE, { teamName: "x" }),
+    ).rejects.toThrow(/"teamName" is a team setting/);
+    await expect(
+      settings.experimental_set({ density: "compact" }),
+    ).rejects.toThrow(/"density" is a per-user setting/);
+    await expect(
+      harness.behavior.setSettings({ density: "compact" }),
+    ).rejects.toThrow(/"density" is a per-user setting/);
+  });
+
+  it("refuses a secret user-scoped setting at define time", () => {
+    const { bb } = createFakePluginHost();
+    expect(() =>
+      bb.settings.define({
+        token: {
+          type: "string",
+          label: "Token",
+          secret: true,
+          experimental_scope: "user",
+        },
+      }),
+    ).toThrow(/cannot have experimental_scope "user"/);
+  });
+
+  it("records a targeted publish with its user and a broadcast without one", () => {
+    const { bb, harness } = createFakePluginHost();
+    bb.realtime.publish("prefs", { a: 1 }, { experimental_userId: ALICE });
+    bb.realtime.publish("prefs", { a: 2 });
+    expect(harness.realtimeSignals).toEqual([
+      { channel: "prefs", payload: { a: 1 }, experimental_userId: ALICE },
+      { channel: "prefs", payload: { a: 2 } },
+    ]);
+  });
+
+  it("keys per-user data by the caller's user id in every entry point", async () => {
+    const { bb, harness } = createFakePluginHost({
+      experimental_userIds: [ALICE, BOB],
+    });
+    const asUser = (userId: string) =>
+      ({
+        kind: "client",
+        userId,
+        role: "member",
+        roleCeiling: null,
+        effectiveRole: "member",
+      }) as const;
+    const mine = (caller: ExperimentalPluginCaller) => {
+      if (caller.kind !== "client") throw new Error("no user");
+      return bb.storage.experimental_forUser(caller.userId);
+    };
+    bb.rpc.register(
+      defineRpcContract({ save: { input: z.string(), output: z.null() } }),
+      {
+        async save(value, ctx) {
+          await mine(ctx.experimental_caller).kv.set("pref", value);
+          return null;
+        },
+      },
+    );
+    bb.cli.register({
+      name: "pref",
+      summary: "pref",
+      async run(_argv, ctx) {
+        if (ctx.experimental_caller === undefined) throw new Error("no caller");
+        const value = await mine(ctx.experimental_caller).kv.get("pref");
+        return { exitCode: 0, stdout: String(value) };
+      },
+    });
+
+    await harness.behavior.callRpc("save", "alice", {
+      experimental_caller: asUser(ALICE),
+    });
+    await harness.behavior.callRpc("save", "bob", {
+      experimental_caller: asUser(BOB),
+    });
+
+    await expect(
+      harness.behavior.runCli([], { experimental_caller: asUser(ALICE) }),
+    ).resolves.toMatchObject({ stdout: "alice" });
+    await expect(
+      harness.behavior.runCli([], { experimental_caller: asUser(BOB) }),
+    ).resolves.toMatchObject({ stdout: "bob" });
+    await expect(
+      harness.behavior.callRpc("save", "x", {
+        experimental_caller: { kind: "plugin", pluginId: "other" },
+      }),
+    ).rejects.toThrow("no user");
+  });
+});
+
+describe("caller identity", () => {
+  const member = {
+    kind: "client",
+    userId: "usr_member",
+    role: "member",
+    roleCeiling: null,
+    effectiveRole: "member",
+  } as const;
+  const cappedAdmin = {
+    kind: "client",
+    userId: "usr_admin",
+    role: "admin",
+    roleCeiling: "member",
+    effectiveRole: "member",
+  } as const;
+
+  it("hands every entry point its caller and an admin client by default", async () => {
+    const seen: unknown[] = [];
+    const { bb, harness } = createFakePluginHost();
+    bb.rpc.register(
+      defineRpcContract({ who: { input: z.null(), output: z.null() } }),
+      {
+        who(_input, ctx) {
+          seen.push(ctx.experimental_caller);
+          return null;
+        },
+      },
+    );
+    bb.http.route("GET", "/who", (c, ctx) => {
+      seen.push(ctx.experimental_caller);
+      return c.json({});
+    });
+    bb.http.experimental_websocket("/socket", (ctx) => {
+      seen.push(ctx.experimental_caller);
+      return {};
+    });
+    bb.cli.register({
+      name: "who",
+      summary: "who",
+      run(_argv, ctx) {
+        seen.push([ctx.experimental_caller, ctx.experimental_callerRole]);
+        return { exitCode: 0 };
+      },
+    });
+    bb.agents.registerTool({
+      name: "who",
+      description: "who",
+      parameters: {},
+      execute(_params, ctx) {
+        seen.push(ctx.experimental_caller);
+        return "ok";
+      },
+    });
+    const admin = {
+      kind: "client",
+      userId: "usr_local_owner",
+      role: "admin",
+      roleCeiling: null,
+      effectiveRole: "admin",
+    };
+
+    await harness.callRpc("who", null);
+    await harness.callRpc("who", null, { experimental_caller: member });
+    await harness.fetchHttp("GET", "/who", undefined, {
+      experimental_caller: member,
+    });
+    await harness.experimental_openWebSocket("/socket", undefined, {
+      experimental_caller: cappedAdmin,
+    });
+    await harness.runCli([], { experimental_caller: member });
+    await harness.callAgentTool("who", {}, { experimental_caller: member });
+
+    expect(seen).toEqual([
+      admin,
+      member,
+      member,
+      cappedAdmin,
+      [member, "member"],
+      member,
+    ]);
+  });
+
+  it("refuses admin-only routes and tools to members before the handler runs", async () => {
+    let runs = 0;
+    const { bb, harness } = createFakePluginHost();
+    bb.http.route(
+      "POST",
+      "/admin",
+      (c) => {
+        runs += 1;
+        return c.json({});
+      },
+      { experimental_requiredRole: "admin" },
+    );
+    bb.http.experimental_websocket(
+      "/admin-socket",
+      () => {
+        runs += 1;
+        return {};
+      },
+      { experimental_requiredRole: "admin" },
+    );
+    bb.agents.registerTool({
+      name: "admin_tool",
+      description: "admin",
+      parameters: {},
+      experimental_requiredRole: "admin",
+      execute() {
+        runs += 1;
+        return "ran";
+      },
+    });
+
+    const refused = await harness.fetchHttp("POST", "/admin", undefined, {
+      experimental_caller: cappedAdmin,
+    });
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({
+      ok: false,
+      error: { code: "forbidden" },
+    });
+    await expect(
+      harness.experimental_openWebSocket("/admin-socket", undefined, {
+        experimental_caller: member,
+      }),
+    ).rejects.toThrow("requires a server admin");
+    expect(
+      await harness.callAgentTool(
+        "admin_tool",
+        {},
+        { experimental_caller: member },
+      ),
+    ).toMatchObject({ isError: true });
+    expect(runs).toBe(0);
+
+    expect((await harness.fetchHttp("POST", "/admin")).status).toBe(200);
+    expect(await harness.callAgentTool("admin_tool", {})).toBe("ran");
+    expect(runs).toBe(2);
+  });
+
+  it("rejects invalid required roles at registration", () => {
+    const { bb } = createFakePluginHost();
+    expect(() =>
+      bb.http.route("GET", "/x", (c) => c.json({}), {
+        experimental_requiredRole: "owner" as "admin",
+      }),
+    ).toThrow('invalid experimental_requiredRole "owner"');
+  });
+
+  it("records asCaller calls with the caller, only while the handler runs", async () => {
+    let escaped: unknown;
+    const { bb, harness } = createFakePluginHost({
+      sdk: { projects: { list: async () => [] } },
+    });
+    bb.rpc.register(
+      defineRpcContract({ act: { input: z.null(), output: z.null() } }),
+      {
+        async act(_input, ctx) {
+          escaped = ctx;
+          await bb.sdk.experimental_asCaller(ctx).projects.list();
+          await bb.sdk.projects.list();
+          return null;
+        },
+      },
+    );
+
+    await harness.callRpc("act", null, { experimental_caller: cappedAdmin });
+
+    expect(harness.sdk.calls).toEqual([
+      { path: "projects.list", args: [], experimental_caller: cappedAdmin },
+      { path: "projects.list", args: [] },
+    ]);
+    expect(() => bb.sdk.experimental_asCaller(escaped as never)).toThrow(
+      "still running",
+    );
+    expect(() =>
+      bb.sdk.experimental_asCaller({ experimental_caller: member }),
+    ).toThrow("still running");
+  });
+
+  it("refuses asCaller for plugin and system callers", async () => {
+    const { bb, harness } = createFakePluginHost();
+    bb.rpc.register(
+      defineRpcContract({ act: { input: z.null(), output: z.null() } }),
+      {
+        act(_input, ctx) {
+          bb.sdk.experimental_asCaller(ctx);
+          return null;
+        },
+      },
+    );
+    await expect(
+      harness.callRpc("act", null, {
+        experimental_caller: { kind: "plugin", pluginId: "other" },
+      }),
+    ).rejects.toThrow("cannot act as a plugin caller");
+    await expect(
+      harness.callRpc("act", null, { experimental_caller: { kind: "system" } }),
+    ).rejects.toThrow("cannot act as a system caller");
+  });
+
+  it("never reuses a revoked caller grant's id for a later grant", async () => {
+    vi.useFakeTimers({ now: 1_700_000_000_000 });
+    try {
+      const { bb, harness } = createFakePluginHost();
+      bb.rpc.register(
+        defineRpcContract({
+          grant: { input: z.string(), output: z.string() },
+        }),
+        {
+          async grant(purpose, ctx) {
+            const { grantId } = await bb.sdk.experimental_createCallerGrant(
+              ctx,
+              { purpose },
+            );
+            return grantId;
+          },
+        },
+      );
+      const grant = async (purpose: string) =>
+        z
+          .string()
+          .parse(
+            await harness.callRpc("grant", purpose, {
+              experimental_caller: member,
+            }),
+          );
+
+      const first = await grant("First");
+      const second = await grant("Second");
+      await bb.sdk.experimental_revokeCallerGrant(first);
+      const third = await grant("Third");
+
+      expect(third).not.toBe(second);
+      expect(
+        harness.experimental_callerGrants.map((entry) => entry.purpose),
+      ).toEqual(["Second", "Third"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("creates caller grants from client callers and acts through them later", async () => {
+    const { bb, harness } = createFakePluginHost({
+      sdk: { projects: { list: async () => [] } },
+    });
+    bb.rpc.register(
+      defineRpcContract({
+        grant: { input: z.unknown(), output: z.string() },
+      }),
+      {
+        async grant(input, ctx) {
+          const { grantId } = await bb.sdk.experimental_createCallerGrant(
+            ctx,
+            input as { purpose: string; expiresInDays?: number | null },
+          );
+          return grantId;
+        },
+      },
+    );
+
+    const memberGrant = z
+      .string()
+      .parse(
+        await harness.callRpc(
+          "grant",
+          { purpose: "Nightly triage", expiresInDays: 1 },
+          { experimental_caller: member },
+        ),
+      );
+    const cappedGrant = z
+      .string()
+      .parse(
+        await harness.callRpc(
+          "grant",
+          { purpose: "Capped" },
+          { experimental_caller: cappedAdmin },
+        ),
+      );
+    const unboundedGrant = z
+      .string()
+      .parse(
+        await harness.callRpc(
+          "grant",
+          { purpose: "Indefinite", expiresInDays: null },
+          { experimental_caller: member },
+        ),
+      );
+    expect(harness.experimental_callerGrants).toEqual([
+      {
+        grantId: memberGrant,
+        pluginId: "test-plugin",
+        userId: "usr_member",
+        maxRole: "member",
+        purpose: "Nightly triage",
+        createdAt: expect.any(Number),
+        expiresAt: expect.any(Number),
+      },
+      expect.objectContaining({
+        grantId: cappedGrant,
+        userId: "usr_admin",
+        maxRole: "member",
+      }),
+      expect.objectContaining({
+        grantId: unboundedGrant,
+        expiresAt: null,
+      }),
+    ]);
+    const capped = harness.experimental_callerGrants.find(
+      (grant) => grant.grantId === cappedGrant,
+    );
+    expect(capped?.expiresAt).toBe(
+      (capped?.createdAt ?? 0) + 90 * 24 * 60 * 60 * 1000,
+    );
+
+    await bb.sdk.experimental_asGrant(cappedGrant).projects.list();
+    expect(harness.sdk.calls).toEqual([
+      {
+        path: "projects.list",
+        args: [],
+        experimental_caller: {
+          kind: "client",
+          userId: "usr_admin",
+          role: "member",
+          roleCeiling: "member",
+          effectiveRole: "member",
+        },
+        experimental_grantId: cappedGrant,
+      },
+    ]);
+    const grantSdk = bb.sdk.experimental_asGrant(cappedGrant);
+    expect(() =>
+      grantSdk.experimental_createCallerGrant({}, { purpose: "nested" }),
+    ).toThrow("not available on a grant-bound SDK");
+    expect(() => grantSdk.experimental_asGrant(memberGrant)).toThrow(
+      "not available on a grant-bound SDK",
+    );
+
+    await expect(
+      harness.callRpc(
+        "grant",
+        { purpose: "From a plugin" },
+        { experimental_caller: { kind: "plugin", pluginId: "other" } },
+      ),
+    ).rejects.toThrow("cannot act as a plugin caller");
+    await expect(
+      harness.callRpc(
+        "grant",
+        { purpose: "" },
+        { experimental_caller: member },
+      ),
+    ).rejects.toThrow("purpose must be 1 to 200 characters");
+    await expect(
+      bb.sdk.experimental_createCallerGrant(
+        { experimental_caller: member },
+        { purpose: "Outside a handler" },
+      ),
+    ).rejects.toThrow("still running");
+  });
+
+  it("refuses grants after revocation, expiry, and user removal", async () => {
+    vi.useFakeTimers();
+    try {
+      const host = createFakePluginHost();
+      const { bb, harness } = host;
+      bb.rpc.register(
+        defineRpcContract({
+          grant: { input: z.number().nullable(), output: z.string() },
+        }),
+        {
+          async grant(expiresInDays, ctx) {
+            return (
+              await bb.sdk.experimental_createCallerGrant(ctx, {
+                purpose: "Run later",
+                ...(expiresInDays === null ? {} : { expiresInDays }),
+              })
+            ).grantId;
+          },
+        },
+      );
+      const call = async (expiresInDays: number | null = null) =>
+        z.string().parse(
+          await harness.callRpc("grant", expiresInDays, {
+            experimental_caller: member,
+          }),
+        );
+
+      const revokedByPlugin = await call();
+      await bb.sdk.experimental_revokeCallerGrant(revokedByPlugin);
+      expect(() => bb.sdk.experimental_asGrant(revokedByPlugin)).toThrow(
+        "does not exist or was revoked",
+      );
+
+      const revokedByUser = await call();
+      harness.experimental_revokeCallerGrant(revokedByUser);
+      expect(() => bb.sdk.experimental_asGrant(revokedByUser)).toThrow(
+        "does not exist or was revoked",
+      );
+
+      const expiring = await call(1);
+      expect(() => bb.sdk.experimental_asGrant(expiring)).not.toThrow();
+      vi.advanceTimersByTime(24 * 60 * 60 * 1000);
+      expect(() => bb.sdk.experimental_asGrant(expiring)).toThrow("expired");
+
+      const kept = await call();
+      const replacement = await harness.lifecycle.reload(() => {});
+      expect(() => replacement.bb.sdk.experimental_asGrant(kept)).not.toThrow();
+      replacement.harness.experimental_removeUser("usr_member");
+      expect(() => replacement.bb.sdk.experimental_asGrant(kept)).toThrow(
+        "does not exist or was revoked",
+      );
+      await replacement.harness.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("refuses settings writes inside a member's invocation", async () => {
+    const { bb, harness } = createFakePluginHost();
+    const settings = bb.settings.define({
+      mode: { type: "string", label: "Mode" },
+    });
+    bb.rpc.register(
+      defineRpcContract({ set: { input: z.string(), output: z.null() } }),
+      {
+        async set(mode) {
+          await settings.experimental_set({ mode });
+          return null;
+        },
+      },
+    );
+
+    await expect(
+      harness.callRpc("set", "member", { experimental_caller: cappedAdmin }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    expect((await settings.get()).mode).toBeUndefined();
+    await harness.callRpc("set", "admin");
+    expect((await settings.get()).mode).toBe("admin");
+    await settings.experimental_set({ mode: "background" });
+    expect((await settings.get()).mode).toBe("background");
   });
 });

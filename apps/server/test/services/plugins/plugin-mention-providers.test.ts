@@ -345,6 +345,8 @@ describe("plugin mention providers (bb.ui.registerMentionProvider)", () => {
     const { environment, thread } = seedColdIdleThreadFixture(harness, 1);
 
     await sendThreadMessage(harness.deps, {
+      authorGrantId: null,
+      authorRoleCeiling: null,
       authorUserId: LOCAL_OWNER_USER_ID,
       environment,
       payload: {
@@ -402,6 +404,8 @@ describe("plugin mention providers (bb.ui.registerMentionProvider)", () => {
     const { environment, thread } = seedColdIdleThreadFixture(harness, 11);
 
     await sendThreadMessage(harness.deps, {
+      authorGrantId: null,
+      authorRoleCeiling: null,
       authorUserId: LOCAL_OWNER_USER_ID,
       environment,
       payload: {
@@ -498,6 +502,8 @@ describe("plugin mention providers (bb.ui.registerMentionProvider)", () => {
 
     await expect(
       sendThreadMessage(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
@@ -545,6 +551,8 @@ describe("plugin mention providers (bb.ui.registerMentionProvider)", () => {
     await harness.pluginService.setEnabled("mentions", false);
     await expect(
       sendThreadMessage(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
@@ -567,6 +575,8 @@ describe("plugin mention providers (bb.ui.registerMentionProvider)", () => {
 
     await expect(
       sendThreadMessage(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
@@ -585,6 +595,8 @@ describe("plugin mention providers (bb.ui.registerMentionProvider)", () => {
 
     await expect(
       sendThreadMessage(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
@@ -682,6 +694,7 @@ describe("mention search time box", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -761,6 +774,7 @@ describe("mention resolve time box", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,

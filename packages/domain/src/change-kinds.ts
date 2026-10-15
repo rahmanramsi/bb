@@ -68,6 +68,7 @@ export const SYSTEM_CHANGE_KINDS = [
   "environment-availability-changed",
   "server-move-changed",
   "app-update-changed",
+  "users-changed",
 ] as const;
 export type SystemChangeKind = (typeof SYSTEM_CHANGE_KINDS)[number];
 

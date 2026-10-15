@@ -475,6 +475,55 @@ describe("connect settings section", () => {
     expect(slot.queryByText(":8080")).toBeNull();
   });
 
+  it("offers Revoke all to admins only while members keep per-port Revoke", async () => {
+    const member = {
+      userId: "usr_sam",
+      displayName: "Sam",
+      email: "sam@example.com",
+      role: "member",
+      effectiveRole: "member",
+      roleCeiling: null,
+    } as const;
+    const slot = renderSlot(
+      app.settingsSections[0]!,
+      {},
+      {
+        rpc: {
+          status: () =>
+            connected({
+              shares: [
+                {
+                  hostId: "host-server",
+                  hostName: "Workstation",
+                  port: 3000,
+                  createdAt: 1,
+                  url: "https://workstation--3000.getbb.app",
+                },
+              ],
+            }),
+        },
+        experimental_currentUser: member,
+      },
+    );
+    await slot.findByRole("button", { name: "Revoke" });
+    expect(
+      slot.queryByRole("button", {
+        name: "Revoke all (1) shared ports on Workstation",
+      }),
+    ).toBeNull();
+
+    await slot.behavior.experimental_setCurrentUser({
+      ...member,
+      role: "admin",
+      effectiveRole: "admin",
+    });
+    expect(
+      slot.getByRole("button", {
+        name: "Revoke all (1) shared ports on Workstation",
+      }),
+    ).toBeTruthy();
+  });
+
   it("blocks duplicate revocations while pending and allows retry after bulk failure", async () => {
     let rejectRevoke: (error: Error) => void = () => {};
     const slot = renderSlot(

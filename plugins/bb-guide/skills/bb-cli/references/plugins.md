@@ -169,10 +169,14 @@
     refused while safe mode is on. The command palette offers the same toggle.
   - `bb plugin config <id> [set <key> <value> | unset <key>]` — declared
     settings; boolean and number arguments are converted to their declared
-    types. Reload the plugin after configuring (`bb plugin reload <id>`).
+    types. Reload the plugin after configuring (`bb plugin reload <id>`). A
+    field marked per user shows and changes only your own value, and members
+    may change it; changing a team field needs an admin.
   - `bb plugin token <id>` — print a short-lived bearer token for that plugin.
   - List, reload, enable, disable, config, and remove support `--json`.
-  - `bb plugin logs <id> [-n N] [-f]` — the plugin's `bb.log` output.
+  - `bb plugin logs <id> [-n N] [-f]` — the plugin's `bb.log` output. In
+    multi-user mode only admins can read plugin logs; members get
+    `admin_required`.
   - `bb plugin run <id> [args...]` — explicit form; collisions log an activation
     warning and are annotated by `bb plugin list`.
   - `bb plugin new <name>` — scaffold a todo-list plugin (`server.ts`,

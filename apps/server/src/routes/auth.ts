@@ -14,12 +14,13 @@ import {
   assertAdmin,
   getRequestPrincipal,
   requirePrincipal,
+  type PrincipalReader,
 } from "../request-context.js";
 import { listProjectIdsOwnedByUser, listProjectIdsWithMember } from "@bb/db";
 import { UserAuthError } from "../services/user-auth.js";
 import type { ServerAppDeps } from "../types.js";
 
-type AuthRouteDeps = Pick<ServerAppDeps, "config" | "userAuth" | "db" | "hub">;
+type AuthRouteDeps = Pick<ServerAppDeps, "config" | "db" | "hub" | "userAuth">;
 
 interface ResponseHeaderWriter {
   header(name: string, value: string, options: { append: boolean }): void;
@@ -65,6 +66,8 @@ export function registerAuthRoutes(app: Hono, deps: AuthRouteDeps): void {
         deps.config.authMode === "multi" && deps.userAuth.needsBootstrap(),
       principalKind: principal?.kind ?? null,
       user: principal === null ? null : deps.userAuth.getUser(principal.userId),
+      effectiveRole: principal?.role ?? null,
+      roleCeiling: principal?.roleCeiling ?? null,
     });
   });
 
@@ -112,6 +115,27 @@ export function registerAuthRoutes(app: Hono, deps: AuthRouteDeps): void {
 
   post(routes.createToken, async (context, payload) => {
     const principal = requirePrincipal(context);
+    if (principal.roleCeiling !== null) {
+      throw new ApiError(
+        403,
+        "credential_role_capped",
+        "A role-capped credential cannot create personal access tokens; sign in to create one",
+      );
+    }
+    if (principal.delegatedPluginId !== null) {
+      throw new ApiError(
+        403,
+        "credential_delegated",
+        "A plugin acting as a user cannot create personal access tokens; sign in to create one",
+      );
+    }
+    if (principal.grantId !== null) {
+      throw new ApiError(
+        403,
+        "credential_delegated",
+        "A credential derived from a plugin grant cannot create personal access tokens; sign in to create one",
+      );
+    }
     const created = await deps.userAuth.createPersonalAccessToken({
       name: payload.name,
       userId: principal.userId,
@@ -155,7 +179,11 @@ export function registerAuthRoutes(app: Hono, deps: AuthRouteDeps): void {
     const principal = requirePrincipal(context);
     const user = deps.userAuth.getUser(principal.userId);
     if (user === null) throw new ApiError(401, "unauthorized", "Unauthorized");
-    return context.json({ user });
+    return context.json({
+      user,
+      effectiveRole: principal.role,
+      roleCeiling: principal.roleCeiling,
+    });
   });
 
   get(publicApiRoutes.users.directory, (context) => {
@@ -177,6 +205,46 @@ export function registerAuthRoutes(app: Hono, deps: AuthRouteDeps): void {
     }
   });
 
+  function assertGrantAccess(context: PrincipalReader, userId: string): void {
+    const principal = requirePrincipal(context);
+    if (principal.delegatedPluginId !== null) {
+      throw new ApiError(
+        403,
+        "credential_delegated",
+        "A plugin acting as a user cannot manage plugin grants",
+      );
+    }
+    if (principal.grantId !== null) {
+      throw new ApiError(
+        403,
+        "credential_delegated",
+        "A credential derived from a plugin grant cannot manage plugin grants",
+      );
+    }
+    if (principal.userId !== userId) assertAdmin(context);
+  }
+
+  get(publicApiRoutes.users.listPluginGrants, (context) => {
+    const userId = context.req.param("id");
+    assertGrantAccess(context, userId);
+    return context.json({
+      grants: deps.userAuth.listPluginCallerGrants(userId),
+    });
+  });
+
+  del(publicApiRoutes.users.revokePluginGrant, (context) => {
+    const userId = context.req.param("id");
+    assertGrantAccess(context, userId);
+    const revoked = deps.userAuth.revokePluginCallerGrant({
+      id: context.req.param("grantId"),
+      userId,
+    });
+    if (!revoked) {
+      throw new ApiError(404, "grant_not_found", "Grant not found");
+    }
+    return context.json({ ok: true as const });
+  });
+
   del(publicApiRoutes.users.remove, (context) => {
     assertAdmin(context);
     const userId = context.req.param("id");
@@ -184,10 +252,14 @@ export function registerAuthRoutes(app: Hono, deps: AuthRouteDeps): void {
       ...listProjectIdsOwnedByUser(deps.db, userId),
       ...listProjectIdsWithMember(deps.db, userId),
     ]);
+    let queueChangedThreadIds: string[];
     try {
-      deps.userAuth.removeUser(userId);
+      queueChangedThreadIds = deps.userAuth.removeUser(userId);
     } catch (error) {
       throw toApiError(error);
+    }
+    for (const threadId of queueChangedThreadIds) {
+      deps.hub.notifyThread(threadId, ["queue-changed"]);
     }
     for (const projectId of affectedProjectIds) {
       deps.hub.notifyProjectAccessChanged(projectId);

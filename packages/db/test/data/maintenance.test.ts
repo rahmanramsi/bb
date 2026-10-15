@@ -102,9 +102,10 @@ function createDeferredLegacyTables(db: DbConnection): void {
 
 function readPreservedValue(db: DbConnection): string | undefined {
   return db.$client
-    .prepare<[], PreservedValueRow>(
-      "SELECT value FROM preserved_rows WHERE id = 1",
-    )
+    .prepare<
+      [],
+      PreservedValueRow
+    >("SELECT value FROM preserved_rows WHERE id = 1")
     .get()?.value;
 }
 

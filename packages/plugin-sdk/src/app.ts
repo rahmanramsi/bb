@@ -155,6 +155,12 @@ export const useBbContext = runtimeFunction("useBbContext");
 export const experimental_usePluginId = runtimeFunction(
   "experimental_usePluginId",
 );
+export const experimental_useCurrentUser = runtimeFunction(
+  "experimental_useCurrentUser",
+);
+export const experimental_useUserStorageKey = runtimeFunction(
+  "experimental_useUserStorageKey",
+);
 export const experimental_useQuestionFormHost = runtimeFunction(
   "experimental_useQuestionFormHost",
 );

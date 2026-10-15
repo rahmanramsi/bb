@@ -135,12 +135,18 @@ and the plugin's skill.
     {ok: true}
 
   bb whoami --json
-    {user: {id, name, email, role}}
+    {user: {id, name, email, role}, effectiveRole, roleCeiling: "member"|null}
 
   bb user role <userId> <role> --json
     {user: {id, name, email, role}}
 
   bb user remove <userId> --json
+    {ok: true}
+
+  bb user grants list [userId] --json
+    {grants: [{id, pluginId, userId, maxRole, purpose, createdAt, expiresAt}]}
+
+  bb user grants revoke <grantId> [--user <userId>] --json
     {ok: true}
 
   bb invite create --json

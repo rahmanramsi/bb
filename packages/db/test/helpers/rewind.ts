@@ -90,9 +90,10 @@ const LEGACY_PER_USER_SETTINGS_TABLES = [
 function isMigrationApplied(db: DbConnection, when: number): boolean {
   return (
     db.$client
-      .prepare<[number], { found: number }>(
-        "SELECT 1 AS found FROM __drizzle_migrations WHERE created_at = ?",
-      )
+      .prepare<
+        [number],
+        { found: number }
+      >("SELECT 1 AS found FROM __drizzle_migrations WHERE created_at = ?")
       .get(when) !== undefined
   );
 }
@@ -113,9 +114,10 @@ export function restoreLegacyPerUserSettingsTables(db: DbConnection): void {
   for (const table of LEGACY_PER_USER_SETTINGS_TABLES) {
     const exists =
       db.$client
-        .prepare<[string], { name: string }>(
-          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
-        )
+        .prepare<
+          [string],
+          { name: string }
+        >("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
         .get(table.name) !== undefined;
     const created = isMigrationApplied(db, table.createdByMigrationWhen);
     if (!exists && created) {
@@ -159,6 +161,10 @@ export function rewindMultiUser(db: DbConnection): void {
   rewindProjectVisibility(db);
   restoreLegacyThreadPerUserColumns(db);
   db.$client.exec(`
+    DROP TABLE IF EXISTS plugin_caller_grants;
+    DROP TABLE IF EXISTS plugin_user_settings;
+    DROP TABLE IF EXISTS plugin_user_kv;
+    DROP TABLE IF EXISTS turn_request_authors;
     DROP TABLE IF EXISTS thread_user_state;
     DROP TABLE IF EXISTS user_settings;
     DROP TABLE IF EXISTS session;
@@ -169,6 +175,8 @@ export function rewindMultiUser(db: DbConnection): void {
     ["user", "role"],
     ["threads", "created_by_user_id"],
     ["prompt_history_entries", "user_id"],
+    ["queued_thread_messages", "author_grant_id"],
+    ["queued_thread_messages", "author_role_ceiling"],
     ["queued_thread_messages", "author_user_id"],
     ["pending_interactions", "resolved_by_user_id"],
   ] as const) {

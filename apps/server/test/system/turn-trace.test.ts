@@ -85,6 +85,8 @@ async function sendFollowUp(
 ): Promise<void> {
   await expect(
     acceptThreadSendRequest(harness.deps, {
+      authorGrantId: null,
+      authorRoleCeiling: null,
       authorUserId: LOCAL_OWNER_USER_ID,
       payload: {
         input: textInput("traced follow-up"),

@@ -34,7 +34,10 @@ import {
   type DbTransaction,
 } from "@bb/db";
 import { assertNever } from "@bb/core-ui";
-import { COMPETING_TURN_ERROR_CODE } from "@bb/host-daemon-contract";
+import {
+  COMPETING_TURN_ERROR_CODE,
+  TURN_BINDING_MISMATCH_ERROR_CODE,
+} from "@bb/host-daemon-contract";
 import {
   type ProvisioningTranscriptEntry,
   type SystemThreadInterruptedReason,
@@ -109,6 +112,7 @@ import {
 import { cancelAbandonedProviderCreations } from "./thread-environment-providers.js";
 import { scheduleThreadProvisioningAdvance } from "./thread-provisioning.js";
 import { isPreStartThreadStatus } from "./thread-status.js";
+import { requeueTurnSubmitRefusedForBindingInTransaction } from "./turn-authority.js";
 import { settleDanglingBackgroundTasksForStoppedThreadInTransaction } from "./background-task-reconciliation.js";
 import { abortPluginToolCallsForThreads } from "../plugins/plugin-tool-calls.js";
 
@@ -385,6 +389,7 @@ function lifecycleEventForInterruptedThread(
   switch (reason) {
     case "host-removed":
     case "manual-stop":
+    case "other-author":
       return { type: "stop.settled" };
     case "host-daemon-restarted":
     case "host-connection-lost":
@@ -403,6 +408,8 @@ function pendingInteractionStopReason(
       return "Thread stopped because the machine was removed";
     case "manual-stop":
       return "Thread stopped by user request";
+    case "other-author":
+      return "Thread stopped to start a message from another author";
     case "host-daemon-restarted":
       return "Host daemon restarted while awaiting user interaction";
     case "host-connection-lost":
@@ -420,6 +427,7 @@ function threadCommandFailureMessageForInterruption(
   switch (reason) {
     case "host-removed":
     case "manual-stop":
+    case "other-author":
       return null;
     case "host-daemon-restarted":
       return "Thread interrupted because the host daemon disconnected";
@@ -440,6 +448,8 @@ function threadCommandFailureDetailForInterruption(
       return "Thread stopped because the machine was removed";
     case "manual-stop":
       return "Thread stopped by user request";
+    case "other-author":
+      return "Thread stopped to start a message from another author";
     case "host-daemon-restarted":
     case "host-connection-lost":
       return "Please retry the thread to continue.";
@@ -854,6 +864,10 @@ function settleThreadCommandFailure(
     ) {
       return emptyCommandResultSideEffects();
     }
+    if (args.report.errorCode === TURN_BINDING_MISMATCH_ERROR_CODE) {
+      requeueTurnSubmitRefusedForBindingInTransaction(args.deps, args.command);
+      return emptyCommandResultSideEffects();
+    }
   }
   if (hasExpectedTurnCompletedEvent(args.deps, args.command)) {
     return emptyCommandResultSideEffects();
@@ -1002,6 +1016,8 @@ export async function prepareReadyThreadTurnCommand(
   );
   if (providerThreadId) {
     const preparedCommand = await prepareTurnSubmitCommandPayload(deps, {
+      authorGrantId: args.authorGrantId,
+      authorRoleCeiling: args.authorRoleCeiling,
       authorUserId: args.authorUserId,
       environment: args.environment,
       execution: args.execution,
@@ -1555,6 +1571,22 @@ export function requestThreadStopForCurrentState(
   ) {
     requestPreStartThreadStop(deps, thread);
   }
+}
+
+export function requestThreadInterruptForOtherAuthor(
+  deps: RequestThreadStopForCurrentStateDeps,
+  thread: RequestThreadStopForCurrentStateThread,
+  environment: RequestThreadStopForCurrentStateEnvironment,
+): void {
+  if (!hasLiveThreadRuntime(deps, thread)) {
+    return;
+  }
+  requestThreadStop(deps, {
+    environmentId: environment.id,
+    hostId: environment.hostId,
+    interruptionReason: "other-author",
+    threadId: thread.id,
+  });
 }
 
 export async function stopThreadForCurrentState(

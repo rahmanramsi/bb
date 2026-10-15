@@ -52,6 +52,8 @@ it("leaves reprovision unstarted when dispatch admission rejects the request", a
 
     await expect(
       dispatchTurnDuringReprovision({
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         deps: harness.deps,
         environment,
