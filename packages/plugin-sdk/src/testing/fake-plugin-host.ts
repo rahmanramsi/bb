@@ -723,6 +723,7 @@ interface FakePluginPersistentState {
   userKvRows: Map<string, Map<string, string>>;
   userSettings: Map<string, Map<string, PluginSettingValue>>;
   callerGrants: Map<string, ExperimentalFakeCallerGrant>;
+  callerGrantsCreated: number;
 }
 
 const FAKE_LOCAL_OWNER_USER_ID = "usr_local_owner";
@@ -756,6 +757,7 @@ function createFakePluginHostInternal(
       userKvRows: new Map(),
       userSettings: new Map(),
       callerGrants: new Map(),
+      callerGrantsCreated: 0,
     } satisfies FakePluginPersistentState);
   const pluginId = options.pluginId ?? "test-plugin";
   const declaredIconNames = new Set(
@@ -1370,7 +1372,8 @@ function createFakePluginHostInternal(
         const now = Date.now();
         const parsed = parsePluginCallerGrantRequest(request, now);
         if (!parsed.ok) throw new Error(parsed.message);
-        const grantId = `grant_fake_${persistentState.callerGrants.size + 1}_${now}`;
+        persistentState.callerGrantsCreated += 1;
+        const grantId = `grant_fake_${persistentState.callerGrantsCreated}_${now}`;
         persistentState.callerGrants.set(grantId, {
           grantId,
           pluginId,

@@ -26,7 +26,10 @@ import type {
   ResolvedCreateAutomationInput,
   UpdateAutomationInput,
 } from "./rpc-types.js";
-import { AUTOMATION_WITHOUT_USER_IDENTITY_NOTE } from "../lib/run-identity.js";
+import {
+  AUTOMATION_REVOKE_HINT,
+  AUTOMATION_WITHOUT_USER_IDENTITY_NOTE,
+} from "../lib/run-identity.js";
 import {
   providerRoutingForEnvironment,
   resolvePermissionMode,
@@ -70,7 +73,9 @@ On a multi-user server only admins can create, update, run, pause, or resume
 script automations. Members can manage agent automations.
 
 An agent automation runs as the person who last saved its execution or
-adopted it (\`bb automation show\` prints "Runs as"). Renaming it,
+adopted it (\`bb automation show\` prints "Runs as"), until that person
+revokes its grant with \`bb user grants revoke\` or in Account settings >
+Plugin access; the grant has no expiry. Renaming it,
 rescheduling it, or pausing it keeps that person. Changing its prompt,
 target, provider, model, reasoning, service tier, or permission mode as
 someone else is refused with automation_adoption_required until you adopt it:
@@ -911,8 +916,20 @@ function formatRunsAs(
   if (!automation.runsAsCreator) return "no person (the automations plugin)";
   if (automation.runsAsUserId === null) return "a person bb did not record";
   return automation.runsAsUserId === viewer
-    ? `you (${automation.runsAsUserId})`
+    ? `you (${automation.runsAsUserId}) until you revoke it`
     : automation.runsAsUserId;
+}
+
+function runsAsViewer(
+  automation: PrintableAutomation,
+  viewer: string | null,
+): boolean {
+  return (
+    automation.execution.mode === "agent" &&
+    automation.runsAsCreator &&
+    automation.runsAsUserId !== null &&
+    automation.runsAsUserId === viewer
+  );
 }
 
 function printAutomation(
@@ -957,6 +974,11 @@ function printAutomation(
   }
   if (automation.execution.mode === "agent" && !automation.runsAsCreator) {
     lines.push(`  Note:      ${AUTOMATION_WITHOUT_USER_IDENTITY_NOTE}`);
+  }
+  if (runsAsViewer(automation, viewer)) {
+    lines.push(
+      "  Revoke:    bb user grants list, then bb user grants revoke <grantId>, or Account settings > Plugin access",
+    );
   }
   if (automation.lastError) lines.push(`  Error:     ${automation.lastError}`);
   lines.push("");
@@ -1050,7 +1072,8 @@ function printAdoptionPreview(
   return [
     "",
     `Automation "${automation.name}" (${automation.id}) runs as ${formatRunsAs(automation, viewer)}.`,
-    "Adopting it means every run uses your identity and permissions: this automation will run as you.",
+    "Adopting it means every run uses your identity and permissions: this automation will run as you until you revoke it.",
+    AUTOMATION_REVOKE_HINT,
     "",
     `  Revision:   ${automation.executionRevision}`,
     `  Target:     ${execution.targetThreadId !== undefined ? `existing thread ${execution.targetThreadId}` : JSON.stringify(execution.environment)}`,
@@ -1271,7 +1294,7 @@ export function registerAutomationCli(args: {
               max: Number.MAX_SAFE_INTEGER,
               placeholder: "revision",
               description:
-                "Adopt the automation at this execution revision so it runs as you; required to change another person's prompt, target, provider, model, or permissions",
+                "Adopt the automation at this execution revision so it runs as you until you revoke it; required to change another person's prompt, target, provider, model, or permissions",
             },
             json: JSON_OPTION,
           },
@@ -1318,7 +1341,7 @@ export function registerAutomationCli(args: {
         adopt: cliCommand({
           summary: "Make an agent automation run as you",
           description:
-            "Without --revision, print the full execution (prompt, target, provider, model, permissions) and its revision without changing anything. With --revision, adopt that exact revision: the automation runs as you and the previous person's grant is revoked. Adoption fails with automation_revision_stale if the execution changed since that revision.",
+            "Without --revision, print the full execution (prompt, target, provider, model, permissions) and its revision without changing anything. With --revision, adopt that exact revision: the automation runs as you until you revoke it (`bb user grants`, or Account settings > Plugin access) and the previous person's grant is revoked. Adoption fails with automation_revision_stale if the execution changed since that revision.",
           positionals: [AUTOMATION_ID_POSITIONAL],
           options: {
             project: PROJECT_OPTION,

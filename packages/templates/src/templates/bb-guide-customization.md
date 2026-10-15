@@ -157,7 +157,12 @@ token cannot create a PAT or list or revoke grants (403 `credential_delegated`),
 and a plugin it calls cannot record a new grant from it. An agent automation
 runs as the person who last changed what it runs, or who adopted it, through
 such a grant: its scheduled and manual runs get that person's `BB_TOKEN` and
-attribution. Renaming, rescheduling, pausing, or resuming it keeps that person.
+attribution. Automations request that grant without an expiry, so the
+automation runs as that person until they revoke it with `bb user grants
+revoke` or under Plugin access in account settings; the app's Runs as label,
+Run as me dialog, and save prompt, and `bb automation show` and `bb automation
+adopt`, say so. Renaming, rescheduling, pausing, or resuming it keeps that
+person.
 Changing its prompt, target, provider, model, reasoning, service tier, or
 permission mode as anyone else is refused with `automation_adoption_required`
 unless the change also adopts it; adopting (`bb automation adopt`, or Run as me

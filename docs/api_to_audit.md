@@ -344,13 +344,19 @@ credentials never mint grants because they reach plugins as `plugin` callers.
 
 Before stabilizing, audit renewable grant credentials for long work, whether
 the app should list grants per plugin and notify plugins of revocation,
-request-log attribution of grant-backed requests, whether 90 days suits
-scheduled automations or they need renewal prompts, whether a turn whose grant
+request-log attribution of grant-backed requests, whether no-expiry grants
+suit scheduled automations or they need renewal prompts, whether a turn whose grant
 is gone should be refused at dispatch rather than only losing its `BB_TOKEN`,
 and whether admins need a server-wide grant list.
 
 Core callers: Automations records a grant from the person who creates an agent
-automation, revokes the replaced grant and the grant of a deleted automation,
+automation, re-saves its execution, or adopts it, always with
+`expiresInDays: null` and the purpose `Automation "<name>"` (names over 186
+characters end in `…` so the purpose stays within 200), and discloses this:
+the app's Runs as label, Run as me dialog, and adopt-on-save note, and
+`bb automation show` and `bb automation adopt`, say the automation runs as
+that person until they revoke it and point to `bb user grants` and account
+settings Plugin access. It revokes the replaced grant and the grant of a deleted automation,
 and spawns or messages every scheduled and manual run through
 `experimental_asGrant`, so the run gets that person's `BB_TOKEN` and
 attribution. It stores the grant's user id and an execution revision. Name,

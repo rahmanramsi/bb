@@ -597,7 +597,13 @@ describe("Automation detail recipe", () => {
       />
     );
     const { container, rerender } = render(view("usr_member"));
-    expect(container.textContent).toContain("Runs as you");
+    expect(container.textContent).toContain("Runs as you until you revoke it");
+    expect(
+      screen
+        .getByText("Runs as you until you revoke it")
+        .closest("[title]")
+        ?.getAttribute("title"),
+    ).toContain("Plugin access");
 
     rerender(view("usr_admin"));
     expect(container.textContent).toContain("Runs as another person");
@@ -642,8 +648,10 @@ describe("Automation detail recipe", () => {
       />,
     );
     expect(
-      screen.getByText(/Saving a change to what it runs makes it run as you/),
-    ).toBeTruthy();
+      document.querySelector("[data-automation-adopt-on-save]")?.textContent,
+    ).toMatch(
+      /Saving a change to what it runs makes it run as you.*until you revoke it.*Plugin access.*bb user grants/,
+    );
     fireEvent.change(screen.getByLabelText("Automation prompt"), {
       target: { value: "Summarize today's commits." },
     });
@@ -712,7 +720,9 @@ describe("Automation detail recipe", () => {
     expect(content).toContain("Existing thread thr_target");
     expect(content).toContain("claude-opus-5");
     expect(content).toContain("auto");
-    expect(screen.getByText(/will run as you/)).toBeTruthy();
+    expect(
+      screen.getByText(/will run as you/).closest("[role=dialog]")?.textContent,
+    ).toMatch(/until you revoke it.*Plugin access.*bb user grants/);
     fireEvent.click(screen.getByRole("button", { name: "Run as me" }));
     expect(onConfirm).toHaveBeenCalledWith(3);
   });

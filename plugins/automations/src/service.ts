@@ -642,6 +642,16 @@ function defaultScriptWorkingDirectory(
   return PROJECT_WORKING_DIRECTORY;
 }
 
+const GRANT_PURPOSE_NAME_MAX_LENGTH = 186;
+
+function callerGrantPurpose(name: string): string {
+  const shown =
+    name.length > GRANT_PURPOSE_NAME_MAX_LENGTH
+      ? `${name.slice(0, GRANT_PURPOSE_NAME_MAX_LENGTH)}…`
+      : name;
+  return `Automation "${shown}"`;
+}
+
 async function grantFromCaller(
   bb: ServiceApi,
   context: AutomationCallerContext,
@@ -652,7 +662,8 @@ async function grantFromCaller(
     return null;
   }
   const { grantId } = await bb.sdk.experimental_createCallerGrant(context, {
-    purpose: `Automation "${args.name}"`,
+    purpose: callerGrantPurpose(args.name),
+    expiresInDays: null,
   });
   return { grantId, userId: caller.userId };
 }

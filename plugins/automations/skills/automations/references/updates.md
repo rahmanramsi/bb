@@ -79,7 +79,8 @@ bb automation update <automationId> --project <id> --prompt "<prompt>" \
 `adopt` without `--revision` prints the prompt, target, provider, model,
 reasoning, tier, permission mode, and revision and changes nothing. With
 `--revision`, or with `--adopt-revision` on `update`, the automation runs as
-you and the previous person's grant is revoked. Either fails with
+you until you revoke it (`bb user grants revoke`, or Plugin access in account
+settings) and the previous person's grant is revoked. Either fails with
 `automation_revision_stale`, changing nothing, when the execution or the
 person it runs as changed after that revision. Over RPC, use
 `automations_adopt` with `expectedRevision`, or pass
