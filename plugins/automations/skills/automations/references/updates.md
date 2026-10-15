@@ -50,6 +50,46 @@ bb automation update <automationId> --project <id> \
 A complete script replacement preserves the current policy when the flag is
 omitted.
 
+## Who an agent automation runs as
+
+An agent automation runs as the person in `show`'s "Runs as" line
+(`runsAsUserId` in JSON). Updates fall into two groups:
+
+- `--name` and the schedule flags (`--cron`, `--timezone`, `--at`, `--in`),
+  `pause`, and `resume` never change who it runs as.
+- Everything that changes what the agent does or where — the prompt,
+  `--target-thread`, `--environment`, `--new-environment`, `--base-branch`,
+  the provider, model, reasoning, service tier, permission mode, or a complete
+  execution replacement — bumps the execution revision (`Revision` in `show`,
+  `executionRevision` in JSON). Saving the same values is not a change.
+
+When the person it runs as changes the execution, it keeps running as them.
+When anyone else does, the update is refused with
+`automation_adoption_required`: the new execution would otherwise run with
+someone's identity who did not write it. Review the full execution first, then
+adopt the exact revision you reviewed:
+
+```bash
+bb automation adopt <automationId> --project <id>
+bb automation adopt <automationId> --project <id> --revision <n>
+bb automation update <automationId> --project <id> --prompt "<prompt>" \
+  --adopt-revision <n>
+```
+
+`adopt` without `--revision` prints the prompt, target, provider, model,
+reasoning, tier, permission mode, and revision and changes nothing. With
+`--revision`, or with `--adopt-revision` on `update`, the automation runs as
+you and the previous person's grant is revoked. Either fails with
+`automation_revision_stale`, changing nothing, when the execution or the
+person it runs as changed after that revision. Over RPC, use
+`automations_adopt` with `expectedRevision`, or pass
+`adopt: { expectedRevision }` to `automations_update`. Script automations never
+run as a person and cannot be adopted.
+
+When a plugin or bb itself changes an agent automation's execution, the grant
+is revoked and the automation runs without a user identity until someone
+adopts it.
+
 Every command supports `--json`. For `list` and `show`, the JSON result is a
 union discriminated by `problem`: canonical records omit it, while degraded
 records use `"missing-agent-prompt"` or `"invalid-stored-data"`. The

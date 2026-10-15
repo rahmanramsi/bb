@@ -331,6 +331,8 @@ export const automationResponseSchema = z
     origin: automationOriginSchema,
     createdByThreadId: z.string().min(1).nullable(),
     runsAsCreator: z.boolean(),
+    runsAsUserId: z.string().min(1).nullable(),
+    executionRevision: z.number().int().min(1),
     nextRunAt: z.number().nullable(),
     lastRunAt: z.number().nullable(),
     runCount: z.number().int().min(0),
@@ -431,6 +433,15 @@ export type ResolvedCreateAutomationInput = z.output<
   typeof createAutomationInputSchema
 >;
 
+const automationAdoptionSchema = z
+  .object({ expectedRevision: z.number().int().min(1) })
+  .strict();
+
+export const adoptAutomationInputSchema = projectAutomationInputSchema
+  .extend({ expectedRevision: z.number().int().min(1) })
+  .strict();
+export type AdoptAutomationInput = z.infer<typeof adoptAutomationInputSchema>;
+
 export const updateAutomationInputSchema = z
   .object({
     projectId: z.string().min(1),
@@ -440,10 +451,12 @@ export const updateAutomationInputSchema = z
     execution: automationExecutionRequestSchema.optional(),
     agent: agentExecutionUpdateSchema.optional(),
     script: scriptExecutionUpdateSchema.optional(),
+    adopt: automationAdoptionSchema.optional(),
   })
   .strict()
   .refine(
     (value) =>
+      value.adopt !== undefined ||
       value.name !== undefined ||
       value.trigger !== undefined ||
       value.execution !== undefined ||

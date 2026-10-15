@@ -11,7 +11,8 @@ in a thread; script automations run stored code without model usage.
 bb automation list --project <id>
 bb automation show <automationId> --project <id>
 bb automation create --project <id> --name <name> <schedule> <execution>
-bb automation update <automationId> --project <id> [changes]
+bb automation update <automationId> --project <id> [changes] [--adopt-revision <n>]
+bb automation adopt <automationId> --project <id> [--revision <n>]
 bb automation pause|resume <automationId> --project <id>
 bb automation run <automationId> --project <id>
 bb automation runs <automationId> --project <id> [--limit <count>]
@@ -68,6 +69,17 @@ target option. `--clear-service-tier` and `--service-tier` cannot be combined;
 directory policy; a script replacement preserves it when the flag is omitted.
 Pass provider, model, reasoning, service tier, and permission together when
 switching providers.
+
+An agent automation runs as one person, printed as `Runs as` by `show`
+(`runsAsUserId` in JSON). Name and schedule changes, pause, and resume keep
+that person. A change to what it runs (prompt, target, environment, provider,
+model, reasoning, service tier, or permission mode) bumps `Revision`
+(`executionRevision`); made by that person it keeps running as them, made by
+anyone else it fails with `automation_adoption_required`. Run `adopt
+<automationId>` to print the full execution and its revision, then `adopt
+--revision <n>` or `update ... --adopt-revision <n>` to make it run as you.
+Both fail with `automation_revision_stale` when the execution changed after
+that revision.
 
 Add `--json` for machine-readable output. The JSON returned by `list` and
 `show` is a union discriminated by `problem`: canonical records omit it;

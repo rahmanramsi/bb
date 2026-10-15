@@ -94,6 +94,8 @@ function automation(
     origin: "human",
     createdByThreadId: null,
     runsAsCreator: true,
+    runsAsUserId: "usr_local_owner",
+    executionRevision: 1,
     nextRunAt: now + 86_400_000,
     lastRunAt: now - 3_600_000,
     runCount: 12,

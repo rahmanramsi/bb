@@ -70,7 +70,7 @@ function createScheduledAutomation(
   id = "auto_test",
 ) {
   return createAutomation(db, {
-    callerGrantId: null,
+    callerGrant: null,
     id,
     projectId: "proj_test",
     name: "Test",
@@ -98,7 +98,7 @@ function createScheduledAutomation(
 
 function createOnceAutomation(db: Db, nextRunAt: number, id = "auto_once") {
   return createAutomation(db, {
-    callerGrantId: null,
+    callerGrant: null,
     id,
     projectId: "proj_test",
     name: "Once",
@@ -1390,7 +1390,7 @@ describe("automation service", () => {
     const db = createTestDb();
     const pluginDataDir = await mkdtemp(join(tmpdir(), "bb-auto-service-"));
     const automation = createAutomation(db, {
-      callerGrantId: null,
+      callerGrant: null,
       id: "auto_script_to_agent",
       projectId: "proj_test",
       name: "Script to agent",
@@ -1445,7 +1445,7 @@ describe("automation service", () => {
     const db = createTestDb();
     const pluginDataDir = await mkdtemp(join(tmpdir(), "bb-auto-service-"));
     const automation = createAutomation(db, {
-      callerGrantId: null,
+      callerGrant: null,
       id: "auto_script_rename",
       projectId: "proj_test",
       name: "Script rename",
@@ -1504,7 +1504,7 @@ describe("automation service", () => {
     const db = createTestDb();
     const pluginDataDir = await mkdtemp(join(tmpdir(), "bb-auto-service-"));
     const automation = createAutomation(db, {
-      callerGrantId: null,
+      callerGrant: null,
       id: "auto_script_rollback",
       projectId: "proj_test",
       name: "Script rollback",
@@ -1565,7 +1565,7 @@ describe("automation service", () => {
     const db = createTestDb();
     const pluginDataDir = await mkdtemp(join(tmpdir(), "bb-auto-service-"));
     const automation = createAutomation(db, {
-      callerGrantId: null,
+      callerGrant: null,
       id: "auto_script_same_name_rollback",
       projectId: "proj_test",
       name: "Script same-name rollback",
@@ -2283,7 +2283,7 @@ describe("script project context", () => {
       workingDirectory: args.workingDirectory,
     };
     const automation = createAutomation(db, {
-      callerGrantId: null,
+      callerGrant: null,
       id: "auto_context",
       projectId: "proj_test",
       name: "Project context",

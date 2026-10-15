@@ -146,12 +146,19 @@ request or later through a grant they gave (`bb user grants`). Threads and
 messages it creates that way count as sent by that person under the rules
 above, capped at member when the person called with member authority or a
 member-capped credential, so the cap survives a later promotion. An agent
-automation runs as the person who last saved it through such a grant: its
-scheduled and manual runs get that person's `BB_TOKEN` and attribution. If the
-grant is revoked, expired, or its person removed, the run fails instead of
-running as the plugin. Automations saved before grants existed run as the
-plugin without a user identity, as before, and say so in the app and in
-`bb automation show` until someone saves them again.
+automation runs as the person who last changed what it runs, or who adopted
+it, through such a grant: its scheduled and manual runs get that person's
+`BB_TOKEN` and attribution. Renaming, rescheduling, pausing, or resuming it
+keeps that person. Changing its prompt, target, provider, model, reasoning,
+service tier, or permission mode as anyone else is refused with
+`automation_adoption_required` unless the change also adopts it; adopting
+(`bb automation adopt`, or Run as me in the app) shows the full execution,
+names its execution revision, and fails with `automation_revision_stale` if
+the execution changed since. A plugin or bb itself changing the execution
+revokes the grant. If the grant is revoked, expired, or its person removed,
+the run fails instead of running as the plugin. Automations without a grant
+run as the plugin without a user identity and say so in the app and in
+`bb automation show` until someone adopts them.
 
 A running turn keeps the `BB_TOKEN` it started with, so in multi mode a
 message steers into it only when it would get the same credential: the same
