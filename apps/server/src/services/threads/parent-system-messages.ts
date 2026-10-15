@@ -55,8 +55,26 @@ import {
   withThreadSendGuard,
 } from "./thread-context-mutation-guard.js";
 import { requestQueuedMessageDispatch } from "./queued-message-dispatch.js";
+import {
+  bindsSteersToExpectedTurn,
+  readRunningTurnBinding,
+  runningTurnBindingHolds,
+  sharesRunningTurnAuthority,
+  type RunningTurnBinding,
+} from "./turn-authority.js";
 
 const PARENT_SYSTEM_MESSAGE_SOURCE = "tell";
+
+const SYSTEM_NOTICE_AUTHOR = {
+  authorGrantId: null,
+  authorRoleCeiling: null,
+  authorUserId: null,
+};
+
+export type ParentSystemMessageDelivery =
+  | "delivered"
+  | "not-delivered"
+  | "awaiting-running-turn";
 
 export interface ParentSystemMessageTaxonomy {
   systemMessageKind: SystemMessageKind;
@@ -120,6 +138,7 @@ interface QueueReadyParentSystemMessageArgs extends ParentSystemMessageTaxonomy 
 }
 
 interface QueueActiveParentSystemMessageInTransactionArgs extends QueueReadyParentSystemMessageArgs {
+  binding: RunningTurnBinding;
   preparedCommand: PreparedTurnSubmitCommandPayload;
 }
 
@@ -127,6 +146,7 @@ function parentSystemTurnRequestFields(
   args: QueueReadyParentSystemMessageArgs,
 ) {
   return {
+    author: SYSTEM_NOTICE_AUTHOR,
     threadId: args.thread.id,
     environmentId: args.environment.id,
     type: "client/turn/requested",
@@ -221,9 +241,10 @@ export function buildParentSystemThreadMention(
 }
 
 function queueActiveParentSystemMessageInTransaction(
+  deps: LoggedPendingInteractionWorkSessionDeps,
   tx: DbTransaction,
   args: QueueActiveParentSystemMessageInTransactionArgs,
-): Extract<HostDaemonCommand, { type: "turn.submit" }> | null {
+): Extract<HostDaemonCommand, { type: "turn.submit" }> | "turn-changed" | null {
   const currentThread = getThread(tx, args.thread.id);
   if (
     !currentThread ||
@@ -233,6 +254,15 @@ function queueActiveParentSystemMessageInTransaction(
     currentThread.deletedAt !== null
   ) {
     return null;
+  }
+  if (
+    !runningTurnBindingHolds(deps, {
+      binding: args.binding,
+      db: tx,
+      threadId: args.thread.id,
+    })
+  ) {
+    return "turn-changed";
   }
 
   const expectedSteerTurnId = getActiveTurnId({ db: tx }, args.thread.id);
@@ -250,6 +280,7 @@ function queueActiveParentSystemMessageInTransaction(
       target: {
         mode: "auto",
         expectedTurnId: expectedSteerTurnId,
+        bindExpectedTurn: bindsSteersToExpectedTurn(deps),
       },
     },
   });
@@ -258,8 +289,9 @@ function queueActiveParentSystemMessageInTransaction(
 async function queueActiveParentSystemMessage(
   deps: LoggedPendingInteractionWorkSessionDeps,
   args: QueueReadyParentSystemMessageArgs,
-): Promise<boolean> {
-  const expectedSteerTurnId = getActiveTurnId(deps, args.thread.id);
+): Promise<ParentSystemMessageDelivery> {
+  const binding = readRunningTurnBinding(deps.db, args.thread.id);
+  const expectedSteerTurnId = binding.activeTurnId;
   if (expectedSteerTurnId === null) {
     const outcome = queueInputForStartingTurn(deps, {
       claimed: null,
@@ -268,6 +300,8 @@ async function queueActiveParentSystemMessage(
         execution: args.execution,
         payload: { kind: "inline" },
         senderThreadId: null,
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: null,
         origin: null,
         originPluginId: null,
@@ -279,8 +313,8 @@ async function queueActiveParentSystemMessage(
       },
       threadId: args.thread.id,
     });
-    if (outcome.kind === "queued") return true;
-    if (outcome.kind === "dispatched") return false;
+    if (outcome.kind === "queued") return "delivered";
+    if (outcome.kind === "dispatched") return "not-delivered";
     if (outcome.kind === "retry") {
       const currentThread = outcome.thread;
       if (
@@ -289,13 +323,22 @@ async function queueActiveParentSystemMessage(
         currentThread.deletedAt !== null ||
         currentThread.status === "stopping"
       ) {
-        return false;
+        return "not-delivered";
       }
       return queueReadyParentSystemMessage(deps, {
         ...args,
         thread: currentThread,
       });
     }
+  }
+  if (
+    !sharesRunningTurnAuthority(deps, {
+      author: SYSTEM_NOTICE_AUTHOR,
+      binding,
+      thread: args.thread,
+    })
+  ) {
+    return "awaiting-running-turn";
   }
   const permissionEscalation = resolvePermissionEscalation({
     initiator: "system",
@@ -304,6 +347,8 @@ async function queueActiveParentSystemMessage(
     hostId: args.environment.hostId,
   });
   const preparedCommand = await prepareTurnSubmitCommandPayload(deps, {
+    authorGrantId: null,
+    authorRoleCeiling: null,
     authorUserId: null,
     thread: args.thread,
     input: args.input,
@@ -312,6 +357,7 @@ async function queueActiveParentSystemMessage(
     target: {
       mode: "auto",
       expectedTurnId: expectedSteerTurnId,
+      bindExpectedTurn: bindsSteersToExpectedTurn(deps),
     },
     environment: {
       id: args.environment.id,
@@ -323,14 +369,18 @@ async function queueActiveParentSystemMessage(
 
   const command = deps.db.transaction(
     (tx) =>
-      queueActiveParentSystemMessageInTransaction(tx, {
+      queueActiveParentSystemMessageInTransaction(deps, tx, {
         ...args,
+        binding,
         preparedCommand,
       }),
     { behavior: "immediate" },
   );
   if (command === null) {
-    return false;
+    return "not-delivered";
+  }
+  if (command === "turn-changed") {
+    return "awaiting-running-turn";
   }
 
   deps.hub.notifyThread(args.thread.id, ["events-appended"], {
@@ -350,13 +400,13 @@ async function queueActiveParentSystemMessage(
       );
     },
   });
-  return true;
+  return "delivered";
 }
 
 async function queueReadyParentSystemMessage(
   deps: LoggedPendingInteractionWorkSessionDeps,
   args: QueueReadyParentSystemMessageArgs,
-): Promise<boolean> {
+): Promise<ParentSystemMessageDelivery> {
   if (args.thread.status === "active") {
     return queueActiveParentSystemMessage(deps, args);
   }
@@ -367,6 +417,8 @@ async function queueReadyParentSystemMessage(
   const requestId = createClientTurnRequestId();
 
   const command = await prepareReadyThreadTurnCommand(deps, {
+    authorGrantId: null,
+    authorRoleCeiling: null,
     authorUserId: null,
     thread: args.thread,
     fork: null,
@@ -429,7 +481,7 @@ async function queueReadyParentSystemMessage(
       buildThreadStatusChangeMetadata(deps, activeThread),
     );
   }
-  return true;
+  return "delivered";
 }
 
 export async function queueParentSystemMessage(
@@ -451,12 +503,15 @@ export async function queueParentSystemMessage(
   let hostUnavailable = false;
   if (!hasPendingInteraction) {
     try {
-      return await deliverParentSystemMessage(deps, {
+      const delivery = await deliverParentSystemMessage(deps, {
         input: args.input,
         parentThread,
         systemMessageKind: args.systemMessageKind,
         systemMessageSubject: args.systemMessageSubject,
       });
+      if (delivery !== "awaiting-running-turn") {
+        return delivery === "delivered";
+      }
     } catch (error) {
       hostUnavailable = isHostUnavailableApiError(error);
       if (
@@ -529,7 +584,7 @@ interface DeliverParentSystemMessageArgs extends ParentSystemMessageTaxonomy {
 export async function deliverParentSystemMessage(
   deps: LoggedPendingInteractionWorkSessionDeps,
   args: DeliverParentSystemMessageArgs,
-): Promise<boolean> {
+): Promise<ParentSystemMessageDelivery> {
   return withThreadSendGuard(args.parentThread.id, () =>
     deliverParentSystemMessageWithContextGuard(deps, args),
   );
@@ -538,7 +593,7 @@ export async function deliverParentSystemMessage(
 async function deliverParentSystemMessageWithContextGuard(
   deps: LoggedPendingInteractionWorkSessionDeps,
   args: DeliverParentSystemMessageArgs,
-): Promise<boolean> {
+): Promise<ParentSystemMessageDelivery> {
   const { parentThread } = args;
   const { environment } = requireThreadEnvironment(deps.db, parentThread.id);
   const execution = await buildExecutionOptions(
@@ -550,6 +605,8 @@ async function deliverParentSystemMessageWithContextGuard(
   );
   if (
     await dispatchTurnDuringReprovision({
+      authorGrantId: null,
+      authorRoleCeiling: null,
       authorUserId: null,
       deps,
       environment,
@@ -562,7 +619,7 @@ async function deliverParentSystemMessageWithContextGuard(
       thread: parentThread,
     })
   ) {
-    return true;
+    return "delivered";
   }
 
   const readyEnvironment = requireReadyThreadEnvironment(

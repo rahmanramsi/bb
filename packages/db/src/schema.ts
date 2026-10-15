@@ -15,7 +15,7 @@ import { startedOnBehalfOfInitiatorValues } from "@bb/domain/started-on-behalf-o
 import { threadCreateOriginValues } from "@bb/domain/thread-create-origin";
 import { threadOriginKindValues } from "@bb/domain/thread-origin-kind";
 import { threadVisibilityValues } from "@bb/domain/thread-visibility";
-import { userRoleValues } from "@bb/domain/user-role";
+import { roleCeilingValues, userRoleValues } from "@bb/domain/user-role";
 import type {
   EnvironmentProviderSelection,
   JsonValue,
@@ -522,6 +522,59 @@ export const pluginSettings = sqliteTable(
   (table) => [primaryKey({ columns: [table.pluginId, table.key] })],
 );
 
+export const pluginUserKv = sqliteTable(
+  "plugin_user_kv",
+  {
+    pluginId: text("plugin_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    value: text("value").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.pluginId, table.userId, table.key] }),
+    index("plugin_user_kv_user_idx").on(table.userId),
+  ],
+);
+
+export const pluginUserSettings = sqliteTable(
+  "plugin_user_settings",
+  {
+    pluginId: text("plugin_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    value: text("value").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.pluginId, table.userId, table.key] }),
+    index("plugin_user_settings_user_idx").on(table.userId),
+  ],
+);
+
+export const pluginCallerGrants = sqliteTable(
+  "plugin_caller_grants",
+  {
+    id: text("id").primaryKey(),
+    pluginId: text("plugin_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    maxRole: text("max_role", { enum: userRoleValues }).notNull(),
+    purpose: text("purpose").notNull(),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at"),
+  },
+  (table) => [
+    index("plugin_caller_grants_user_idx").on(table.userId),
+    index("plugin_caller_grants_plugin_idx").on(table.pluginId),
+  ],
+);
+
 export const pluginSchedules = sqliteTable(
   "plugin_schedules",
   {
@@ -941,6 +994,24 @@ export const events = sqliteTable(
   ],
 );
 
+export const turnRequestAuthors = sqliteTable(
+  "turn_request_authors",
+  {
+    threadId: text("thread_id")
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    requestId: text("request_id").notNull(),
+    authorUserId: text("author_user_id").references(() => authUsers.id, {
+      onDelete: "cascade",
+    }),
+    authorRoleCeiling: text("author_role_ceiling", {
+      enum: roleCeilingValues,
+    }),
+    authorGrantId: text("author_grant_id"),
+  },
+  (table) => [primaryKey({ columns: [table.threadId, table.requestId] })],
+);
+
 export const retainedEventOutputs = sqliteTable(
   "retained_event_outputs",
   {
@@ -1078,6 +1149,10 @@ export const queuedThreadMessages = sqliteTable(
     authorUserId: text("author_user_id").references(() => authUsers.id, {
       onDelete: "set null",
     }),
+    authorRoleCeiling: text("author_role_ceiling", {
+      enum: roleCeilingValues,
+    }),
+    authorGrantId: text("author_grant_id"),
     // How the dispatch this row was queued from was requested, and the plugin
     // that requested it. On the row rather than read from the request, so a
     // drained re-attempt decides on the same provenance its first attempt saw.

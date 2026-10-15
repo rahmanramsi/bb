@@ -492,6 +492,7 @@ async function applyEventEffects(
               : undefined;
           const manuallyStopped =
             interruption?.reason === "manual-stop" ||
+            interruption?.reason === "other-author" ||
             (event.status === "interrupted" &&
               wasTurnManuallyStopped(deps, {
                 threadId: turnCompleted.thread.id,

@@ -443,7 +443,11 @@ describe("dispatchCommand", () => {
     );
 
     const result = await dispatchCommand(
-      createTurnSubmitCommand({ mode: "auto", expectedTurnId: null }),
+      createTurnSubmitCommand({
+        mode: "auto",
+        expectedTurnId: null,
+        bindExpectedTurn: false,
+      }),
       {
         dataDir: "/tmp/bb-data",
         logger: silentLogger,
@@ -487,6 +491,7 @@ describe("dispatchCommand", () => {
       createTurnSubmitCommand({
         mode: "auto",
         expectedTurnId: "turn-old",
+        bindExpectedTurn: false,
       }),
       {
         dataDir: "/tmp/bb-data",
@@ -521,7 +526,11 @@ describe("dispatchCommand", () => {
     runtime.setIdle("thread-1");
 
     const result = await dispatchCommand(
-      createTurnSubmitCommand({ mode: "auto", expectedTurnId: null }),
+      createTurnSubmitCommand({
+        mode: "auto",
+        expectedTurnId: null,
+        bindExpectedTurn: false,
+      }),
       {
         dataDir: "/tmp/bb-data",
         logger: silentLogger,
@@ -556,7 +565,11 @@ describe("dispatchCommand", () => {
 
     await expect(
       dispatchCommand(
-        createTurnSubmitCommand({ mode: "auto", expectedTurnId: null }),
+        createTurnSubmitCommand({
+          mode: "auto",
+          expectedTurnId: null,
+          bindExpectedTurn: false,
+        }),
         {
           dataDir: "/tmp/bb-data",
           logger: silentLogger,

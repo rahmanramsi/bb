@@ -384,8 +384,11 @@ added/updated/unchanged counts.
                                  them (previous instance kept, or degraded
                                  because a service ignored its abort)
   bb plugin config <id> [set <key> <value> | unset <key>]
-                                 Show or change a plugin's declared settings
+                                 Show or change a plugin's declared settings.
+                                 Per-user fields show and change your own
+                                 value; team fields need an admin to change
   bb plugin logs <id> [-n N] [-f]  Print (or follow) a plugin's bb.log output
+                                 (admins only in multi-user mode)
   bb plugin run <id> [args...]   Run a plugin command explicitly (also works when core owns its name)
   bb plugin token <id> [--rotate]  Print the token for auth:"token" HTTP
                                  routes; --rotate generates a new token,
@@ -945,7 +948,9 @@ and `bb plugin types --check` in CI. Need a symbol the types don't explain?
 Clone the repo: https://github.com/get-bb/bb. The API in
 one line each — bb.log (plugin-scoped logger behind `bb plugin logs`);
 bb.settings.define (declarative settings incl. secrets, editable via
-`bb plugin config`); bb.storage.kv (JSON rows ≤256KB) and
+`bb plugin config`; `experimental_scope: "user"` fields hold one value per
+user, read with bb.settings.experimental_getForUser); bb.storage.kv (JSON rows
+≤256KB; bb.storage.experimental_forUser(userId).kv is private to one user) and
 bb.storage.database()+migrate (the plugin's own database); bb.sdk (the full
 bb SDK — handlers/services only, not the factory; spawned threads are
 attributed to the plugin; `visibility: "hidden"` creates directly addressable
@@ -969,7 +974,7 @@ experimental_defineHostEntry from
 `@get-bb/plugin-sdk/host` and can be unit-tested with
 experimental_createHostEntryHarness from
 `@get-bb/plugin-sdk/testing/host`);
-bb.realtime.publish (ephemeral signals to open app pages);
+bb.realtime.publish (ephemeral signals to open app pages; `{ experimental_userId }` reaches only that user);
 bb.background.service (long-lived, AbortSignal, restart w/ backoff) and
 bb.background.schedule (durable cron rows); bb.cli.register (a top-level
 `bb <name>` command agents run through bash, with a shared 1 MiB combined

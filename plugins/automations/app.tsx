@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   definePluginApp,
+  experimental_useCurrentUser,
   useBbNavigate,
   useRealtime,
   useRpc,
@@ -16,6 +17,7 @@ import type {
   AutomationResponse,
   AgentExecutionUpdate,
   AutomationRunListResponse,
+  AutomationRunMode,
   AutomationRunResponse,
   AutomationsOverviewResponse,
 } from "./src/rpc-types";
@@ -316,22 +318,37 @@ function useRuns(
 
 function useMutations() {
   const rpc = useRpc<typeof automationRpcContract>();
-  type MutationMethod =
-    | "automations_pause"
-    | "automations_resume"
-    | "automations_run"
-    | "automations_delete";
-  const call = useCallback(
-    (method: MutationMethod, route: DetailRoute) => rpc.call(method, route),
-    [rpc],
-  );
   return {
-    pause: (route: DetailRoute) => call("automations_pause", route),
-    resume: (route: DetailRoute) => call("automations_resume", route),
-    run: (route: DetailRoute) => call("automations_run", route),
-    delete: (route: DetailRoute) => call("automations_delete", route),
-    update: (route: DetailRoute, agent: AgentExecutionUpdate) =>
-      rpc.call("automations_update", { ...route, agent }),
+    pause: (route: DetailRoute, mode: AutomationRunMode) =>
+      rpc.call(
+        mode === "script" ? "automations_pause_script" : "automations_pause",
+        route,
+      ),
+    resume: (route: DetailRoute, mode: AutomationRunMode) =>
+      rpc.call(
+        mode === "script" ? "automations_resume_script" : "automations_resume",
+        route,
+      ),
+    run: (route: DetailRoute, mode: AutomationRunMode) =>
+      rpc.call(
+        mode === "script" ? "automations_run_script" : "automations_run",
+        route,
+      ),
+    delete: (route: DetailRoute) => rpc.call("automations_delete", route),
+    update: (
+      route: DetailRoute,
+      agent: AgentExecutionUpdate,
+      adoptRevision: number | null,
+    ) =>
+      rpc.call("automations_update", {
+        ...route,
+        agent,
+        ...(adoptRevision === null
+          ? {}
+          : { adopt: { expectedRevision: adoptRevision } }),
+      }),
+    adopt: (route: DetailRoute, expectedRevision: number) =>
+      rpc.call("automations_adopt", { ...route, expectedRevision }),
   };
 }
 
@@ -403,10 +420,10 @@ function OverviewView({
   const [deleting, setDeleting] = useState(false);
 
   const changeEnabled = useCallback(
-    async (enabled: boolean, route: DetailRoute) => {
+    async (enabled: boolean, route: DetailRoute, mode: AutomationRunMode) => {
       const method = enabled ? "resume" : "pause";
       try {
-        await mutations[method](route);
+        await mutations[method](route, mode);
       } catch (rpcError: unknown) {
         toast.error(`Failed to ${method} automation: ${errorText(rpcError)}`);
       }
@@ -415,9 +432,9 @@ function OverviewView({
   );
 
   const runNow = useCallback(
-    async (route: DetailRoute) => {
+    async (route: DetailRoute, mode: AutomationRunMode) => {
       try {
-        await mutations.run(route);
+        await mutations.run(route, mode);
         toast.success("Run started");
       } catch (rpcError: unknown) {
         toast.error(`Failed to run automation: ${errorText(rpcError)}`);
@@ -499,6 +516,7 @@ function DetailView({
   onBack: () => void;
 }) {
   const navigate = useBbNavigate();
+  const viewer = experimental_useCurrentUser();
   const { automation, error, refetch } = useAutomation(route);
   const [editingRequested, setEditingRequested] = useState(initialEditing);
   const overviewState = useOverview();
@@ -528,9 +546,9 @@ function DetailView({
   );
 
   const runAction = useCallback(
-    (method: "pause" | "resume" | "run") => {
+    (method: "pause" | "resume" | "run", request: () => Promise<unknown>) => {
       setActionPending(true);
-      mutations[method](route)
+      request()
         .then(
           () => {
             if (method === "run") toast.success("Run started");
@@ -542,7 +560,7 @@ function DetailView({
         )
         .finally(() => setActionPending(false));
     },
-    [mutations, route],
+    [],
   );
 
   const openEdit = useCallback(() => {
@@ -555,10 +573,10 @@ function DetailView({
   }, [automation, editViaThread]);
 
   const updateAgent = useCallback(
-    async (agent: AgentExecutionUpdate) => {
+    async (agent: AgentExecutionUpdate, adoptRevision: number | null) => {
       setActionPending(true);
       try {
-        await mutations.update(route, agent);
+        await mutations.update(route, agent, adoptRevision);
         toast.success("Automation updated");
         setEditingRequested(false);
         refetch();
@@ -567,6 +585,22 @@ function DetailView({
         throw rpcError;
       } finally {
         setActionPending(false);
+      }
+    },
+    [mutations, refetch, route],
+  );
+
+  const adopt = useCallback(
+    async (expectedRevision: number) => {
+      setActionPending(true);
+      try {
+        await mutations.adopt(route, expectedRevision);
+        toast.success("Automation now runs as you");
+      } catch (rpcError: unknown) {
+        toast.error(`Failed to adopt automation: ${errorText(rpcError)}`);
+      } finally {
+        setActionPending(false);
+        refetch();
       }
     },
     [mutations, refetch, route],
@@ -672,11 +706,22 @@ function DetailView({
       runsState={runsState}
       actionPending={actionPending}
       editing={requiresPrompt || editingRequested}
-      onToggle={(checked) => runAction(checked ? "resume" : "pause")}
+      onToggle={(checked) => {
+        const method = checked ? "resume" : "pause";
+        runAction(method, () =>
+          mutations[method](route, readableAutomation.execution.mode),
+        );
+      }}
       onEdit={openEdit}
       onCancelEdit={requiresPrompt ? onBack : () => setEditingRequested(false)}
+      viewerUserId={viewer?.userId ?? null}
       onUpdateAgent={updateAgent}
-      onRunNow={() => runAction("run")}
+      onAdopt={adopt}
+      onRunNow={() =>
+        runAction("run", () =>
+          mutations.run(route, readableAutomation.execution.mode),
+        )
+      }
       onDelete={() => setDeleteOpen(true)}
       onOpenThread={openThread}
       footer={deleteDialog}

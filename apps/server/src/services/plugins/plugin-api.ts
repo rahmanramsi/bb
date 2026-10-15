@@ -16,12 +16,31 @@ import { CronExpressionParser } from "cron-parser";
 import {
   deletePluginKvValue,
   getPluginKvValue,
+  getPluginUserKvValue,
+  setPluginUserKvValue,
+  deletePluginUserKvValue,
+  listPluginUserKvKeys,
+  pluginUserExists,
   getHost,
   listPluginKvKeys,
   setPluginKvValue,
+  createPluginCallerGrant,
+  getPluginCallerGrant,
   type DbConnection,
 } from "@bb/db";
-import type { ThreadEventItemPresentation } from "@bb/domain";
+import {
+  LOCAL_OWNER_USER_ID,
+  type ThreadEventItemPresentation,
+} from "@bb/domain";
+import {
+  currentPluginInvocation,
+  pluginInvocationForCaller,
+  type PluginInvocation,
+} from "./plugin-invocation.js";
+import type {
+  PluginCallerCredential,
+  PluginCallerCredentialArgs,
+} from "../user-auth.js";
 import type {
   BbPluginApi,
   PluginAgentConfiguration,
@@ -77,6 +96,7 @@ import type {
   PluginRpcContract,
   ExperimentalPluginRpcHandlerContext,
 } from "@get-bb/plugin-sdk";
+import { experimental_PluginRpcForbiddenError } from "@get-bb/plugin-sdk";
 import {
   KV_VALUE_MAX_BYTES,
   normalizeAgentToolRegistration,
@@ -85,6 +105,8 @@ import {
   normalizeInteractionRequest,
   normalizeMentionProviderRegistration,
   normalizeRealtimePayload,
+  normalizeRealtimeUserId,
+  partitionSettingsUpdate,
   normalizeRpcRegistration,
   publishRpcMethod,
   normalizeWebSocketRouteRegistration,
@@ -106,6 +128,9 @@ import {
   validateSettingsUpdate,
   validatePluginAiServiceDeclaration,
   validatePluginProviderDeclaration,
+  pluginAsCallerRefusal,
+  parsePluginCallerGrantRequest,
+  PLUGIN_SETTINGS_WRITE_FORBIDDEN_MESSAGE,
 } from "@get-bb/plugin-sdk/internal/host-policy";
 import type {
   NormalizedPluginAiService,
@@ -179,12 +204,14 @@ export interface PluginHttpRouteRecord {
   method: string;
   path: string;
   auth: PluginHttpAuthMode;
+  requiredRole: "admin" | null;
   handler: PluginHttpHandler;
 }
 
 export interface PluginWebSocketRouteRecord {
   path: string;
   auth: PluginHttpAuthMode;
+  requiredRole: "admin" | null;
   handler: ExperimentalPluginWebSocketHandler;
   active: boolean;
   sockets: Set<ExperimentalPluginWebSocket>;
@@ -206,6 +233,7 @@ export interface PluginAgentToolRecord {
   description: string;
   presentation: PluginRowPresentation | null;
   instructions: string | null;
+  requiredRole: "admin" | null;
   inputSchema: unknown;
   parse(
     input: unknown,
@@ -344,13 +372,39 @@ function withPluginThreadAttribution<
   return { ...args, ...attribution };
 }
 
+type PluginSdkDelegation = Pick<
+  PluginBbSdk,
+  | "experimental_asCaller"
+  | "experimental_asGrant"
+  | "experimental_createCallerGrant"
+  | "experimental_revokeCallerGrant"
+>;
+
+function boundSdkDelegation(kind: string): PluginSdkDelegation {
+  const unavailable = (method: string) => () => {
+    throw new Error(`bb.sdk.${method} is not available on a ${kind}-bound SDK`);
+  };
+  return {
+    experimental_asCaller: unavailable("experimental_asCaller"),
+    experimental_asGrant: unavailable("experimental_asGrant"),
+    experimental_createCallerGrant: unavailable(
+      "experimental_createCallerGrant",
+    ),
+    experimental_revokeCallerGrant: unavailable(
+      "experimental_revokeCallerGrant",
+    ),
+  };
+}
+
 function wrapSdkForPlugin(
   sdk: BbSdk,
   pluginId: string,
   rpcCallerSdk: BbSdk,
+  delegation: PluginSdkDelegation,
 ): PluginBbSdk {
   return {
     ...sdk,
+    ...delegation,
     plugins: {
       ...sdk.plugins,
       callRpc(args) {
@@ -494,7 +548,15 @@ export function createPluginApi(options: {
    * Revoked when the handle is invalidated.
    */
   rpcCaller: PluginRpcCallerCredential;
-  publishSignal: (channel: string, payload: unknown) => void;
+  issuePluginCallerCredential:
+    | ((args: PluginCallerCredentialArgs) => PluginCallerCredential)
+    | null;
+  revokePluginCallerGrant: (args: { id: string; pluginId: string }) => boolean;
+  publishSignal: (
+    channel: string,
+    payload: unknown,
+    userId: string | null,
+  ) => void;
   settingsChanged: () => void;
   reportNeedsConfiguration: (message: string) => void;
   isAgentToolNameTaken: (name: string) => string | undefined;
@@ -560,6 +622,8 @@ export function createPluginApi(options: {
     getLoopbackBaseUrl,
     getServiceToken,
     rpcCaller,
+    issuePluginCallerCredential,
+    revokePluginCallerGrant,
     publishSignal,
     settingsChanged,
     reportNeedsConfiguration,
@@ -639,6 +703,140 @@ export function createPluginApi(options: {
     if (invalidated) throw new PluginContextStaleError(pluginId);
   }
 
+  const callerSdks = new WeakMap<PluginInvocation, PluginBbSdk>();
+  function asCaller(
+    context: unknown,
+    pluginSdk: PluginBbSdk,
+    loopbackBaseUrl: string,
+  ): PluginBbSdk {
+    assertLive();
+    const resolution = pluginAsCallerRefusal(
+      context,
+      (caller) => pluginInvocationForCaller(pluginId, caller) !== null,
+    );
+    if (!resolution.ok) throw new Error(resolution.message);
+    const invocation = pluginInvocationForCaller(pluginId, resolution.caller);
+    if (invocation === null) {
+      throw new Error("bb.sdk.experimental_asCaller: the invocation ended");
+    }
+    if (issuePluginCallerCredential === null) {
+      if (resolution.caller.userId === LOCAL_OWNER_USER_ID) return pluginSdk;
+      throw new Error(
+        "bb.sdk.experimental_asCaller is unavailable on this server",
+      );
+    }
+    const cached = callerSdks.get(invocation);
+    if (cached !== undefined) return cached;
+    const credential = issuePluginCallerCredential({
+      derivedGrantId: invocation.grantId,
+      grantId: null,
+      maxRole: invocation.authority,
+      pluginId,
+      roleCeiling: resolution.caller.roleCeiling,
+      userId: resolution.caller.userId,
+    });
+    invocation.onEnd(() => credential.revoke());
+    const created = delegatedSdk(credential, loopbackBaseUrl, "caller");
+    callerSdks.set(invocation, created);
+    return created;
+  }
+
+  function delegatedSdk(
+    credential: PluginCallerCredential,
+    loopbackBaseUrl: string,
+    kind: string,
+  ): PluginBbSdk {
+    const delegated = createPluginLoopbackSdk({
+      authToken: credential.token,
+      baseUrl: loopbackBaseUrl,
+      callerToken: rpcCaller.token,
+    });
+    return wrapSdkForPlugin(
+      delegated,
+      pluginId,
+      delegated,
+      boundSdkDelegation(kind),
+    );
+  }
+
+  function createCallerGrant(
+    context: unknown,
+    request: unknown,
+  ): { grantId: string } {
+    assertLive();
+    const resolution = pluginAsCallerRefusal(
+      context,
+      (caller) => pluginInvocationForCaller(pluginId, caller) !== null,
+      "bb.sdk.experimental_createCallerGrant",
+    );
+    if (!resolution.ok) throw new Error(resolution.message);
+    const invocation = pluginInvocationForCaller(pluginId, resolution.caller);
+    if (invocation === null) {
+      throw new Error(
+        "bb.sdk.experimental_createCallerGrant: the invocation ended",
+      );
+    }
+    if (invocation.grantId !== null) {
+      throw new Error(
+        "bb.sdk.experimental_createCallerGrant: a caller acting through a grant cannot grant",
+      );
+    }
+    const now = Date.now();
+    const parsed = parsePluginCallerGrantRequest(request, now);
+    if (!parsed.ok) throw new Error(parsed.message);
+    const grant = createPluginCallerGrant(db, {
+      pluginId,
+      userId: resolution.caller.userId,
+      maxRole: invocation.authority,
+      purpose: parsed.purpose,
+      createdAt: now,
+      expiresAt: parsed.expiresAt,
+    });
+    return { grantId: grant.id };
+  }
+
+  function asGrant(
+    grantId: string,
+    pluginSdk: PluginBbSdk,
+    loopbackBaseUrl: string,
+  ): PluginBbSdk {
+    assertLive();
+    const grant = getPluginCallerGrant(db, grantId);
+    if (grant === null || grant.pluginId !== pluginId) {
+      throw new Error(
+        `bb.sdk.experimental_asGrant: grant "${grantId}" does not exist or was revoked`,
+      );
+    }
+    if (grant.expiresAt !== null && grant.expiresAt <= Date.now()) {
+      throw new Error(
+        `bb.sdk.experimental_asGrant: grant "${grantId}" expired`,
+      );
+    }
+    if (issuePluginCallerCredential === null) {
+      if (grant.userId === LOCAL_OWNER_USER_ID) return pluginSdk;
+      throw new Error(
+        "bb.sdk.experimental_asGrant is unavailable on this server",
+      );
+    }
+    return delegatedSdk(
+      issuePluginCallerCredential({
+        derivedGrantId: null,
+        grantId: grant.id,
+        maxRole: grant.maxRole,
+        pluginId,
+        roleCeiling: grant.maxRole === "member" ? "member" : null,
+        userId: grant.userId,
+      }),
+      loopbackBaseUrl,
+      "grant",
+    );
+  }
+
+  function revokeCallerGrant(grantId: string): void {
+    assertLive();
+    revokePluginCallerGrant({ id: grantId, pluginId });
+  }
+
   const prefix = `[plugin:${pluginId}]`;
   function emitLog(
     level: "debug" | "info" | "warn" | "error",
@@ -686,37 +884,60 @@ export function createPluginApi(options: {
     return pending;
   }
 
-  const kv: PluginKvStorage = {
-    async get(key) {
-      assertLive();
-      const raw = getPluginKvValue(db, pluginId, key);
-      if (raw === undefined) return undefined;
-      return JSON.parse(raw);
-    },
-    async set(key, value) {
-      assertLive();
-      const json = JSON.stringify(value);
-      if (json === undefined) {
-        throw new Error(`kv value for "${key}" is not JSON-serializable`);
-      }
-      const bytes = Buffer.byteLength(json, "utf8");
-      if (bytes > KV_VALUE_MAX_BYTES) {
-        throw new Error(
-          `kv value for "${key}" is ${bytes} bytes; the limit is ${KV_VALUE_MAX_BYTES} (256KB). ` +
-            `Store large data in storage.database() instead.`,
-        );
-      }
-      setPluginKvValue(db, pluginId, key, json);
-    },
-    async delete(key) {
-      assertLive();
-      deletePluginKvValue(db, pluginId, key);
-    },
-    async list(kvPrefix) {
-      assertLive();
-      return listPluginKvKeys(db, pluginId, kvPrefix);
-    },
-  };
+  function createKv(rows: {
+    get(key: string): string | undefined;
+    set(key: string, json: string): void;
+    delete(key: string): void;
+    list(prefix: string | undefined): string[];
+  }): PluginKvStorage {
+    return {
+      async get(key) {
+        assertLive();
+        const raw = rows.get(key);
+        if (raw === undefined) return undefined;
+        return JSON.parse(raw);
+      },
+      async set(key, value) {
+        assertLive();
+        const json = JSON.stringify(value);
+        if (json === undefined) {
+          throw new Error(`kv value for "${key}" is not JSON-serializable`);
+        }
+        const bytes = Buffer.byteLength(json, "utf8");
+        if (bytes > KV_VALUE_MAX_BYTES) {
+          throw new Error(
+            `kv value for "${key}" is ${bytes} bytes; the limit is ${KV_VALUE_MAX_BYTES} (256KB). ` +
+              `Store large data in storage.database() instead.`,
+          );
+        }
+        rows.set(key, json);
+      },
+      async delete(key) {
+        assertLive();
+        rows.delete(key);
+      },
+      async list(kvPrefix) {
+        assertLive();
+        return rows.list(kvPrefix);
+      },
+    };
+  }
+
+  const kv = createKv({
+    get: (key) => getPluginKvValue(db, pluginId, key),
+    set: (key, json) => setPluginKvValue(db, pluginId, key, json),
+    delete: (key) => deletePluginKvValue(db, pluginId, key),
+    list: (kvPrefix) => listPluginKvKeys(db, pluginId, kvPrefix),
+  });
+
+  function assertKnownUser(userId: unknown): asserts userId is string {
+    if (typeof userId !== "string" || userId.length === 0) {
+      throw new Error("userId must be a non-empty string");
+    }
+    if (!pluginUserExists(db, userId)) {
+      throw new Error(`unknown user "${userId}"`);
+    }
+  }
 
   let databaseHandle: Database.Database | undefined;
   const storage: PluginStorage = {
@@ -741,6 +962,21 @@ export function createPluginApi(options: {
       assertLive();
       runPluginStorageMigrations(database, statements);
     },
+    experimental_forUser(userId) {
+      assertLive();
+      assertKnownUser(userId);
+      return {
+        kv: createKv({
+          get: (key) => getPluginUserKvValue(db, { pluginId, userId, key }),
+          set: (key, json) =>
+            setPluginUserKvValue(db, { pluginId, userId, key, value: json }),
+          delete: (key) =>
+            deletePluginUserKvValue(db, { pluginId, userId, key }),
+          list: (prefix) =>
+            listPluginUserKvKeys(db, { pluginId, userId, prefix }),
+        }),
+      };
+    },
   };
 
   const settings: PluginSettings = {
@@ -763,11 +999,24 @@ export function createPluginApi(options: {
         },
         async experimental_set(values) {
           assertLive();
+          if (currentPluginInvocation()?.authority === "member") {
+            throw new experimental_PluginRpcForbiddenError(
+              PLUGIN_SETTINGS_WRITE_FORBIDDEN_MESSAGE,
+            );
+          }
           const rawValues: Record<string, unknown> = {};
           for (const [key, value] of Object.entries(values)) {
             rawValues[key] = value;
           }
-          const errors = validateSettingsUpdate(validated, rawValues);
+          const errors = [
+            ...Object.keys(
+              partitionSettingsUpdate(validated, rawValues).user,
+            ).map(
+              (key) =>
+                `setting "${key}" is a per-user setting; only the user changes it`,
+            ),
+            ...validateSettingsUpdate(validated, rawValues),
+          ];
           if (errors.length > 0) {
             throw new Error(errors.join("; "));
           }
@@ -805,6 +1054,17 @@ export function createPluginApi(options: {
           settingsRecord.listeners.push(listener as PluginSettingsListener);
         },
       };
+    },
+    async experimental_getForUser(userId) {
+      assertLive();
+      assertKnownUser(userId);
+      return readPluginSettingsValues({
+        db,
+        dataDir,
+        pluginId,
+        descriptors: settingsRecord.descriptors,
+        userId,
+      });
     },
   };
 
@@ -852,9 +1112,13 @@ export function createPluginApi(options: {
   };
 
   const realtime: PluginRealtime = {
-    publish(channel, payload) {
+    publish(channel, payload, publishOptions) {
       assertLive();
-      publishSignal(channel, normalizeRealtimePayload(channel, payload));
+      publishSignal(
+        channel,
+        normalizeRealtimePayload(channel, payload),
+        normalizeRealtimeUserId(publishOptions),
+      );
     },
   };
 
@@ -945,6 +1209,7 @@ export function createPluginApi(options: {
       description: string;
       instructions?: string;
       presentation?: PluginRowPresentation;
+      experimental_requiredRole?: "admin";
       parameters: unknown;
       execute(
         params: never,
@@ -1358,16 +1623,28 @@ export function createPluginApi(options: {
             "use it inside handlers, services, or timers, not at factory load time",
         );
       }
-      wrappedSdk ??= wrapSdkForPlugin(
+      const pluginSdk: PluginBbSdk = (wrappedSdk ??= wrapSdkForPlugin(
         sdk,
         pluginId,
         createPluginLoopbackSdk({
+          authToken: serviceToken,
           baseUrl: loopbackBaseUrl,
           callerToken: rpcCaller.token,
-          serviceToken,
         }),
-      );
-      return wrappedSdk;
+        {
+          experimental_asCaller: (context) =>
+            asCaller(context, pluginSdk, loopbackBaseUrl),
+          experimental_asGrant: (grantId) =>
+            asGrant(grantId, pluginSdk, loopbackBaseUrl),
+          async experimental_createCallerGrant(context, request) {
+            return createCallerGrant(context, request);
+          },
+          async experimental_revokeCallerGrant(grantId) {
+            revokeCallerGrant(grantId);
+          },
+        },
+      ));
+      return pluginSdk;
     },
     onDispose(hook) {
       assertLive();

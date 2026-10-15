@@ -70,6 +70,7 @@ function createScheduledAutomation(
   id = "auto_test",
 ) {
   return createAutomation(db, {
+    callerGrant: null,
     id,
     projectId: "proj_test",
     name: "Test",
@@ -97,6 +98,7 @@ function createScheduledAutomation(
 
 function createOnceAutomation(db: Db, nextRunAt: number, id = "auto_once") {
   return createAutomation(db, {
+    callerGrant: null,
     id,
     projectId: "proj_test",
     name: "Once",
@@ -169,9 +171,20 @@ function legacyAutomationRow(
   };
 }
 
+const NO_CALLER_GRANTS = {
+  experimental_asGrant(): never {
+    throw new Error("no caller grants in this test");
+  },
+  async experimental_createCallerGrant(): Promise<never> {
+    throw new Error("no caller grants in this test");
+  },
+  async experimental_revokeCallerGrant(): Promise<void> {},
+};
+
 function createAutomationServiceBb() {
   return {
     sdk: {
+      ...NO_CALLER_GRANTS,
       system: {
         config: async (): Promise<{ primaryHostId: string | null }> => ({
           primaryHostId: "host_server",
@@ -354,6 +367,9 @@ describe("startup reconciliation", () => {
     return {
       bb: {
         sdk: {
+          ...NO_CALLER_GRANTS,
+          ...NO_CALLER_GRANTS,
+          ...NO_CALLER_GRANTS,
           threads: {
             get: threads.get,
             send: async () => {
@@ -820,6 +836,9 @@ describe("automation data access", () => {
       const automation = createScheduledAutomation(db, nextRunAt);
       const bb = {
         sdk: {
+          ...NO_CALLER_GRANTS,
+          ...NO_CALLER_GRANTS,
+          ...NO_CALLER_GRANTS,
           hosts: {
             list: vi.fn(async () => {
               return [
@@ -1021,59 +1040,71 @@ describe("automation service", () => {
       serverUrl: "http://127.0.0.1:38886",
     });
     try {
-      const created = await service.create({
-        projectId: "proj_test",
-        name: "New project script",
-        enabled: true,
-        trigger: oneShotTrigger(),
-        execution: {
-          mode: "script",
-          script: "pwd\n",
-          timeoutMs: 120_000,
+      const created = await service.create(
+        {
+          projectId: "proj_test",
+          name: "New project script",
+          enabled: true,
+          trigger: oneShotTrigger(),
+          execution: {
+            mode: "script",
+            script: "pwd\n",
+            timeoutMs: 120_000,
+          },
+          origin: "human",
         },
-        origin: "human",
-      });
+        {},
+      );
       expect(created.execution).toMatchObject({
         workingDirectory: { type: "project" },
       });
 
-      const personal = await service.create({
-        projectId: "proj_personal",
-        name: "Personal script",
-        enabled: true,
-        trigger: oneShotTrigger(),
-        execution: {
-          mode: "script",
-          script: "pwd\n",
-          timeoutMs: 120_000,
+      const personal = await service.create(
+        {
+          projectId: "proj_personal",
+          name: "Personal script",
+          enabled: true,
+          trigger: oneShotTrigger(),
+          execution: {
+            mode: "script",
+            script: "pwd\n",
+            timeoutMs: 120_000,
+          },
+          origin: "human",
         },
-        origin: "human",
-      });
+        {},
+      );
       expect(personal.execution).toMatchObject({
         workingDirectory: { type: "automation-storage" },
       });
 
-      const remoteOnly = await service.create({
-        projectId: "proj_remote",
-        name: "Remote-only project script",
-        enabled: true,
-        trigger: oneShotTrigger(),
-        execution: {
-          mode: "script",
-          script: "pwd\n",
-          timeoutMs: 120_000,
+      const remoteOnly = await service.create(
+        {
+          projectId: "proj_remote",
+          name: "Remote-only project script",
+          enabled: true,
+          trigger: oneShotTrigger(),
+          execution: {
+            mode: "script",
+            script: "pwd\n",
+            timeoutMs: 120_000,
+          },
+          origin: "human",
         },
-        origin: "human",
-      });
+        {},
+      );
       expect(remoteOnly.execution).toMatchObject({
         workingDirectory: { type: "automation-storage" },
       });
       await expect(
-        service.update({
-          projectId: "proj_remote",
-          automationId: remoteOnly.id,
-          script: { workingDirectory: { type: "project" } },
-        }),
+        service.update(
+          {
+            projectId: "proj_remote",
+            automationId: remoteOnly.id,
+            script: { workingDirectory: { type: "project" } },
+          },
+          {},
+        ),
       ).resolves.toMatchObject({
         execution: { resolvedWorkingDirectory: null },
       });
@@ -1109,15 +1140,18 @@ describe("automation service", () => {
         Date.now(),
         Date.now(),
       );
-      const replaced = await service.update({
-        projectId: "proj_test",
-        automationId: legacyId,
-        execution: {
-          mode: "script",
-          script: "pwd -P\n",
-          timeoutMs: 120_000,
+      const replaced = await service.update(
+        {
+          projectId: "proj_test",
+          automationId: legacyId,
+          execution: {
+            mode: "script",
+            script: "pwd -P\n",
+            timeoutMs: 120_000,
+          },
         },
-      });
+        {},
+      );
       expect(replaced.execution).toMatchObject({
         workingDirectory: { type: "automation-storage" },
       });
@@ -1140,18 +1174,21 @@ describe("automation service", () => {
     });
     serverHostId = "host_server";
     try {
-      const created = await service.create({
-        projectId: "proj_test",
-        name: "Post-startup script",
-        enabled: true,
-        trigger: oneShotTrigger(),
-        execution: {
-          mode: "script",
-          script: "pwd\n",
-          timeoutMs: 120_000,
+      const created = await service.create(
+        {
+          projectId: "proj_test",
+          name: "Post-startup script",
+          enabled: true,
+          trigger: oneShotTrigger(),
+          execution: {
+            mode: "script",
+            script: "pwd\n",
+            timeoutMs: 120_000,
+          },
+          origin: "human",
         },
-        origin: "human",
-      });
+        {},
+      );
       expect(created.execution).toMatchObject({
         workingDirectory: { type: "project" },
       });
@@ -1170,25 +1207,31 @@ describe("automation service", () => {
       serverUrl: "http://127.0.0.1:38886",
     });
     try {
-      const created = await service.create({
-        projectId: "proj_test",
-        name: "Selected directory",
-        enabled: true,
-        trigger: oneShotTrigger(),
-        execution: {
-          mode: "script",
-          script: "pwd\n",
-          timeoutMs: 120_000,
+      const created = await service.create(
+        {
+          projectId: "proj_test",
+          name: "Selected directory",
+          enabled: true,
+          trigger: oneShotTrigger(),
+          execution: {
+            mode: "script",
+            script: "pwd\n",
+            timeoutMs: 120_000,
+          },
+          origin: "human",
         },
-        origin: "human",
-      });
-      const updated = await service.update({
-        projectId: "proj_test",
-        automationId: created.id,
-        script: {
-          workingDirectory: { type: "path", path: pluginDataDir },
+        {},
+      );
+      const updated = await service.update(
+        {
+          projectId: "proj_test",
+          automationId: created.id,
+          script: {
+            workingDirectory: { type: "path", path: pluginDataDir },
+          },
         },
-      });
+        {},
+      );
       expect(updated.execution).toMatchObject({
         mode: "script",
         workingDirectory: { type: "path", path: pluginDataDir },
@@ -1202,11 +1245,14 @@ describe("automation service", () => {
       ).resolves.toMatchObject({
         execution: { resolvedWorkingDirectory: pluginDataDir },
       });
-      await service.update({
-        projectId: "proj_test",
-        automationId: created.id,
-        script: { workingDirectory: { type: "automation-storage" } },
-      });
+      await service.update(
+        {
+          projectId: "proj_test",
+          automationId: created.id,
+          script: { workingDirectory: { type: "automation-storage" } },
+        },
+        {},
+      );
       await expect(
         service.get({
           projectId: "proj_test",
@@ -1218,43 +1264,52 @@ describe("automation service", () => {
         },
       });
       await expect(
-        service.update({
-          projectId: "proj_test",
-          automationId: created.id,
-          script: {
-            workingDirectory: { type: "path", path: "relative/path" },
+        service.update(
+          {
+            projectId: "proj_test",
+            automationId: created.id,
+            script: {
+              workingDirectory: { type: "path", path: "relative/path" },
+            },
           },
-        }),
+          {},
+        ),
       ).rejects.toThrow("absolute path on the bb server host");
       await expect(
-        service.update({
-          projectId: "proj_test",
-          automationId: created.id,
-          script: {
-            workingDirectory: {
-              type: "path",
-              path: "/tmp/\u001b[31mred\u0007",
+        service.update(
+          {
+            projectId: "proj_test",
+            automationId: created.id,
+            script: {
+              workingDirectory: {
+                type: "path",
+                path: "/tmp/\u001b[31mred\u0007",
+              },
             },
           },
-        }),
+          {},
+        ),
       ).rejects.toThrow("must not contain control characters");
       await expect(
-        service.create({
-          projectId: "proj_test",
-          name: "Control characters",
-          enabled: true,
-          trigger: oneShotTrigger(),
-          execution: {
-            mode: "script",
-            script: "pwd\n",
-            timeoutMs: 120_000,
-            workingDirectory: {
-              type: "path",
-              path: "/tmp/\u001b[31mred\u0007",
+        service.create(
+          {
+            projectId: "proj_test",
+            name: "Control characters",
+            enabled: true,
+            trigger: oneShotTrigger(),
+            execution: {
+              mode: "script",
+              script: "pwd\n",
+              timeoutMs: 120_000,
+              workingDirectory: {
+                type: "path",
+                path: "/tmp/\u001b[31mred\u0007",
+              },
             },
+            origin: "human",
           },
-          origin: "human",
-        }),
+          {},
+        ),
       ).rejects.toThrow("must not contain control characters");
     } finally {
       await rm(pluginDataDir, { recursive: true, force: true });
@@ -1265,6 +1320,8 @@ describe("automation service", () => {
     const db = createTestDb();
     const bb = {
       sdk: {
+        ...NO_CALLER_GRANTS,
+        ...NO_CALLER_GRANTS,
         system: { config: async () => ({ primaryHostId: null }) },
         projects: {
           get: async () => {
@@ -1306,22 +1363,25 @@ describe("automation service", () => {
     });
 
     await expect(
-      service.create({
-        projectId: "proj_missing",
-        name: "Missing project",
-        enabled: true,
-        trigger: { triggerType: "once", runAt: Date.now() + 60_000 },
-        execution: {
-          mode: "agent",
-          prompt: "hello",
-          providerId: "codex",
-          model: "gpt-5",
-          reasoningLevel: "medium",
-          permissionMode: "accept-edits",
-          environment: { type: "project-default" },
+      service.create(
+        {
+          projectId: "proj_missing",
+          name: "Missing project",
+          enabled: true,
+          trigger: { triggerType: "once", runAt: Date.now() + 60_000 },
+          execution: {
+            mode: "agent",
+            prompt: "hello",
+            providerId: "codex",
+            model: "gpt-5",
+            reasoningLevel: "medium",
+            permissionMode: "accept-edits",
+            environment: { type: "project-default" },
+          },
+          origin: "human",
         },
-        origin: "human",
-      }),
+        {},
+      ),
     ).rejects.toThrow("Project proj_missing is not available");
     expect(listAutomationsForProject(db, "proj_missing")).toHaveLength(0);
   });
@@ -1330,6 +1390,7 @@ describe("automation service", () => {
     const db = createTestDb();
     const pluginDataDir = await mkdtemp(join(tmpdir(), "bb-auto-service-"));
     const automation = createAutomation(db, {
+      callerGrant: null,
       id: "auto_script_to_agent",
       projectId: "proj_test",
       name: "Script to agent",
@@ -1357,19 +1418,22 @@ describe("automation service", () => {
     });
 
     try {
-      await service.update({
-        projectId: "proj_test",
-        automationId: automation.id,
-        execution: {
-          mode: "agent",
-          prompt: "do it",
-          providerId: "codex",
-          model: "gpt-5",
-          reasoningLevel: "medium",
-          permissionMode: "accept-edits",
-          environment: { type: "project-default" },
+      await service.update(
+        {
+          projectId: "proj_test",
+          automationId: automation.id,
+          execution: {
+            mode: "agent",
+            prompt: "do it",
+            providerId: "codex",
+            model: "gpt-5",
+            reasoningLevel: "medium",
+            permissionMode: "accept-edits",
+            environment: { type: "project-default" },
+          },
         },
-      });
+        {},
+      );
 
       await expect(access(scriptDir)).rejects.toThrow();
     } finally {
@@ -1381,6 +1445,7 @@ describe("automation service", () => {
     const db = createTestDb();
     const pluginDataDir = await mkdtemp(join(tmpdir(), "bb-auto-service-"));
     const automation = createAutomation(db, {
+      callerGrant: null,
       id: "auto_script_rename",
       projectId: "proj_test",
       name: "Script rename",
@@ -1409,16 +1474,19 @@ describe("automation service", () => {
     });
 
     try {
-      await service.update({
-        projectId: "proj_test",
-        automationId: automation.id,
-        execution: {
-          mode: "script",
-          script: "echo new\n",
-          scriptFile: "new.sh",
-          timeoutMs: 120_000,
+      await service.update(
+        {
+          projectId: "proj_test",
+          automationId: automation.id,
+          execution: {
+            mode: "script",
+            script: "echo new\n",
+            scriptFile: "new.sh",
+            timeoutMs: 120_000,
+          },
         },
-      });
+        {},
+      );
 
       await expect(access(join(scriptDir, "old.sh"))).rejects.toThrow();
       await expect(readFile(join(scriptDir, "new.sh"), "utf8")).resolves.toBe(
@@ -1436,6 +1504,7 @@ describe("automation service", () => {
     const db = createTestDb();
     const pluginDataDir = await mkdtemp(join(tmpdir(), "bb-auto-service-"));
     const automation = createAutomation(db, {
+      callerGrant: null,
       id: "auto_script_rollback",
       projectId: "proj_test",
       name: "Script rollback",
@@ -1469,16 +1538,19 @@ describe("automation service", () => {
 
     try {
       await expect(
-        service.update({
-          projectId: "proj_test",
-          automationId: automation.id,
-          execution: {
-            mode: "script",
-            script: "echo new\n",
-            scriptFile: "new.sh",
-            timeoutMs: 120_000,
+        service.update(
+          {
+            projectId: "proj_test",
+            automationId: automation.id,
+            execution: {
+              mode: "script",
+              script: "echo new\n",
+              scriptFile: "new.sh",
+              timeoutMs: 120_000,
+            },
           },
-        }),
+          {},
+        ),
       ).rejects.toThrow("update rejected");
       await expect(readFile(join(scriptDir, "old.sh"), "utf8")).resolves.toBe(
         "echo old\n",
@@ -1493,6 +1565,7 @@ describe("automation service", () => {
     const db = createTestDb();
     const pluginDataDir = await mkdtemp(join(tmpdir(), "bb-auto-service-"));
     const automation = createAutomation(db, {
+      callerGrant: null,
       id: "auto_script_same_name_rollback",
       projectId: "proj_test",
       name: "Script same-name rollback",
@@ -1526,16 +1599,19 @@ describe("automation service", () => {
 
     try {
       await expect(
-        service.update({
-          projectId: "proj_test",
-          automationId: automation.id,
-          execution: {
-            mode: "script",
-            script: "echo replacement\n",
-            scriptFile: "old.sh",
-            timeoutMs: 120_000,
+        service.update(
+          {
+            projectId: "proj_test",
+            automationId: automation.id,
+            execution: {
+              mode: "script",
+              script: "echo replacement\n",
+              scriptFile: "old.sh",
+              timeoutMs: 120_000,
+            },
           },
-        }),
+          {},
+        ),
       ).rejects.toThrow("update rejected");
       await expect(readFile(join(scriptDir, "old.sh"), "utf8")).resolves.toBe(
         "echo old\n",
@@ -1604,8 +1680,14 @@ describe("automation CLI --script-file", () => {
       service,
     });
     if (!cli) throw new Error("automation CLI was not registered");
+    const registered: PluginCliRegistration = cli;
     return {
-      cli,
+      cli: {
+        run: (
+          argv: string[],
+          ctx: Parameters<PluginCliRegistration["run"]>[1],
+        ) => registered.run(argv, { experimental_callerRole: "admin", ...ctx }),
+      },
       db,
       pluginDataDir,
       srcDir,
@@ -2201,6 +2283,7 @@ describe("script project context", () => {
       workingDirectory: args.workingDirectory,
     };
     const automation = createAutomation(db, {
+      callerGrant: null,
       id: "auto_context",
       projectId: "proj_test",
       name: "Project context",
@@ -2220,6 +2303,8 @@ describe("script project context", () => {
     const warnings: string[] = [];
     const bb = {
       sdk: {
+        ...NO_CALLER_GRANTS,
+        ...NO_CALLER_GRANTS,
         projects: {
           get: async () => ({
             id: "proj_test",
@@ -2270,6 +2355,9 @@ describe("script project context", () => {
         bb: {
           ...bb,
           sdk: {
+            ...NO_CALLER_GRANTS,
+            ...NO_CALLER_GRANTS,
+            ...NO_CALLER_GRANTS,
             ...bb.sdk,
             system: {
               config: async () => ({

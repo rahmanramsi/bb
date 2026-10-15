@@ -1,5 +1,6 @@
 import type {
   AcceptUserInviteRequest,
+  AuthMeResponse,
   AuthSessionResponse,
   AuthSignInRequest,
   AuthSignUpRequest,
@@ -16,7 +17,7 @@ import { signalRequestArgs, type CreateSdkAreaArgs } from "./common.js";
 type WithSignal<T> = T & { signal?: AbortSignal };
 
 export interface ExperimentalAuthArea {
-  me(input?: { signal?: AbortSignal }): Promise<AuthUserResponse>;
+  me(input?: { signal?: AbortSignal }): Promise<AuthMeResponse>;
   session(input?: { signal?: AbortSignal }): Promise<AuthSessionResponse>;
   signIn(input: WithSignal<AuthSignInRequest>): Promise<AuthUserResponse>;
   signUp(input: WithSignal<AuthSignUpRequest>): Promise<AuthUserResponse>;

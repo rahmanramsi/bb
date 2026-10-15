@@ -1,3 +1,4 @@
+import { SYSTEM_PLUGIN_CALLER } from "../../../src/services/plugins/plugin-invocation.js";
 import { EventEmitter } from "node:events";
 import {
   cp,
@@ -190,6 +191,7 @@ function createService(args: {
     hub: {
       getDaemonSessionIdForHost: () => null,
       notifyPluginSignal: () => 0,
+      notifyUserSystem: () => {},
       notifySystem: () => {},
     },
     logger,
@@ -738,7 +740,7 @@ describe("builtin plugin reconciliation", () => {
       },
     ]);
     await expect(
-      service.runCliCommand("builtin-fixture", [], {}),
+      service.runCliCommand("builtin-fixture", [], {}, SYSTEM_PLUGIN_CALLER),
     ).resolves.toMatchObject({
       exitCode: 0,
       stdout: "builtin builtin-fixture",

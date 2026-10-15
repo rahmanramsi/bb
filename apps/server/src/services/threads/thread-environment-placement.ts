@@ -5,6 +5,7 @@ import {
   getEnvironment,
   getNonDestroyedHostByLaunchKey,
   getThread,
+  getTurnRequestAuthor,
   projectSourceOwnsPath,
   recordEnvironmentCurrentBranch,
   type DbConnection,
@@ -59,6 +60,9 @@ import type {
   UnmanagedBranchSpec,
 } from "@bb/server-contract";
 import { summarizeStandardIssues } from "@get-bb/plugin-sdk/internal/host-policy";
+import type { PluginEnvironmentProviderRequester } from "@get-bb/plugin-sdk/environment-provider";
+import { MACHINE_AUTH_SYSTEM_USER_ID } from "../machine-auth.js";
+import { readUserRole } from "../user-auth.js";
 import type { LoggedPendingInteractionWorkSessionDeps } from "../../types.js";
 import { ApiError } from "../../errors.js";
 import {
@@ -733,6 +737,30 @@ export async function resolveProviderOperationContext(
   });
 }
 
+function resolveEnvironmentRequester(
+  deps: ThreadProvisioningDeps,
+  thread: ThreadRecord,
+): PluginEnvironmentProviderRequester | null {
+  const userId = thread.createdByUserId;
+  if (userId === null || userId === MACHINE_AUTH_SYSTEM_USER_ID) return null;
+  const role = readUserRole(deps.db, userId);
+  if (role === null) return null;
+  if (role === "member" || deps.config.authMode === "local") {
+    return { userId, role };
+  }
+  const requestId = getThreadProvisionContext(deps.db, thread.id)?.request
+    .clientRequestId;
+  const author =
+    requestId === undefined
+      ? null
+      : getTurnRequestAuthor(deps.db, { threadId: thread.id, requestId });
+  const uncapped =
+    author !== null &&
+    author.authorUserId === userId &&
+    author.authorRoleCeiling === null;
+  return { userId, role: uncapped ? "admin" : "member" };
+}
+
 function buildProviderOperationContext(
   deps: ThreadProvisioningDeps,
   args: Pick<
@@ -758,6 +786,7 @@ function buildProviderOperationContext(
       title: args.thread.title ?? args.thread.titleFallback,
       threadId: args.thread.id,
     }),
+    requester: resolveEnvironmentRequester(deps, args.thread),
     environment: threadProvisionContextEnvironment(
       deps,
       args.thread.environmentId,

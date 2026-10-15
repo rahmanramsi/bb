@@ -329,10 +329,12 @@ const turnSubmitTargetSchema = z.discriminatedUnion("mode", [
   z.object({
     mode: z.literal("auto"),
     expectedTurnId: z.string().min(1).nullable(),
+    bindExpectedTurn: z.boolean(),
   }),
   z.object({
     mode: z.literal("steer"),
     expectedTurnId: z.string().min(1).nullable(),
+    bindExpectedTurn: z.boolean(),
   }),
 ]);
 export type TurnSubmitTarget = z.infer<typeof turnSubmitTargetSchema>;
@@ -1272,6 +1274,8 @@ const threadStartResultSchema = z.object({
   providerThreadId: z.string().min(1),
 });
 export const COMPETING_TURN_ERROR_CODE = "competing_turn" as const;
+export const TURN_BINDING_MISMATCH_ERROR_CODE =
+  "turn_binding_mismatch" as const;
 
 const threadStopResultSchema = z
   .object({
@@ -2115,9 +2119,7 @@ type HostDaemonRetryableOnlineRpcCommandSchema =
 type HostDaemonResultSchemaMapForTransport<
   Transport extends HostDaemonCommandTransport,
 > = {
-  [
-    Descriptor in HostDaemonCommandDescriptorForTransport<Transport> as Descriptor["type"]
-  ]: Descriptor["resultSchema"];
+  [Descriptor in HostDaemonCommandDescriptorForTransport<Transport> as Descriptor["type"]]: Descriptor["resultSchema"];
 };
 
 type HostDaemonCommandResultSchemaMap =

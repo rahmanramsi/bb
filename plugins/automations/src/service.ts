@@ -1,7 +1,9 @@
 import { isAbsolute, join } from "node:path";
-import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { isDeepStrictEqual } from "node:util";
+import type { BbPluginApi, ExperimentalPluginCaller } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
+  adoptAutomation,
   createAutomation,
   createManualRun,
   decodeAutomationRow,
@@ -16,6 +18,7 @@ import {
   toAutomationRunResponse,
   updateAutomation,
   closeAutomationRun,
+  type AutomationCallerGrant,
   type AutomationRow,
   type Db,
 } from "./data.js";
@@ -31,6 +34,7 @@ import {
   WORKING_DIRECTORY_CONTROL_CHARACTER_MESSAGE,
   automationRunListResponseSchema,
   automationsOverviewResponseSchema,
+  type AdoptAutomationInput,
   type AgentExecutionUpdate,
   type AutomationExecution,
   type AutomationExecutionRequest,
@@ -39,6 +43,7 @@ import {
   type AutomationReadProblem,
   type AutomationReadResult,
   type AutomationRunListResponse,
+  type AutomationRunMode,
   type AutomationRunRpcResponse,
   type AutomationResponse,
   type AutomationScriptWorkingDirectory,
@@ -73,8 +78,17 @@ type ServiceApi = Pick<BbPluginApi, "realtime" | "log"> & {
     projects: Pick<BbPluginApi["sdk"]["projects"], "get" | "list">;
     providers: Pick<BbPluginApi["sdk"]["providers"], "list">;
     threads: Pick<BbPluginApi["sdk"]["threads"], "get" | "send" | "spawn">;
+    experimental_asGrant(grantId: string): {
+      threads: Pick<BbPluginApi["sdk"]["threads"], "get" | "send" | "spawn">;
+    };
+    experimental_createCallerGrant: BbPluginApi["sdk"]["experimental_createCallerGrant"];
+    experimental_revokeCallerGrant: BbPluginApi["sdk"]["experimental_revokeCallerGrant"];
   };
 };
+
+export interface AutomationCallerContext {
+  readonly experimental_caller?: ExperimentalPluginCaller;
+}
 
 export interface AutomationService {
   overview(): Promise<AutomationsOverviewResponse>;
@@ -83,10 +97,18 @@ export interface AutomationService {
     projectId: string;
     automationId: string;
   }): Promise<AutomationDetailReadResult>;
+  runMode(input: {
+    projectId: string;
+    automationId: string;
+  }): AutomationRunMode;
   create(
     input: ResolvedCreateAutomationInput,
+    context: AutomationCallerContext,
   ): Promise<AutomationDetailResponse>;
-  update(input: UpdateAutomationInput): Promise<AutomationDetailResponse>;
+  update(
+    input: UpdateAutomationInput,
+    context: AutomationCallerContext,
+  ): Promise<AutomationDetailResponse>;
   delete(input: {
     projectId: string;
     automationId: string;
@@ -96,6 +118,10 @@ export interface AutomationService {
     projectId: string;
     automationId: string;
   }): AutomationResponse;
+  adopt(
+    input: AdoptAutomationInput,
+    context: AutomationCallerContext,
+  ): Promise<AutomationDetailResponse>;
   run(input: RunAutomationInput): Promise<AutomationRunRpcResponse>;
   runs(input: ResolvedAutomationRunsInput): AutomationRunListResponse;
 }
@@ -251,13 +277,14 @@ function toStoredAutomationResponse(
   return withStoredScriptPath(pluginDataDir, toAutomationResponse(row));
 }
 
-type AutomationWriteOperation = "run" | "pause" | "resume" | "update";
+type AutomationWriteOperation = "run" | "pause" | "resume" | "update" | "adopt";
 
 const MISSING_PROMPT_OPERATION: Record<AutomationWriteOperation, string> = {
   run: "it can run",
   pause: "it can be paused",
   resume: "it can be resumed",
   update: "other fields can be updated",
+  adopt: "it can be adopted",
 };
 
 const INVALID_DATA_OPERATION: Record<AutomationWriteOperation, string> = {
@@ -265,7 +292,66 @@ const INVALID_DATA_OPERATION: Record<AutomationWriteOperation, string> = {
   pause: "paused",
   resume: "resumed",
   update: "updated",
+  adopt: "adopted",
 };
+
+type UpdateFieldKind = "target" | "metadata" | "execution" | "adoption";
+
+export const AUTOMATION_UPDATE_FIELD_KINDS = {
+  projectId: "target",
+  automationId: "target",
+  name: "metadata",
+  trigger: "metadata",
+  execution: "execution",
+  agent: "execution",
+  script: "execution",
+  adopt: "adoption",
+} as const satisfies Record<keyof UpdateAutomationInput, UpdateFieldKind>;
+
+export type AutomationIdentityErrorCode =
+  | "automation_adoption_required"
+  | "automation_revision_stale";
+
+export class AutomationIdentityError extends Error {
+  readonly code: AutomationIdentityErrorCode;
+  readonly hint: string;
+
+  constructor(
+    code: AutomationIdentityErrorCode,
+    message: string,
+    hint: string,
+  ) {
+    super(`${code}: ${message}`);
+    this.name = "AutomationIdentityError";
+    this.code = code;
+    this.hint = hint;
+  }
+}
+
+function adoptCommand(row: AutomationRow): string {
+  return `bb automation adopt ${row.id} --project ${row.projectId}`;
+}
+
+function runsAsLabel(row: AutomationRow): string {
+  if (row.callerGrantId === null) return "no person";
+  return row.callerGrantUserId ?? "a person bb did not record";
+}
+
+function adoptionRequiredError(row: AutomationRow): AutomationIdentityError {
+  return new AutomationIdentityError(
+    "automation_adoption_required",
+    `Automation "${row.name}" runs as ${runsAsLabel(row)}. Changing its prompt, target, provider, model, or permissions makes it run as you, which requires adopting it at execution revision ${row.executionRevision}.`,
+    `Review it with \`${adoptCommand(row)}\`, then repeat the update with --adopt-revision ${row.executionRevision} (RPC: adopt.expectedRevision).`,
+  );
+}
+
+function revisionStaleError(row: AutomationRow): AutomationIdentityError {
+  return new AutomationIdentityError(
+    "automation_revision_stale",
+    `Automation "${row.name}" changed since you reviewed it; it is no longer the execution you were shown.`,
+    `Review it again with \`${adoptCommand(row)}\` before adopting it.`,
+  );
+}
 
 function automationWriteError(
   row: AutomationRow,
@@ -556,6 +642,99 @@ function defaultScriptWorkingDirectory(
   return PROJECT_WORKING_DIRECTORY;
 }
 
+const GRANT_PURPOSE_NAME_MAX_LENGTH = 186;
+
+function callerGrantPurpose(name: string): string {
+  const shown =
+    name.length > GRANT_PURPOSE_NAME_MAX_LENGTH
+      ? `${name.slice(0, GRANT_PURPOSE_NAME_MAX_LENGTH)}…`
+      : name;
+  return `Automation "${shown}"`;
+}
+
+async function grantFromCaller(
+  bb: ServiceApi,
+  context: AutomationCallerContext,
+  args: { name: string; execution: AutomationExecution },
+): Promise<AutomationCallerGrant | null> {
+  const caller = context.experimental_caller;
+  if (args.execution.mode !== "agent" || caller?.kind !== "client") {
+    return null;
+  }
+  const { grantId } = await bb.sdk.experimental_createCallerGrant(context, {
+    purpose: callerGrantPurpose(args.name),
+    expiresInDays: null,
+  });
+  return { grantId, userId: caller.userId };
+}
+
+function executionChanged(args: {
+  previous: AutomationExecution;
+  next: AutomationExecution | undefined;
+  rewroteScript: boolean;
+}): boolean {
+  return (
+    args.next !== undefined &&
+    (args.rewroteScript || !isDeepStrictEqual(args.previous, args.next))
+  );
+}
+
+type IdentityDecision =
+  | { kind: "keep" }
+  | { kind: "clear" }
+  | { kind: "grant"; requiresExpectedRevision: number | null };
+
+function decideUpdateIdentity(args: {
+  current: AutomationRow;
+  previousExecution: AutomationExecution;
+  nextExecution: AutomationExecution;
+  changed: boolean;
+  adopt: UpdateAutomationInput["adopt"];
+  context: AutomationCallerContext;
+}): IdentityDecision {
+  const caller = args.context.experimental_caller;
+  if (args.adopt !== undefined) {
+    if (args.nextExecution.mode !== "agent" || caller?.kind !== "client") {
+      throw new Error("Only a signed-in person can adopt an agent automation");
+    }
+    if (args.adopt.expectedRevision !== args.current.executionRevision) {
+      throw revisionStaleError(args.current);
+    }
+    return {
+      kind: "grant",
+      requiresExpectedRevision: args.adopt.expectedRevision,
+    };
+  }
+  if (!args.changed) return { kind: "keep" };
+  if (args.nextExecution.mode !== "agent" || caller?.kind !== "client") {
+    return { kind: "clear" };
+  }
+  const editorOwnsGrant =
+    args.current.callerGrantId !== null &&
+    args.current.callerGrantUserId === caller.userId;
+  const replacesScript =
+    args.previousExecution.mode === "script" &&
+    args.current.callerGrantId === null;
+  if (!editorOwnsGrant && !replacesScript) {
+    throw adoptionRequiredError(args.current);
+  }
+  return { kind: "grant", requiresExpectedRevision: null };
+}
+
+async function revokeGrant(
+  bb: ServiceApi,
+  grantId: string | null,
+): Promise<void> {
+  if (grantId === null) return;
+  try {
+    await bb.sdk.experimental_revokeCallerGrant(grantId);
+  } catch (error) {
+    bb.log.warn(
+      `Failed to revoke automation caller grant ${grantId}: ${errorMessage(error)}`,
+    );
+  }
+}
+
 export function createAutomationService(args: {
   bb: ServiceApi;
   db: Db;
@@ -596,7 +775,11 @@ export function createAutomationService(args: {
       });
     },
 
-    async create(payload) {
+    runMode(input) {
+      return requireProjectAutomation(db, input).runMode;
+    },
+
+    async create(payload, context) {
       const project = await requireProjectAvailable(bb, payload.projectId);
       const now = Date.now();
       validateTrigger(payload.trigger, now);
@@ -623,6 +806,10 @@ export function createAutomationService(args: {
               )
             : AUTOMATION_STORAGE_WORKING_DIRECTORY,
       });
+      const callerGrant = await grantFromCaller(bb, context, {
+        name: payload.name,
+        execution: stored.execution,
+      });
       let created: AutomationRow;
       try {
         created = createAutomation(db, {
@@ -635,6 +822,7 @@ export function createAutomationService(args: {
           execution: stored.execution,
           origin: payload.origin,
           createdByThreadId: payload.createdByThreadId ?? null,
+          callerGrant,
           nextRunAt: computeInitialNextRunAt({
             trigger: payload.trigger,
             enabled: payload.enabled,
@@ -642,6 +830,7 @@ export function createAutomationService(args: {
           }),
         });
       } catch (error) {
+        await revokeGrant(bb, callerGrant?.grantId ?? null);
         await discardUncommittedScript({
           bb,
           pluginDataDir,
@@ -658,7 +847,7 @@ export function createAutomationService(args: {
       });
     },
 
-    async update(input) {
+    async update(input, context) {
       const project = await requireProjectAvailable(bb, input.projectId);
       const current = requireProjectAutomation(db, input);
       const currentAutomation = decodeAutomationRow(current).automation;
@@ -763,30 +952,71 @@ export function createAutomationService(args: {
           currentAutomation.problem,
         );
       }
-      let updated: AutomationRow | null;
+      const changed = executionChanged({
+        previous: currentExecution,
+        next: patch.execution,
+        rewroteScript: stagedScriptFile !== undefined,
+      });
+      if (!changed) delete patch.execution;
+      const nextExecution = patch.execution ?? currentExecution;
+      const discardStagedScript = () =>
+        discardUncommittedScript({
+          bb,
+          pluginDataDir,
+          automationId: current.id,
+          scriptFile: stagedScriptFile,
+        });
+      let decision: IdentityDecision;
+      try {
+        decision = decideUpdateIdentity({
+          current,
+          previousExecution: currentExecution,
+          nextExecution,
+          changed,
+          adopt: input.adopt,
+          context,
+        });
+      } catch (error) {
+        await discardStagedScript();
+        throw error;
+      }
+      const nextGrant =
+        decision.kind === "grant"
+          ? await grantFromCaller(bb, context, {
+              name: patch.name ?? current.name,
+              execution: nextExecution,
+            })
+          : null;
+      if (decision.kind !== "keep") patch.callerGrant = nextGrant;
+      patch.executionChanged = changed;
+      let updated: AutomationRow | "stale" | null;
       try {
         updated = updateAutomation(db, {
           projectId: input.projectId,
           automationId: input.automationId,
           patch,
+          ...(decision.kind === "keep" && !changed
+            ? {}
+            : {
+                expected: {
+                  executionRevision: current.executionRevision,
+                  callerGrantId: current.callerGrantId,
+                },
+              }),
         });
       } catch (error) {
-        await discardUncommittedScript({
-          bb,
-          pluginDataDir,
-          automationId: current.id,
-          scriptFile: stagedScriptFile,
-        });
+        await revokeGrant(bb, nextGrant?.grantId ?? null);
+        await discardStagedScript();
         throw error;
       }
-      if (!updated) {
-        await discardUncommittedScript({
-          bb,
-          pluginDataDir,
-          automationId: current.id,
-          scriptFile: stagedScriptFile,
-        });
+      if (updated === null || updated === "stale") {
+        await revokeGrant(bb, nextGrant?.grantId ?? null);
+        await discardStagedScript();
+        if (updated === "stale") throw revisionStaleError(current);
         throw new Error("Automation not found");
+      }
+      if (current.callerGrantId !== updated.callerGrantId) {
+        await revokeGrant(bb, current.callerGrantId);
       }
       if (patch.execution !== undefined) {
         await cleanupSupersededScript({
@@ -808,6 +1038,7 @@ export function createAutomationService(args: {
     async delete(input) {
       const automation = requireProjectAutomation(db, input);
       deleteAutomation(db, input);
+      await revokeGrant(bb, automation.callerGrantId);
       await deleteAutomationScriptDir({
         dataDir: pluginDataDir,
         automationId: automation.id,
@@ -854,6 +1085,53 @@ export function createAutomationService(args: {
       if (!updated) throw new Error("Automation not found");
       publishAutomationChange(bb, input.projectId, "automations-changed");
       return toStoredAutomationResponse(pluginDataDir, updated);
+    },
+
+    async adopt(input, context) {
+      const current = requireProjectAutomation(db, input);
+      const { execution } = requireCanonicalAutomationForWrite(
+        pluginDataDir,
+        current,
+        "adopt",
+      );
+      if (execution.mode !== "agent") {
+        throw new Error(
+          `Automation "${current.name}" runs a script, which never runs as a person; only agent automations can be adopted`,
+        );
+      }
+      if (context.experimental_caller?.kind !== "client") {
+        throw new Error("Only a signed-in person can adopt an automation");
+      }
+      if (current.executionRevision !== input.expectedRevision) {
+        throw revisionStaleError(current);
+      }
+      const callerGrant = await grantFromCaller(bb, context, {
+        name: current.name,
+        execution,
+      });
+      if (callerGrant === null) {
+        throw new Error("Only a signed-in person can adopt an automation");
+      }
+      const adopted = adoptAutomation(db, {
+        projectId: input.projectId,
+        automationId: input.automationId,
+        expected: {
+          executionRevision: input.expectedRevision,
+          callerGrantId: current.callerGrantId,
+        },
+        callerGrant,
+      });
+      if (adopted === null) {
+        await revokeGrant(bb, callerGrant.grantId);
+        throw revisionStaleError(current);
+      }
+      await revokeGrant(bb, current.callerGrantId);
+      publishAutomationChange(bb, input.projectId, "automations-changed");
+      return toEditableAutomationResponse({
+        bb,
+        pluginDataDir,
+        automation: toStoredAutomationResponse(pluginDataDir, adopted),
+      });
     },
 
     async run(input) {

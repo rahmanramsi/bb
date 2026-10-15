@@ -799,6 +799,8 @@ async function handlePrompt(message) {
     notifyUpdate(messageChunk(`selected-effort:${selectedEffort}`));
   } else if (text.includes("echo-selected-fast")) {
     notifyUpdate(messageChunk(`selected-fast:${selectedFast}`));
+  } else if (text.includes("echo-bb-token")) {
+    notifyUpdate(messageChunk(`bb-token:${process.env.BB_TOKEN ?? "none"}`));
   } else if (text.includes("echo-auth-method")) {
     notifyUpdate(messageChunk(`auth-method:${authenticatedMethod ?? "none"}`));
   } else if (text.includes("echo-electron-run-as-node")) {

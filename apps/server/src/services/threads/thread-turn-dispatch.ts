@@ -5,6 +5,7 @@ import type {
   SystemMessageSubject,
   ThreadRecord,
   ThreadTurnInitiator,
+  RoleCeiling,
 } from "@bb/domain";
 import { getThread, type DbTransaction, type EnvironmentRow } from "@bb/db";
 import type { LoggedPendingInteractionWorkSessionDeps } from "../../types.js";
@@ -27,6 +28,8 @@ export interface ReadyThreadEnvironment extends EnvironmentRow {
 
 interface DispatchTurnDuringReprovisionArgs {
   beforeRequestAppendInTransaction?: (args: { tx: DbTransaction }) => void;
+  authorGrantId: string | null;
+  authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   deps: LoggedPendingInteractionWorkSessionDeps;
   environment: EnvironmentRow;
@@ -81,6 +84,8 @@ export async function dispatchTurnDuringReprovision(
           throwEnvironmentNotReady(args.environment);
         }
       },
+      authorGrantId: args.authorGrantId,
+      authorRoleCeiling: args.authorRoleCeiling,
       authorUserId: args.authorUserId,
       environment: args.environment,
       execution: args.execution,

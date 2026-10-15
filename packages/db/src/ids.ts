@@ -65,3 +65,7 @@ export function createHostDaemonSessionId(): string {
 export function createTerminalSessionId(): string {
   return createId("term");
 }
+
+export function createPluginCallerGrantId(): string {
+  return createId("grant");
+}

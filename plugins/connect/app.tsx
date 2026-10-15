@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   definePluginApp,
   experimental_copyToClipboard,
+  experimental_useCurrentUser,
   UrlLink as UrlLink,
   useRealtime,
   useRealtimeConnectionState,
@@ -779,6 +780,7 @@ function SharedPortsSection({
   dimmed: boolean;
 }) {
   const rpc = useRpc<typeof connectRpcContract>();
+  const canRevokeAll = experimental_useCurrentUser()?.effectiveRole === "admin";
   const [portInput, setPortInput] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [exposing, setExposing] = useState(false);
@@ -908,24 +910,26 @@ function SharedPortsSection({
                       {group.shares.length}
                     </span>
                   </button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className={DANGER_QUIET_CLASS}
-                    aria-label={`Revoke all (${group.shares.length}) shared ports on ${group.hostName}`}
-                    disabled={
-                      revokingHost !== null ||
-                      revokingShare !== null ||
-                      exposing
-                    }
-                    onClick={() => void unexposeAll(group.hostId)}
-                  >
-                    {revokingHost === group.hostId ? (
-                      <Icon name="Spinner" className="size-4 animate-spin" />
-                    ) : null}
-                    Revoke all ({group.shares.length})
-                  </Button>
+                  {canRevokeAll ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className={DANGER_QUIET_CLASS}
+                      aria-label={`Revoke all (${group.shares.length}) shared ports on ${group.hostName}`}
+                      disabled={
+                        revokingHost !== null ||
+                        revokingShare !== null ||
+                        exposing
+                      }
+                      onClick={() => void unexposeAll(group.hostId)}
+                    >
+                      {revokingHost === group.hostId ? (
+                        <Icon name="Spinner" className="size-4 animate-spin" />
+                      ) : null}
+                      Revoke all ({group.shares.length})
+                    </Button>
+                  ) : null}
                 </div>
                 <ul hidden={collapsed} className="space-y-1 pl-7">
                   {group.shares.map((share) => (

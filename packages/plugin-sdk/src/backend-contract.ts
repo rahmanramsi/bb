@@ -37,6 +37,8 @@ import type {
 } from "@bb/server-contract";
 import type { JsonValue, ReadonlyJsonValue } from "./json-value.js";
 import type {
+  ExperimentalPluginCaller,
+  ExperimentalPluginCallerContext,
   ExperimentalPluginRpcHandlersWithContext,
   PluginRpcContract,
   StandardSchemaV1,
@@ -77,6 +79,14 @@ export type PluginSettingDescriptor =
       type: "string";
       label: string;
       description?: string;
+      /**
+       * `"user"` stores the value per signed-in user: any user, members
+       * included, reads and writes only their own value through bb's
+       * settings page, CLI, and SDK, and the server plugin reads it with
+       * `bb.settings.experimental_getForUser`. Defaults to `"team"`, one value
+       * that only admins can change. Secret settings cannot be per user.
+       */
+      experimental_scope?: PluginSettingScope;
       /** Stored in a 0600 file under <dataDir>/plugins/<id>/secrets/, never in the db or sent to the frontend. */
       secret?: true;
       /**
@@ -92,6 +102,14 @@ export type PluginSettingDescriptor =
       type: "boolean";
       label: string;
       description?: string;
+      /**
+       * `"user"` stores the value per signed-in user: any user, members
+       * included, reads and writes only their own value through bb's
+       * settings page, CLI, and SDK, and the server plugin reads it with
+       * `bb.settings.experimental_getForUser`. Defaults to `"team"`, one value
+       * that only admins can change. Secret settings cannot be per user.
+       */
+      experimental_scope?: PluginSettingScope;
       /** Synchronously validate without transforming a proposed value. */
       experimental_schema?: StandardSchemaV1<boolean, boolean>;
       default?: boolean;
@@ -100,6 +118,14 @@ export type PluginSettingDescriptor =
       type: "number";
       label: string;
       description?: string;
+      /**
+       * `"user"` stores the value per signed-in user: any user, members
+       * included, reads and writes only their own value through bb's
+       * settings page, CLI, and SDK, and the server plugin reads it with
+       * `bb.settings.experimental_getForUser`. Defaults to `"team"`, one value
+       * that only admins can change. Secret settings cannot be per user.
+       */
+      experimental_scope?: PluginSettingScope;
       experimental_schema?: StandardSchemaV1<number, number>;
       default?: number;
     }
@@ -107,6 +133,14 @@ export type PluginSettingDescriptor =
       type: "select";
       label: string;
       description?: string;
+      /**
+       * `"user"` stores the value per signed-in user: any user, members
+       * included, reads and writes only their own value through bb's
+       * settings page, CLI, and SDK, and the server plugin reads it with
+       * `bb.settings.experimental_getForUser`. Defaults to `"team"`, one value
+       * that only admins can change. Secret settings cannot be per user.
+       */
+      experimental_scope?: PluginSettingScope;
       options: string[];
       /** Display labels keyed by option value; options without one show the value itself. */
       experimental_optionLabels?: Record<string, string>;
@@ -118,12 +152,22 @@ export type PluginSettingDescriptor =
       type: "project";
       label: string;
       description?: string;
+      /**
+       * `"user"` stores the value per signed-in user: any user, members
+       * included, reads and writes only their own value through bb's
+       * settings page, CLI, and SDK, and the server plugin reads it with
+       * `bb.settings.experimental_getForUser`. Defaults to `"team"`, one value
+       * that only admins can change. Secret settings cannot be per user.
+       */
+      experimental_scope?: PluginSettingScope;
       /** Synchronously validate without transforming a proposed value. */
       experimental_schema?: StandardSchemaV1<string, string>;
       default?: string;
     };
 
 export type PluginSettingDescriptors = Record<string, PluginSettingDescriptor>;
+
+export type PluginSettingScope = "team" | "user";
 
 export type PluginSettingValue = string | number | boolean;
 
@@ -147,9 +191,17 @@ type PluginSettingValueOf<D extends PluginSettingDescriptor> = D extends {
 export interface PluginSettingsHandle<
   Ds extends Record<string, PluginSettingDescriptor>,
 > {
-  /** Load-safe: callable inside the factory. */
+  /**
+   * Load-safe: callable inside the factory. Fields with
+   * `experimental_scope: "user"` read as their default here; read a user's
+   * value with `bb.settings.experimental_getForUser`.
+   */
   get(): Promise<PluginSettingsValues<Ds>>;
-  /** Validate and persist this handle's fields; `null` unsets a stored value. */
+  /**
+   * Validate and persist this handle's team fields; `null` unsets a stored
+   * value. Rejects fields with `experimental_scope: "user"`: only the user
+   * changes their own value.
+   */
   experimental_set(
     values: Partial<{
       [K in keyof Ds]: PluginSettingValueOf<Ds[K]> | null;
@@ -168,6 +220,17 @@ export interface PluginSettings {
   define<Ds extends Record<string, PluginSettingDescriptor>>(
     descriptors: Ds,
   ): PluginSettingsHandle<Ds>;
+  /**
+   * Every defined setting as `userId` sees it: that user's stored value (or
+   * the default) for `experimental_scope: "user"` fields, and the team value
+   * for the rest, secrets included. Pass the authenticated caller's id
+   * (`experimental_caller.userId` of a `client` caller), never an id a
+   * client sent. A removed user's values are deleted with the account.
+   * `onChange` listeners do not fire for per-user writes.
+   */
+  experimental_getForUser(
+    userId: string,
+  ): Promise<Readonly<Record<string, PluginSettingValue | undefined>>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -200,6 +263,18 @@ export interface PluginStorage {
    * Append-only — never reorder or edit shipped statements.
    */
   migrate(db: Database.Database, statements: string[]): void;
+  /**
+   * Key-value rows private to one user, namespaced by plugin id and user id
+   * and deleted when that user is removed. Same limits as `kv`. Rejects an
+   * id that names no user. Pass the authenticated caller's id
+   * (`experimental_caller.userId` of a `client` caller), never an id a
+   * client sent: the host trusts the id it is given.
+   */
+  experimental_forUser(userId: string): ExperimentalPluginUserStorage;
+}
+
+export interface ExperimentalPluginUserStorage {
+  kv: PluginKvStorage;
 }
 
 // ---------------------------------------------------------------------------
@@ -814,8 +889,13 @@ export interface PluginHooks {
 
 export type PluginHttpAuthMode = "local" | "token" | "none";
 
+/**
+ * The second argument says who sent the request; pass it to
+ * `bb.sdk.experimental_asCaller` to act as that caller.
+ */
 export type PluginHttpHandler = (
   context: Context,
+  experimental_context: ExperimentalPluginCallerContext,
 ) => Response | Promise<Response>;
 
 export interface ExperimentalPluginWebSocket {
@@ -828,6 +908,12 @@ export interface ExperimentalPluginWebSocketContext {
   request: Request;
   url: URL;
   headers: Headers;
+  /**
+   * Who opened the socket. `bb.sdk.experimental_asCaller(context)` stays
+   * usable for the socket's lifetime, within the credential's few-minute
+   * expiry.
+   */
+  readonly experimental_caller: ExperimentalPluginCaller;
 }
 
 export interface ExperimentalPluginWebSocketHandlers {
@@ -861,7 +947,15 @@ export interface PluginHttp {
     method: string,
     path: string,
     handler: PluginHttpHandler,
-    opts?: { auth?: PluginHttpAuthMode },
+    opts?: {
+      auth?: PluginHttpAuthMode;
+      /**
+       * `"admin"` limits the route to server admins. bb answers other callers
+       * with HTTP 403 `{ ok: false, error: { code: "forbidden", message } }`
+       * before the handler runs; a refused WebSocket upgrade never opens.
+       */
+      experimental_requiredRole?: "admin";
+    },
   ): void;
 
   /**
@@ -872,7 +966,15 @@ export interface PluginHttp {
   experimental_websocket(
     path: string,
     handler: ExperimentalPluginWebSocketHandler,
-    opts?: { auth?: PluginHttpAuthMode },
+    opts?: {
+      auth?: PluginHttpAuthMode;
+      /**
+       * `"admin"` limits the route to server admins. bb answers other callers
+       * with HTTP 403 `{ ok: false, error: { code: "forbidden", message } }`
+       * before the handler runs; a refused WebSocket upgrade never opens.
+       */
+      experimental_requiredRole?: "admin";
+    },
   ): void;
 }
 
@@ -897,14 +999,23 @@ export interface PluginRpc {
   ): void;
 }
 
+export interface ExperimentalPluginRealtimePublishOptions {
+  experimental_userId?: string;
+}
+
 export interface PluginRealtime {
   /**
    * Broadcast an ephemeral `plugin-signal` WS message
    * `{ pluginId, channel, payload }` to every connected client (V1 has no
    * per-channel subscriptions). `payload` must be JSON-serializable;
-   * `undefined` is normalized to `null`. Nothing is persisted.
+   * `undefined` is normalized to `null`. Nothing is persisted. With
+   * `experimental_userId`, only that user's connected clients receive it.
    */
-  publish(channel: string, payload: unknown): void;
+  publish(
+    channel: string,
+    payload: unknown,
+    options?: ExperimentalPluginRealtimePublishOptions,
+  ): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -959,6 +1070,13 @@ export interface PluginCliContext {
    * run when code calls `run` without one.
    */
   experimental_callerRole?: "admin" | "member";
+  /**
+   * Who invoked the command. bb always sets it; `experimental_callerRole` is
+   * its effective role. A `client` caller's `userId` keys
+   * `bb.storage.experimental_forUser` and per-user settings. Pass the context
+   * to `bb.sdk.experimental_asCaller` to act as that caller.
+   */
+  experimental_caller?: ExperimentalPluginCaller;
 }
 
 export type PluginInteractionCancelReason =
@@ -1106,6 +1224,11 @@ export interface PluginAgentToolContext {
    * plugin disposal still abort the signal after detachment.
    */
   signal: AbortSignal;
+  /**
+   * The author of the turn that called the tool, with the authority the
+   * turn's `BB_TOKEN` carries; `system` when the turn has no human author.
+   */
+  readonly experimental_caller: ExperimentalPluginCaller;
 }
 
 /**
@@ -1163,6 +1286,12 @@ export interface PluginAgentToolRegistrationBase {
    * BB's standard rendering. See docs/api_to_audit.md.
    */
   presentation?: PluginRowPresentation;
+  /**
+   * `"admin"` runs the tool only when the turn's author acts as a server
+   * admin. bb answers other calls with an error result before `execute`
+   * runs.
+   */
+  experimental_requiredRole?: "admin";
 }
 
 /** Stable, plain-data context resolved by the server for one agent session. */
@@ -2062,6 +2191,27 @@ export interface PluginStatusApi {
   needsConfiguration(message: string): void;
 }
 
+/** What `bb.sdk.experimental_createCallerGrant` records. */
+export interface ExperimentalCallerGrantRequest {
+  /**
+   * Why the plugin acts as this person, shown when they list or revoke their
+   * grants, such as `Automation "Nightly triage"`. 1 to 200 characters.
+   */
+  purpose: string;
+  /**
+   * Whole days until the grant stops working, 1 to 3650. Omitted, the grant
+   * expires after 90 days. `null` makes it last until it is revoked; choose
+   * that only when the person expects the work to run indefinitely.
+   */
+  expiresInDays?: number | null;
+}
+
+/** A grant created by `bb.sdk.experimental_createCallerGrant`. */
+export interface ExperimentalCallerGrant {
+  /** Opaque id for `experimental_asGrant` and `experimental_revokeCallerGrant`. */
+  grantId: string;
+}
+
 /**
  * The BB SDK bound to one plugin (`bb.sdk`). `threads.getPluginMetadata`,
  * `threads.experimental_listPluginMetadata` and `threads.updatePluginMetadata`
@@ -2073,9 +2223,61 @@ export interface PluginStatusApi {
  * leaves the namespace unchanged.
  */
 export type PluginBbSdk = Omit<BbSdk, "threads"> & {
+  /**
+   * An SDK whose requests authenticate as the caller of the given handler
+   * invocation, with that caller's effective authority and role ceiling and
+   * never more. Threads and messages it creates record the caller as their
+   * creator and author. bb mints a short-lived credential bound to the
+   * caller, this plugin, and the invocation: it stops working when the
+   * handler returns (a WebSocket's when the socket closes) and after a few
+   * minutes at most, and it cannot create personal access tokens. Throws for
+   * a `plugin` or `system` caller, a context bb did not hand to this plugin,
+   * or an invocation that already ended. In local mode it returns `bb.sdk`.
+   */
+  experimental_asCaller(context: {
+    readonly experimental_caller?: ExperimentalPluginCaller;
+  }): PluginBbSdk;
+  /**
+   * Record that the caller of the given handler invocation lets this plugin
+   * act as them later, for work that outlives the invocation such as a
+   * scheduled run. The grant's authority is the caller's effective authority
+   * now, so a member's grant, or one minted through a capped `BB_TOKEN`, is
+   * member forever, and demoting an admin lowers their grants to member for
+   * good. Only a `client` caller inside a running invocation can grant, and
+   * not one whose request came through a grant's turn; throws otherwise and
+   * on a grant-bound or caller-bound SDK. Expires after 90 days unless
+   * `request.expiresInDays` says otherwise. The
+   * person can list and revoke their grants (`bb user grants`), an admin can
+   * revoke anyone's, and removing the person or this plugin deletes them. In
+   * local mode the grant belongs to the local owner.
+   */
+  experimental_createCallerGrant(
+    context: { readonly experimental_caller?: ExperimentalPluginCaller },
+    request: ExperimentalCallerGrantRequest,
+  ): Promise<ExperimentalCallerGrant>;
+  /**
+   * An SDK whose requests authenticate as the person behind a grant this
+   * plugin created, with authority `min(grant authority, their current
+   * role)`. Threads and messages it creates record that person as creator and
+   * author, so their turns get that person's `BB_TOKEN`, capped like the
+   * grant and refused once the grant is revoked, expires, or its person or
+   * this plugin is removed. Throws when the grant is unknown, belongs to another plugin, has
+   * expired or been revoked, or its person was removed. The credential lasts
+   * a few minutes and cannot create personal access tokens or grants; call
+   * `experimental_asGrant` again for each unit of work. In local mode it
+   * returns `bb.sdk`.
+   */
+  experimental_asGrant(grantId: string): PluginBbSdk;
+  /**
+   * Delete one of this plugin's grants. Resolves without effect for an
+   * unknown grant or another plugin's grant.
+   */
+  experimental_revokeCallerGrant(grantId: string): Promise<void>;
   threads: Omit<
     BbSdk["threads"],
-    "getPluginMetadata" | "updatePluginMetadata" | "experimental_listPluginMetadata"
+    | "getPluginMetadata"
+    | "updatePluginMetadata"
+    | "experimental_listPluginMetadata"
   > & {
     getPluginMetadata(
       args: Omit<ThreadPluginMetadataArgs, "pluginId"> & { pluginId?: string },

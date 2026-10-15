@@ -55,6 +55,8 @@ function session(
     needsBootstrap,
     principalKind:
       user === null ? null : authMode === "local" ? "local" : "user",
+    effectiveRole: user?.role ?? null,
+    roleCeiling: null,
   };
 }
 
@@ -84,6 +86,9 @@ beforeEach(() => {
   });
   vi.spyOn(sdk.experimental_users, "list").mockResolvedValue({
     users: [admin, member],
+  });
+  vi.spyOn(sdk.experimental_users, "listPluginGrants").mockResolvedValue({
+    grants: [],
   });
   vi.spyOn(sdk.experimental_users, "directory").mockResolvedValue({
     users: [admin, member],
@@ -331,6 +336,21 @@ describe("account visibility and actions", () => {
     },
   );
 
+  it("treats an admin acting through a member-capped credential as a member", () => {
+    mount(
+      <SidebarProvider>
+        <SettingsSidebar isResizing={false} onResizeMouseDown={() => {}} />
+      </SidebarProvider>,
+      { ...session(admin), effectiveRole: "member", roleCeiling: "member" },
+      "/settings/account",
+    );
+    expect(screen.getByRole("link", { name: "Appearance" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Machines" })).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: "Installed plugins" }),
+    ).toBeNull();
+  });
+
   it("blocks a member opening machine settings directly", async () => {
     mount(
       <Routes>
@@ -430,6 +450,54 @@ describe("account visibility and actions", () => {
     expect(revoke).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Confirm revoke" }));
     await waitFor(() => expect(revoke).toHaveBeenCalledWith({ id: "pat_1" }));
+  });
+
+  it("lists the signed-in user's plugin grants and revokes one after confirmation", async () => {
+    vi.mocked(sdk.experimental_users.listPluginGrants).mockResolvedValue({
+      grants: [
+        {
+          id: "grant_1",
+          pluginId: "automations",
+          userId: member.id,
+          maxRole: "member",
+          purpose: 'Automation "Nightly"',
+          createdAt: 1,
+          expiresAt: null,
+        },
+        {
+          id: "grant_2",
+          pluginId: "automations",
+          userId: member.id,
+          maxRole: "member",
+          purpose: 'Automation "Weekly"',
+          createdAt: 1,
+          expiresAt: 2,
+        },
+      ],
+    });
+    const revoke = vi
+      .spyOn(sdk.experimental_users, "revokePluginGrant")
+      .mockResolvedValue({ ok: true });
+    vi.mocked(sdk.experimental_auth.listTokens).mockResolvedValue({
+      tokens: [],
+    });
+    mount(<AccountSettings />, session(member));
+
+    expect(await screen.findByText('Automation "Nightly"')).toBeTruthy();
+    expect(screen.getByText(/Never expires\./)).toBeTruthy();
+    expect(screen.getByText(/Expired /)).toBeTruthy();
+    expect(sdk.experimental_users.listPluginGrants).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: member.id }),
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: "Revoke" })[0]!);
+    expect(revoke).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm revoke" }));
+    await waitFor(() =>
+      expect(revoke).toHaveBeenCalledWith({
+        userId: member.id,
+        grantId: "grant_1",
+      }),
+    );
   });
 
   it("shows creators in multi mode, including a server with one account", async () => {

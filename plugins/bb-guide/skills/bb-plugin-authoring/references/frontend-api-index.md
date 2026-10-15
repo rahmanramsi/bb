@@ -34,6 +34,11 @@ Read the installed SDK declarations for the exact current signatures.
 - `useBbContext`
 - `experimental_usePluginId` — this plugin's id, for keying browser-side
   state such as localStorage entries
+- `experimental_useCurrentUser` — the signed-in user
+  (`ExperimentalCurrentUser`) and their `ExperimentalUserRole`, for hiding
+  admin-only controls
+- `experimental_useUserStorageKey` — a localStorage key scoped to the
+  signed-in user
 - `experimental_useQuestionFormHost` — bb's answer shortcuts inside a
   `pendingInteraction` form
 - `useBbNavigate`

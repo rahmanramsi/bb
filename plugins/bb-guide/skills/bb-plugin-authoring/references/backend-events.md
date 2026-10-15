@@ -276,9 +276,9 @@ call `sdk.environments.delete` to drive retirement. The former
 `experimental_defineEnvironmentProvider` runtime and `provision` decision
 contract are removed. The environment-provider entry exports operation types.
 
-`create` receives the resolved facts, thread, suggestedBranchName, monotonic
-attempt, pathKey, report, and an abort signal, and always builds a fresh
-environment. A thread whose environment was destroyed gets it back only when
+`create` receives the resolved facts, thread, suggestedBranchName, the creator as
+`experimental_requester` (for per-user git identity, not authorization), monotonic attempt,
+pathKey, report, and an abort signal, and always builds a fresh environment. A thread whose environment was destroyed gets it back only when
 the user asks for a restore and the provider declares the optional
 `restore`: it receives the same facts, with the inputs the
 environment was created with, plus `previous: { environment, resource }`
@@ -414,27 +414,28 @@ function IssuesButton() {
 }
 ```
 
-Each handler also receives a context whose `experimental_caller` identifies
-the calling plugin; see "Calling another plugin's RPC" in `backend-sdk.md`.
+Each handler's context (an HTTP route's second argument too) names its
+`experimental_caller`; see "Acting as the caller" in `backend-sdk.md`.
 
 The wire envelope is `{ ok: true, result }` or `{ ok: false, error }`.
 Failures use stable codes: `invalid_json`, `invalid_input`, `handler_error`,
-`invalid_output`, `non_json_result`, and `unknown_method`; validation failures
-also carry normalized `{ message, path? }[]` issues. Unknown methods return
-404, invalid JSON/input returns 400, and handler/output/serialization failures
-return 500. Results must be strict JSON values: cyclic objects, bigint,
+`invalid_output`, `non_json_result`, `unknown_method`, and `forbidden`;
+validation failures also carry normalized `{ message, path? }[]` issues.
+Unknown methods return 404, invalid JSON/input returns 400, admin-only methods
+called by a member and handlers that throw `experimental_PluginRpcForbiddenError`
+return 403, and other handler/output/serialization failures return 500. Results must be strict JSON values: cyclic objects, bigint,
 undefined/functions, class instances, symbol keys, and non-finite numbers are
 rejected rather than coerced or silently dropped.
 
 ### bb.realtime
 
-`bb.realtime.publish(channel, payload)` broadcasts an ephemeral
+`bb.realtime.publish(channel, payload, options?)` broadcasts an ephemeral
 `{ type: "plugin-signal", pluginId, channel, payload }` message to every
-connected client. The channel must be non-empty. V1 has no server-side channel
-subscriptions. The frontend hook `useRealtime(channel, handler)` filters the
-messages. The payload must be JSON-serializable; `undefined` becomes `null`.
-Nothing is persisted. Publish state-change signals and let the frontend
-refetch through RPC.
+connected client, or with `{ experimental_userId }` only to that user's. The
+channel must be non-empty; there are no server-side channel subscriptions. The
+frontend hook `useRealtime(channel, handler)` filters the messages. The payload
+must be JSON-serializable; `undefined` becomes `null`. Nothing is persisted.
+Publish state-change signals and let the frontend refetch through RPC.
 
 ### bb.background — services and schedules
 

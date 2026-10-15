@@ -4,13 +4,13 @@ import {
 } from "../hosts/host-environment.js";
 import { getEnvironment, getHost, getProject } from "@bb/db";
 import {
-  LOCAL_OWNER_USER_ID,
   type DynamicTool,
   type InstructionMode,
   type PermissionEscalation,
   type ThreadRecord,
   type ThreadTurnInitiator,
   type EnvironmentStatus,
+  type RoleCeiling,
 } from "@bb/domain";
 import type {
   HostDaemonContributedEnvEntry,
@@ -38,8 +38,11 @@ import {
 import { readWorkspaceAgentContext } from "./workspace-agent-context.js";
 import { resolveDeprecatedWorkspaceProvisionType } from "../environments/environment-response.js";
 import { markTurnTraceSpan } from "../system/turn-trace.js";
-import { issueThreadShellToken } from "../user-auth.js";
-import { MACHINE_AUTH_SYSTEM_USER_ID } from "../machine-auth.js";
+import {
+  isSystemUserId,
+  issueThreadShellToken,
+  readUserRole,
+} from "../user-auth.js";
 
 const UPDATE_ENVIRONMENT_DIRECTORY_INSTRUCTIONS =
   "If the user asks you to move this thread to another checkout, worktree, or directory, make sure the target directory exists, then call `update_environment_directory` with its absolute path. After it succeeds, stop work in the current turn; future turns will run in the updated environment.";
@@ -54,6 +57,8 @@ export interface ThreadRuntimeCommandEnvironment {
 }
 
 interface ResolveThreadRuntimeCommandConfigArgs {
+  authorGrantId: string | null;
+  authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   environment: ThreadRuntimeCommandEnvironment;
   model: string;
@@ -119,18 +124,35 @@ export function resolvePermissionEscalation(
   return "ask";
 }
 
-function threadShellUserId(
-  args: ResolveThreadRuntimeCommandConfigArgs,
-): string | null {
-  const userId = args.authorUserId ?? args.thread.createdByUserId;
+export interface ThreadShellCredential {
+  grantId: string | null;
+  roleCeiling: RoleCeiling | null;
+  userId: string;
+}
+
+export function resolveThreadShellCredential(
+  deps: Pick<LoggedWorkSessionDeps, "db">,
+  args: Pick<
+    ResolveThreadRuntimeCommandConfigArgs,
+    "authorGrantId" | "authorRoleCeiling" | "authorUserId" | "thread"
+  >,
+): ThreadShellCredential | null {
+  if (args.authorUserId !== null && !isSystemUserId(args.authorUserId)) {
+    return {
+      grantId: args.authorGrantId,
+      userId: args.authorUserId,
+      roleCeiling: args.authorRoleCeiling,
+    };
+  }
+  const creatorUserId = args.thread.createdByUserId;
   if (
-    userId === null ||
-    userId === LOCAL_OWNER_USER_ID ||
-    userId === MACHINE_AUTH_SYSTEM_USER_ID
+    creatorUserId === null ||
+    isSystemUserId(creatorUserId) ||
+    readUserRole(deps.db, creatorUserId) !== "member"
   ) {
     return null;
   }
-  return userId;
+  return { grantId: null, userId: creatorUserId, roleCeiling: "member" };
 }
 
 export async function resolveThreadRuntimeCommandConfig(
@@ -226,11 +248,11 @@ export async function resolveThreadRuntimeCommandConfig(
       )
         contributedEnv.splice(index, 1);
     }
-    const shellUserId = threadShellUserId(args);
-    if (shellUserId !== null) {
+    const shellCredential = resolveThreadShellCredential(deps, args);
+    if (shellCredential !== null) {
       const token = await issueThreadShellToken(
         deps.config.dataDir,
-        shellUserId,
+        shellCredential,
       );
       contributedEnv.push({
         name: "BB_TOKEN",

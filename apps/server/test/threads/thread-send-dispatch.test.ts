@@ -292,6 +292,8 @@ describe("user message telemetry", () => {
       });
 
       await sendThreadMessage(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
@@ -333,6 +335,8 @@ describe("user message telemetry", () => {
       });
 
       await sendThreadMessage(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
@@ -379,6 +383,8 @@ describe("active thread admission before host readiness", () => {
 
         await expect(
           acceptThreadSendRequest(harness.deps, {
+            authorGrantId: null,
+            authorRoleCeiling: null,
             authorUserId: LOCAL_OWNER_USER_ID,
             thread: snapshot === "stale" ? thread : current,
             payload: { input: textInput("begin another turn"), mode: "start" },
@@ -416,6 +422,8 @@ describe("active thread admission before host readiness", () => {
 
       await expect(
         acceptThreadSendRequest(harness.deps, {
+          authorGrantId: null,
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           thread,
           payload: {
@@ -447,6 +455,8 @@ describe("startup queue waits", () => {
       ]) {
         await expect(
           acceptThreadSendRequest(harness.deps, {
+            authorGrantId: null,
+            authorRoleCeiling: null,
             authorUserId: LOCAL_OWNER_USER_ID,
             payload: {
               input: textInput(text),
@@ -593,6 +603,8 @@ describe("startup queue waits", () => {
 
         await expect(
           acceptThreadSendRequest(harness.deps, {
+            authorGrantId: null,
+            authorRoleCeiling: null,
             authorUserId: LOCAL_OWNER_USER_ID,
             payload: {
               input: textInput(`follow-up after ${operation}`),
@@ -633,6 +645,8 @@ describe("startup queue waits", () => {
 
       await expect(
         acceptThreadSendRequest(harness.deps, {
+          authorGrantId: null,
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           payload: {
             input: textInput("do not strand this steer"),
@@ -673,6 +687,8 @@ describe("startup queue waits", () => {
 
       await expect(
         acceptThreadSendRequest(harness.deps, {
+          authorGrantId: null,
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           payload: {
             input,
@@ -789,6 +805,8 @@ describe("startup queue waits", () => {
 
       await expect(
         acceptThreadSendRequest(harness.deps, {
+          authorGrantId: null,
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           payload: {
             input,
@@ -806,6 +824,8 @@ describe("startup queue waits", () => {
       });
       await expect(
         acceptThreadSendRequest(harness.deps, {
+          authorGrantId: null,
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           payload: {
             input: secondInput,
@@ -887,11 +907,19 @@ describe("startup queue waits", () => {
       ).toEqual([
         expect.objectContaining({
           inputGroups: [pluginInput, input],
-          target: { mode: "auto", expectedTurnId: "turn-ready" },
+          target: {
+            mode: "auto",
+            expectedTurnId: "turn-ready",
+            bindExpectedTurn: false,
+          },
         }),
         expect.objectContaining({
           input: secondInput,
-          target: { mode: "auto", expectedTurnId: "turn-ready" },
+          target: {
+            mode: "auto",
+            expectedTurnId: "turn-ready",
+            bindExpectedTurn: false,
+          },
         }),
       ]);
       expect(
@@ -906,6 +934,8 @@ describe("startup queue waits", () => {
       vi.spyOn(threadEvents, "getActiveTurnId").mockReturnValueOnce(null);
       await expect(
         acceptThreadSendRequest(harness.deps, {
+          authorGrantId: null,
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           payload: {
             input: textInput("send after the wake scan"),
@@ -993,6 +1023,7 @@ describe("startup queue waits", () => {
           target: {
             mode: "auto",
             expectedTurnId: "turn-system-notice-ready",
+            bindExpectedTurn: false,
           },
         }),
       ]);
@@ -1053,6 +1084,8 @@ describe("startup queue waits", () => {
 
       await expect(
         acceptThreadSendRequest(harness.deps, {
+          authorGrantId: null,
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           payload: {
             input: textInput("carry on without waiting for the card"),
@@ -1123,6 +1156,8 @@ describe("turn submit failure settlement", () => {
       if (!activeThread) throw new Error("Expected an active thread");
 
       await sendThreadMessage(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
@@ -1180,6 +1215,8 @@ describe("turn submit failure settlement", () => {
       if (!activeThread) throw new Error("Expected an active thread");
 
       await sendThreadMessage(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
@@ -1245,6 +1282,8 @@ describe("turn submit failure settlement", () => {
       if (!activeThread) throw new Error("Expected an active thread");
 
       await sendThreadMessage(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
@@ -1300,6 +1339,8 @@ describe("idle cold-start activation", () => {
       });
 
       await sendThreadMessage(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
@@ -1382,6 +1423,8 @@ describe("idle cold-start activation", () => {
       }
 
       await sendThreadMessage(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment: targetEnvironment,
         payload: {
@@ -1458,6 +1501,8 @@ describe("session option selection dispatch", () => {
     });
     choose(thread);
     const queued = await createQueuedMessageForThread(harness.deps, {
+      authorGrantId: null,
+      authorRoleCeiling: null,
       authorUserId: LOCAL_OWNER_USER_ID,
       thread,
       payload: { input: textInput("next turn") },
@@ -1519,6 +1564,8 @@ describe("service tier execution lifecycle", () => {
         serviceTier: "fast",
       });
       const queued = await createQueuedMessageForThread(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         thread,
         payload: { input: textInput("queued fast turn"), serviceTier: "fast" },
@@ -1567,6 +1614,8 @@ describe("service tier execution lifecycle", () => {
         });
         await expect(
           acceptThreadSendRequest(harness.deps, {
+            authorGrantId: null,
+            authorRoleCeiling: null,
             authorUserId: LOCAL_OWNER_USER_ID,
             thread,
             payload: {
@@ -1601,6 +1650,8 @@ describe("service tier execution lifecycle", () => {
         serviceTier: "fast",
       });
       const older = await createQueuedMessageForThread(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         thread,
         payload: {
@@ -1609,6 +1660,8 @@ describe("service tier execution lifecycle", () => {
         },
       });
       const newer = await createQueuedMessageForThread(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         thread,
         payload: { input: textInput("newer fast turn"), serviceTier: "fast" },
@@ -1661,6 +1714,8 @@ describe("service tier execution lifecycle", () => {
         serviceTier: "fast",
       });
       const result = await acceptThreadSendRequest(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         thread,
         payload: {
@@ -1690,6 +1745,8 @@ describe("service tier execution lifecycle", () => {
         serviceTier: "fast",
       });
       const queued = await createQueuedMessageForThread(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         thread,
         payload: { input: textInput("standard turn"), serviceTier: "default" },
@@ -1697,6 +1754,8 @@ describe("service tier execution lifecycle", () => {
       archiveThread(harness.db, harness.hub, thread.id);
       await expect(
         acceptThreadSendRequest(harness.deps, {
+          authorGrantId: null,
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           thread,
           payload: {
@@ -1733,6 +1792,8 @@ describe("concurrent idle dispatch regression", () => {
       const results = await Promise.allSettled(
         Array.from({ length: 4 }, (_, index) =>
           acceptThreadSendRequest(harness.deps, {
+            authorGrantId: null,
+            authorRoleCeiling: null,
             authorUserId: LOCAL_OWNER_USER_ID,
             thread,
             payload: {
@@ -1766,6 +1827,8 @@ describe("competing turn refusals", () => {
     fixture: IdleThreadFixture,
   ) {
     await sendThreadMessage(harness.deps, {
+      authorGrantId: null,
+      authorRoleCeiling: null,
       authorUserId: LOCAL_OWNER_USER_ID,
       environment: fixture.environment,
       payload: {

@@ -172,11 +172,13 @@ const slot = renderSlot(
     settings: { greeting: "hi" }, // useSettings() values
     context: { projectId: "p1", threadId: null }, // useBbContext()
     realtimeConnectionState: "reconnecting", // useRealtimeConnectionState()
+    experimental_currentUser: member, // multi-user mode; omitted → local owner admin
     openUrl: (url) => url.startsWith("https://"),
   },
 );
 await slot.findByText("…"); // Testing Library queries
 await slot.behavior.setRealtimeConnectionState("connected");
+await slot.behavior.experimental_setCurrentUser({ ...member, effectiveRole: "admin" });
 await slot.behavior.setComposerScope(
   { kind: "queued-message", threadId: "t1", queuedMessageId: "q1" },
   "queued draft",

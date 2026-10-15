@@ -6,6 +6,8 @@ Read the installed declarations for exact current signatures.
 
 ## `@get-bb/plugin-sdk`
 
+- `ExperimentalPluginRealtimePublishOptions`
+- `ExperimentalPluginUserStorage`
 - `PLUGIN_CLI_OUTPUT_MAX_BYTES`
 - `defineRpcContract`
 - `experimental_defineHostEntry`
@@ -13,6 +15,7 @@ Read the installed declarations for exact current signatures.
 - `cliCommand`
 - `PluginCliError`
 - `experimental_assertCliAdmin`
+- `experimental_PluginRpcForbiddenError`
 - `BbContext`
 - `BbNavigate`
 - `BbPluginApi`
@@ -60,10 +63,18 @@ Read the installed declarations for exact current signatures.
 - `ExperimentalLiveFileTarget`
 - `ExperimentalOpenFixedTabOptions`
 - `ExperimentalPermissionModePickerProps`
+- `ExperimentalCallerGrant`
+- `ExperimentalCallerGrantRequest`
+- `ExperimentalPluginCaller`
+- `ExperimentalPluginCallerContext`
 - `ExperimentalPluginFixedTabReference`
 - `ExperimentalPluginRpcCaller`
 - `ExperimentalPluginRpcHandlerContext`
 - `ExperimentalPluginRpcHandlersWithContext`
+- `PluginBbSdk.experimental_asCaller`
+- `PluginBbSdk.experimental_asGrant`
+- `PluginBbSdk.experimental_createCallerGrant`
+- `PluginBbSdk.experimental_revokeCallerGrant`
 - `ExperimentalPluginWebSocket`
 - `ExperimentalPluginWebSocketContext`
 - `ExperimentalPluginWebSocketHandler`
@@ -73,6 +84,7 @@ Read the installed declarations for exact current signatures.
 - `ExperimentalProviderModelPickerValue`
 - `ExperimentalVoiceInputTextareaProps`
 - `JsonValue`
+- `PluginSettingScope`
 - `ReadonlyJsonValue` — deep-readonly JSON, e.g. `context.pluginMetadata` values
 - `MarkdownProps`
 - `NewThreadComposerProps`
@@ -323,7 +335,12 @@ Read the installed declarations for exact current signatures.
 - `PluginEnvironmentProviderValidateContext` — the `validate` context
   typed from `requires` and `inputs`, like the create context
 - `PluginEnvironmentProviderCreateContext` — facts for a fresh environment,
-  including the `suggestedBranchName` core would use
+  including the `suggestedBranchName` core would use and
+  `experimental_requester`
+- `PluginEnvironmentProviderRequester` — `{ userId, role }` for the thread's
+  creator, or null without a human creator. `role` is the account role read
+  when the attempt starts: `member` in multi-user mode unless the creator asked
+  without a role ceiling, `admin` for the local owner in local mode
 - `PluginEnvironmentProviderRestoreContext` — `restore`'s
   context: the creation inputs plus `previous.environment` and its private
   `previous.resource`
@@ -427,7 +444,9 @@ Read the installed declarations for exact current signatures.
 - `FakePluginRegistrations`
 - `FakeRealtimeSignal`
 - `FakeScheduleRecord`
+- `ExperimentalFakeCallerGrant`
 - `FakeSdkCall`
+- `FakeSdkCallerGrants`
 - `FakeSdkHarness`
 - `FakeSdkOverrides`
 - `FakeServiceRecord`

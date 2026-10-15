@@ -813,6 +813,8 @@ describe("public thread fork route", () => {
       const inputGroups = [textInput("First group"), textInput("Second group")];
 
       await sendThreadMessage(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,
         payload: {
@@ -936,9 +938,16 @@ describe("public thread fork route", () => {
 
       await expect(
         sendThreadMessage(harness.deps, {
+          authorGrantId: null,
+          authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           beforeAppendInTransaction: ({ tx }) => {
             appendClientTurnEventInTransaction(tx, {
+              author: {
+                authorGrantId: null,
+                authorRoleCeiling: null,
+                authorUserId: null,
+              },
               environmentId: thread.environmentId,
               execution: {
                 model: "gpt-5",

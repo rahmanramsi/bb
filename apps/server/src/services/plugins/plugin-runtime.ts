@@ -38,6 +38,7 @@ import { PluginHostArtifactRegistry } from "./plugin-host-artifact-registry.js";
 import { getPluginBuildToolchain } from "./build-toolchain.js";
 import type { BbSdk } from "@bb/sdk";
 import {
+  deletePluginCallerGrant,
   getInstalledPlugin,
   getPluginSafeMode,
   listInstalledPlugins,
@@ -1642,8 +1643,12 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
       getLoopbackBaseUrl: () => boundLoopbackBaseUrl,
       getServiceToken: () => boundServiceToken,
       rpcCaller: rpcCallers.issue(row.id),
-      publishSignal: (channel, payload) => {
-        deps.hub.notifyPluginSignal(row.id, channel, payload);
+      issuePluginCallerCredential: deps.issuePluginCallerCredential ?? null,
+      revokePluginCallerGrant:
+        deps.revokePluginCallerGrant ??
+        ((args) => deletePluginCallerGrant(deps.db, args)),
+      publishSignal: (channel, payload, userId) => {
+        deps.hub.notifyPluginSignal(row.id, channel, payload, userId);
       },
       settingsChanged: () => {
         deps.onSettingsChanged?.(row.id);
@@ -2036,8 +2041,8 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
   function bindSdk(args: { baseUrl: string; serviceToken: string }): void {
     boundSdk = createPluginLoopbackSdk({
       baseUrl: args.baseUrl,
+      authToken: args.serviceToken,
       callerToken: null,
-      serviceToken: args.serviceToken,
     });
     boundLoopbackBaseUrl = args.baseUrl;
     boundServiceToken = args.serviceToken;

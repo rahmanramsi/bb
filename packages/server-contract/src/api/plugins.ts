@@ -361,6 +361,7 @@ export type PluginRemoveResponse = z.infer<typeof pluginRemoveResponseSchema>;
 const pluginSettingBaseSchema = {
   label: z.string().min(1),
   description: z.string().min(1).optional(),
+  experimental_scope: z.enum(["team", "user"]).optional(),
 };
 
 export const pluginSettingDescriptorSchema = z.discriminatedUnion("type", [

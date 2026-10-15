@@ -99,13 +99,27 @@ prints its full option help; a hand-written `run` leaves that unset and the
 `bb` CLI answers `--help` from the `commands[].usage` line without calling
 the plugin.
 
-In multi-user mode, `ctx.experimental_callerRole` is the caller's server role.
+In multi-user mode, `ctx.experimental_callerRole` is the caller's effective
+role and `ctx.experimental_caller` names the caller; a `client` caller's
+`userId` is the invoking user (the local owner in local mode).
 Mark a command that changes server-wide configuration, credentials, or machine
 enrollment with `experimental_requiredRole: "admin"`; `defineCli` then refuses
 members with `admin_required`. A show-or-set command calls
 `experimental_assertCliAdmin(ctx, "Setting the limit")` only on the write path.
 RPC method contracts take the same `experimental_requiredRole: "admin"`, and
-the server answers members with HTTP 403 and code `forbidden`.
+the server answers members with HTTP 403 and code `forbidden`. A handler that
+needs an admin only for some inputs throws
+`experimental_PluginRpcForbiddenError` for the same reply, and points admins to
+a separate method marked `experimental_requiredRole: "admin"`. In the app, hide
+the matching controls from members with `experimental_useCurrentUser()` from
+`@get-bb/plugin-sdk/app`.
+
+`bb.http.route` and `bb.http.experimental_websocket` options and
+`registerTool` take the same `experimental_requiredRole: "admin"`. bb answers
+HTTP callers with 403 `forbidden`, refuses the WebSocket upgrade, and returns
+an error result to a tool call whose turn author is not acting as an admin.
+`settings.experimental_set` throws `forbidden` when it runs inside a member's
+request, because it would otherwise bypass the settings admin gate.
 
 Agents discover plugin commands through the server-generated
 `plugin-commands` skill, which lists each command's `summary` and the

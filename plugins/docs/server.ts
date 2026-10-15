@@ -439,6 +439,7 @@ export const docsRpcContract = defineRpcContract({
     output: pathResultSchema,
   },
   createVault: {
+    experimental_requiredRole: "admin",
     input: z
       .object({
         name: z.string().min(1),
@@ -449,6 +450,7 @@ export const docsRpcContract = defineRpcContract({
     output: vaultSchema,
   },
   removeVault: {
+    experimental_requiredRole: "admin",
     input: z.object({ vaultId: z.string().min(1) }).strict(),
     output: okResultSchema,
   },
@@ -3072,7 +3074,8 @@ export default async function plugin(
             })),
         }),
         "vault-add": cliCommand({
-          summary: "Add a vault",
+          summary: "Add a vault (admin only)",
+          experimental_requiredRole: "admin",
           suggestFor: ["add-vault", "vault-create"],
           positionals: [
             {
@@ -3108,7 +3111,8 @@ export default async function plugin(
             })),
         }),
         "vault-remove": cliCommand({
-          summary: "Remove a vault configuration",
+          summary: "Remove a vault configuration (admin only)",
+          experimental_requiredRole: "admin",
           suggestFor: ["remove-vault", "vault-delete"],
           positionals: [
             {

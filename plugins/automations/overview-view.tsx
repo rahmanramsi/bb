@@ -8,6 +8,7 @@ import {
 import type {
   AutomationReadProblem,
   AutomationResponse,
+  AutomationRunMode,
   AutomationsOverviewResponse,
 } from "./src/rpc-types.js";
 import { CREATE_AUTOMATION_PROMPT } from "./composer";
@@ -261,8 +262,12 @@ export function OverviewRow({
   onEnabledChange: (
     enabled: boolean,
     route: AutomationDetailRoute,
+    mode: AutomationRunMode,
   ) => Promise<void>;
-  onRunNow: (route: AutomationDetailRoute) => Promise<void>;
+  onRunNow: (
+    route: AutomationDetailRoute,
+    mode: AutomationRunMode,
+  ) => Promise<void>;
   onDelete: (route: AutomationDetailRoute, name: string) => void;
 }) {
   const [togglePending, setTogglePending] = useState(false);
@@ -291,7 +296,9 @@ export function OverviewRow({
           pending={runPending}
           onRunNow={() => {
             setRunPending(true);
-            void onRunNow(route).finally(() => setRunPending(false));
+            void onRunNow(route, automation.execution.mode).finally(() =>
+              setRunPending(false),
+            );
           }}
           onDelete={() => onDelete(route, automation.name)}
         />
@@ -311,9 +318,11 @@ export function OverviewRow({
           label={`${automation.enabled ? "Disable" : "Enable"} ${automation.name}`}
           onCheckedChange={(enabled) => {
             setTogglePending(true);
-            void onEnabledChange(enabled, route).finally(() =>
-              setTogglePending(false),
-            );
+            void onEnabledChange(
+              enabled,
+              route,
+              automation.execution.mode,
+            ).finally(() => setTogglePending(false));
           }}
         />
       }
@@ -462,8 +471,12 @@ export function AutomationOverviewView({
   onEnabledChange: (
     enabled: boolean,
     route: AutomationDetailRoute,
+    mode: AutomationRunMode,
   ) => Promise<void>;
-  onRunNow: (route: AutomationDetailRoute) => Promise<void>;
+  onRunNow: (
+    route: AutomationDetailRoute,
+    mode: AutomationRunMode,
+  ) => Promise<void>;
   onDelete: (route: AutomationDetailRoute, name: string) => void;
   onCreateViaChat: (prompt?: string) => void;
   activeMode: AutomationCollectionMode;

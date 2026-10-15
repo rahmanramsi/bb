@@ -431,6 +431,8 @@ import {
   type UpdateUserRoleRequest,
   type PathUserId,
   type PathUserInviteId,
+  type PathUserPluginGrantId,
+  type PluginCallerGrantListResponse,
   type UserInviteListResponse,
   addConnectMemberRequestSchema,
   type AddConnectMemberRequest,
@@ -443,6 +445,7 @@ import {
   type AuthSessionResponse,
   type AuthSignInRequest,
   type AuthSignUpRequest,
+  type AuthMeResponse,
   type AuthUserResponse,
   type CreatePersonalAccessTokenRequest,
   type CreatePersonalAccessTokenResponse,
@@ -465,7 +468,7 @@ export const publicApiRoutes = {
     path: "/me",
     method: "get",
     request: noRequest(),
-    response: jsonResponse<AuthUserResponse>(),
+    response: jsonResponse<AuthMeResponse>(),
   }),
   auth: {
     session: defineRoute({
@@ -581,6 +584,18 @@ export const publicApiRoutes = {
         updateUserRoleRequestSchema,
       ),
       response: jsonResponse<AuthUserResponse>(),
+    }),
+    listPluginGrants: defineRoute({
+      path: "/users/:id/plugin-grants",
+      method: "get",
+      request: noRequest<PathUserId>(),
+      response: jsonResponse<PluginCallerGrantListResponse>(),
+    }),
+    revokePluginGrant: defineRoute({
+      path: "/users/:id/plugin-grants/:grantId",
+      method: "delete",
+      request: noRequest<PathUserPluginGrantId>(),
+      response: jsonResponse<{ ok: true }>(),
     }),
     remove: defineRoute({
       path: "/users/:id",

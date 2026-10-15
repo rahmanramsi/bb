@@ -24,13 +24,13 @@ function setup() {
     source: { type: "local_path", hostId: hostA.id, path: "/tmp/a" },
   });
   const environmentA = createEnvironment(db, noopNotifier, {
-      providerOwnsPath: false,
+    providerOwnsPath: false,
     hostId: hostA.id,
     projectId: project.id,
     path: "/tmp/a",
   });
   const environmentB = createEnvironment(db, noopNotifier, {
-      providerOwnsPath: false,
+    providerOwnsPath: false,
     hostId: hostB.id,
     projectId: project.id,
     path: "/tmp/b",
@@ -63,9 +63,11 @@ describe("listRunningThreads", () => {
 
     // `idle` is the one that is easy to get wrong: the thread has a live
     // session but is consuming nothing, so it holds no slot.
-    expect(listRunningThreads(db).map((row) => row.id).sort()).toEqual(
-      [ids.get("starting")!, ids.get("active")!].sort(),
-    );
+    expect(
+      listRunningThreads(db)
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual([ids.get("starting")!, ids.get("active")!].sort());
   });
 
   it("excludes archived and deleted threads but keeps hidden ones", () => {
@@ -87,9 +89,11 @@ describe("listRunningThreads", () => {
 
     // A hidden thread burns a real slot on a real machine, so hiding it here
     // would under-report occupancy; archival and deletion actually stop one.
-    expect(listRunningThreads(db).map((row) => row.id).sort()).toEqual(
-      [live.id, hidden.id].sort(),
-    );
+    expect(
+      listRunningThreads(db)
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual([live.id, hidden.id].sort());
   });
 
   it("resolves the host through the thread's environment, null when it has none", () => {
@@ -148,8 +152,10 @@ describe("listRunningThreads", () => {
       originPluginId: "workflows",
     });
 
-    expect(listRunningThreads(db).map((row) => row.id).sort()).toEqual(
-      [parent.id, child.id, spawned.id].sort(),
-    );
+    expect(
+      listRunningThreads(db)
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual([parent.id, child.id, spawned.id].sort());
   });
 });

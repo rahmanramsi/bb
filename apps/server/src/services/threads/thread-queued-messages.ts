@@ -2,6 +2,7 @@ import {
   promptInputSchema,
   queuedMessageWaitingOnSchema,
   threadQueuedMessageSchema,
+  type RoleCeiling,
 } from "@bb/domain";
 import type {
   PermissionMode,
@@ -37,6 +38,8 @@ interface StoredQueuedThreadMessageRow {
   sendAt: number | null;
   serviceTier: string;
   senderThreadId: string | null;
+  authorGrantId: string | null;
+  authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   requestedByInitiator: StartedOnBehalfOfInitiator | null;
   requestedByThreadId: string | null;

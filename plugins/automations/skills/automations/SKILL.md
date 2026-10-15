@@ -18,7 +18,7 @@ Personal supports automations with `--project proj_personal`. Use `bb project li
 
 Choosing a mode:
 
-Use `script` when the output is fully determined by code: watchdogs, threshold alerts, health checks, heartbeats, and API pollers with a fixed output shape. Scripts run on the bb server. New standard-project scripts use the server-host project source when one exists; Personal and projects without one run in the plugin's shared script storage directory. Existing scripts without a saved policy also run there. Use `--working-directory automation-storage|project|<absolute-server-path>` to select the policy. Script automations do not have an environment field and do not accept environment flags.
+Use `script` when the output is fully determined by code: watchdogs, threshold alerts, health checks, heartbeats, and API pollers with a fixed output shape. Scripts run on the bb server. New standard-project scripts use the server-host project source when one exists; Personal and projects without one run in the plugin's shared script storage directory. Existing scripts without a saved policy also run there. Use `--working-directory automation-storage|project|<absolute-server-path>` to select the policy. Script automations do not have an environment field and do not accept environment flags. On a multi-user server, creating, updating, running, pausing, and resuming script automations requires an admin; members get `admin_required` and can still use agent automations. Over RPC, admins use `automations_create_script`, `automations_update_script`, `automations_run_script`, `automations_pause_script`, and `automations_resume_script`; `automations_create`, `automations_update`, `automations_run`, `automations_pause`, and `automations_resume` refuse script automations with HTTP 403 and error code `forbidden`. Deleting a script automation stays open to members. An agent automation runs as one person, shown as "Runs as" in `bb automation show` and the app (`runsAsUserId` in JSON): whoever created it, last changed what it runs, or adopted it. bb records a plugin grant from that person, and each run spawns or messages its thread as them, so the run's agent gets their `BB_TOKEN`, capped at member when they saved it with member authority or a capped `BB_TOKEN`. The grant has no expiry, so the automation runs as that person until they revoke it; `bb automation show` says "until you revoke it" for your own automations. The grant appears in `bb user grants list` as `Automation "<name>"` (long names end in `…`) and under Plugin access in account settings; revoking it makes later runs fail until someone adopts the automation. Automations without a grant show `runsAsCreator: false` and the note "Runs without a user identity until someone adopts it", and keep running as the plugin. Read [references/updates.md](references/updates.md) before changing someone else's agent automation: execution changes by anyone but the person it runs as need adoption.
 
 Design the script to print nothing when there is nothing to report: an exit-0 run with empty stdout/stderr, or a last non-empty line of `{"wakeAgent": false}`, is recorded as a skipped silent tick. Any other output is captured; non-zero exit or timeout is recorded as a failed run.
 
@@ -41,9 +41,10 @@ Managing:
 ```bash
 bb automation list --project <id>
 bb automation show <automationId> --project <id>
-bb automation update <automationId> --project <id> [--name <name>] [schedule flags] [complete execution flags | partial agent update flags]
+bb automation update <automationId> --project <id> [--name <name>] [schedule flags] [complete execution flags | partial agent update flags] [--adopt-revision <n>]
 bb automation pause <automationId> --project <id>
 bb automation resume <automationId> --project <id>
+bb automation adopt <automationId> --project <id> [--revision <n>]
 bb automation run <automationId> --project <id> [--idempotency-key <key>]
 bb automation runs <automationId> --project <id> [--limit <count>] [--output <runId>]
 bb automation delete <automationId> --project <id> --yes

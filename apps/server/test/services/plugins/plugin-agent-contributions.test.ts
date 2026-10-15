@@ -109,6 +109,7 @@ describe("plugin skills tier", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -218,6 +219,7 @@ describe("plugin agent contributions reach thread runtime config", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger,
@@ -296,6 +298,8 @@ describe("plugin agent contributions reach thread runtime config", () => {
     );
     const buildCommand = (requestValue: number) =>
       buildThreadStartCommand(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: null,
         environment,
         execution,
@@ -389,6 +393,8 @@ describe("plugin agent contributions reach thread runtime config", () => {
       { threadId: thread.id },
     );
     const command = await buildThreadStartCommand(harness.deps, {
+      authorGrantId: null,
+      authorRoleCeiling: null,
       authorUserId: null,
       environment,
       execution,

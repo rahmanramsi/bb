@@ -206,6 +206,15 @@ export {
   type UpsertPluginMarketplaceIconInput,
 } from "./plugin-marketplaces.js";
 export {
+  capPluginCallerGrantsForUserInTransaction,
+  createPluginCallerGrant,
+  deletePluginCallerGrant,
+  deletePluginCallerGrantsForPlugin,
+  getPluginCallerGrant,
+  listPluginCallerGrantsForUser,
+  type PluginCallerGrantRow,
+} from "./plugin-caller-grants.js";
+export {
   deleteAllPluginSettings,
   deletePluginKvValue,
   getPluginKvValue,
@@ -215,6 +224,13 @@ export {
   setPluginSettingsValues,
   listPluginKvRows,
   listPluginSettingRows,
+  pluginUserExists,
+  getPluginUserKvValue,
+  setPluginUserKvValue,
+  deletePluginUserKvValue,
+  listPluginUserKvKeys,
+  getPluginUserSettingsValues,
+  setPluginUserSettingsValues,
 } from "./plugin-storage.js";
 export {
   claimPluginScheduledRun,
@@ -447,6 +463,7 @@ export {
   deleteQueuedRetriesForThreadEventSuffixInTransaction,
   deleteClaimedQueuedThreadMessageBatchInTransaction,
   deleteQueuedThreadMessage,
+  deleteQueuedThreadMessagesByAuthorInTransaction,
   getQueuedThreadMessage,
   hasQueuedRetryOfTurnRequest,
   hasClaimedQueuedThreadMessages,
@@ -526,3 +543,8 @@ export {
 export * from "./project-attachments.js";
 
 export * from "./project-attachment-backfill.js";
+export {
+  getTurnRequestAuthor,
+  recordTurnRequestAuthorInTransaction,
+} from "./turn-request-authors.js";
+export type { TurnRequestAuthor } from "./turn-request-authors.js";

@@ -61,6 +61,7 @@ import {
   type PluginEnvironmentProviderCreateContext,
   type PluginEnvironmentProviderCreateResult,
   type PluginEnvironmentProviderProgress,
+  type PluginEnvironmentProviderRequester,
   type PluginEnvironmentProviderRestoreContext,
 } from "@get-bb/plugin-sdk/environment-provider";
 import {
@@ -130,6 +131,7 @@ export interface ProviderOperationContext {
   gitRemote: string | null;
   inputs: JsonValue | null;
   suggestedBranchName: string;
+  requester: PluginEnvironmentProviderRequester | null;
   environment: Environment | null;
 }
 
@@ -420,6 +422,7 @@ async function runCreate(
           : await invokeCreate(record, {
               ...operation,
               suggestedBranchName: context.suggestedBranchName,
+              experimental_requester: context.requester,
             });
     if (result.status === "created") {
       let adoptedExistingEnvironment = false;

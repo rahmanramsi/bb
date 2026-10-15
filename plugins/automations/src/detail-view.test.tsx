@@ -14,6 +14,7 @@ import type {
   AutomationRunResponse,
 } from "./rpc-types.js";
 import {
+  AdoptAutomationDialog,
   AutomationDetailView as AutomationDetailViewBase,
   AgentAutomationDefinition,
   ScriptAutomationDefinition,
@@ -112,6 +113,9 @@ const AUTOMATION: AutomationDetailResponse = {
   },
   origin: "human",
   createdByThreadId: null,
+  runsAsCreator: true,
+  runsAsUserId: "usr_local_owner",
+  executionRevision: 1,
   nextRunAt: 1_800_000_000_000,
   lastRunAt: null,
   runCount: 0,
@@ -147,21 +151,27 @@ const NO_RUNS = {
   retry: () => {},
 };
 
+type DefaultedDetailProps =
+  | "editing"
+  | "onCancelEdit"
+  | "onUpdateAgent"
+  | "viewerUserId"
+  | "onAdopt";
+
 type TestAutomationDetailProps = Omit<
   ComponentProps<typeof AutomationDetailViewBase>,
-  "editing" | "onCancelEdit" | "onUpdateAgent"
+  DefaultedDetailProps
 > &
   Partial<
-    Pick<
-      ComponentProps<typeof AutomationDetailViewBase>,
-      "editing" | "onCancelEdit" | "onUpdateAgent"
-    >
+    Pick<ComponentProps<typeof AutomationDetailViewBase>, DefaultedDetailProps>
   >;
 
 function AutomationDetailView({
   editing = false,
   onCancelEdit = () => {},
   onUpdateAgent = async () => {},
+  viewerUserId = "usr_local_owner",
+  onAdopt = async () => {},
   ...props
 }: TestAutomationDetailProps) {
   return (
@@ -170,6 +180,8 @@ function AutomationDetailView({
       editing={editing}
       onCancelEdit={onCancelEdit}
       onUpdateAgent={onUpdateAgent}
+      viewerUserId={viewerUserId}
+      onAdopt={onAdopt}
     />
   );
 }
@@ -424,14 +436,17 @@ describe("Automation detail recipe", () => {
     expect((save as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(save);
 
-    expect(onUpdate).toHaveBeenCalledWith({
-      prompt: "Review the failed build",
-      providerId: "codex",
-      model: "gpt-5.6-codex",
-      reasoningLevel: "medium",
-      serviceTier: null,
-      permissionMode: "accept-edits",
-    });
+    expect(onUpdate).toHaveBeenCalledWith(
+      {
+        prompt: "Review the failed build",
+        providerId: "codex",
+        model: "gpt-5.6-codex",
+        reasoningLevel: "medium",
+        serviceTier: null,
+        permissionMode: "accept-edits",
+      },
+      null,
+    );
   });
 
   it("routes both pickers to a reused environment and re-keys permissions on a provider change", () => {
@@ -463,14 +478,17 @@ describe("Automation detail recipe", () => {
     fireEvent.click(permission);
     fireEvent.click(screen.getByText("Save Prompt"));
 
-    expect(onUpdate).toHaveBeenCalledWith({
-      prompt: "Summarize the inbox",
-      providerId: "claude",
-      model: "claude-sonnet-5",
-      reasoningLevel: "high",
-      serviceTier: "fast",
-      permissionMode: "full",
-    });
+    expect(onUpdate).toHaveBeenCalledWith(
+      {
+        prompt: "Summarize the inbox",
+        providerId: "claude",
+        model: "claude-sonnet-5",
+        reasoningLevel: "high",
+        serviceTier: "fast",
+        permissionMode: "full",
+      },
+      null,
+    );
   });
 
   it("keeps project and environment metadata beside the host picker", () => {
@@ -537,6 +555,176 @@ describe("Automation detail recipe", () => {
     expect(
       promptShell.querySelectorAll('[data-testid="bb-provider-model-picker"]'),
     ).toHaveLength(1);
+  });
+
+  it("notes an agent automation that runs without a user identity", () => {
+    const view = (automation: AutomationDetailResponse) => (
+      <AutomationDetailView
+        automation={automation}
+        projectLabel="Personal"
+        runsState={NO_RUNS}
+        actionPending={false}
+        onToggle={() => {}}
+        onEdit={() => {}}
+        onRunNow={() => {}}
+        onDelete={() => {}}
+        onOpenThread={() => {}}
+      />
+    );
+    const note = "Runs without a user identity until someone adopts it";
+    const { container, rerender } = render(
+      view({ ...AUTOMATION, runsAsCreator: false }),
+    );
+    expect(container.textContent).toContain(note);
+
+    rerender(view(AUTOMATION));
+    expect(container.textContent).not.toContain(note);
+  });
+
+  it("says who the automation runs as", () => {
+    const view = (viewerUserId: string) => (
+      <AutomationDetailView
+        automation={{ ...AUTOMATION, runsAsUserId: "usr_member" }}
+        projectLabel="Personal"
+        runsState={NO_RUNS}
+        actionPending={false}
+        viewerUserId={viewerUserId}
+        onToggle={() => {}}
+        onEdit={() => {}}
+        onRunNow={() => {}}
+        onDelete={() => {}}
+        onOpenThread={() => {}}
+      />
+    );
+    const { container, rerender } = render(view("usr_member"));
+    expect(container.textContent).toContain("Runs as you until you revoke it");
+    expect(
+      screen
+        .getByText("Runs as you until you revoke it")
+        .closest("[title]")
+        ?.getAttribute("title"),
+    ).toContain("Plugin access");
+
+    rerender(view("usr_admin"));
+    expect(container.textContent).toContain("Runs as another person");
+    expect(
+      screen.getByText("Runs as another person").closest("[title]"),
+    ).toHaveProperty("title", "Runs as usr_member");
+  });
+
+  it("asks before saving another person's execution and binds the save to the revision being edited", async () => {
+    const onUpdateAgent = vi.fn(async () => {});
+    const props = {
+      projectLabel: "Personal",
+      runsState: NO_RUNS,
+      actionPending: false,
+      editing: true,
+      viewerUserId: "usr_admin",
+      onUpdateAgent,
+      onToggle: () => {},
+      onEdit: () => {},
+      onRunNow: () => {},
+      onDelete: () => {},
+      onOpenThread: () => {},
+    };
+    const { rerender } = render(
+      <AutomationDetailView
+        {...props}
+        automation={{
+          ...AUTOMATION,
+          runsAsUserId: "usr_member",
+          executionRevision: 4,
+        }}
+      />,
+    );
+    rerender(
+      <AutomationDetailView
+        {...props}
+        automation={{
+          ...AUTOMATION,
+          runsAsUserId: "usr_member",
+          executionRevision: 5,
+        }}
+      />,
+    );
+    expect(
+      document.querySelector("[data-automation-adopt-on-save]")?.textContent,
+    ).toMatch(
+      /Saving a change to what it runs makes it run as you.*until you revoke it.*Plugin access.*bb user grants/,
+    );
+    fireEvent.change(screen.getByLabelText("Automation prompt"), {
+      target: { value: "Summarize today's commits." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Save and run as me/ }));
+
+    expect(onUpdateAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: "Summarize today's commits." }),
+      4,
+    );
+  });
+
+  it("saves the owner's own execution change without adopting", () => {
+    const onUpdateAgent = vi.fn(async () => {});
+    render(
+      <AutomationDetailView
+        automation={{ ...AUTOMATION, runsAsUserId: "usr_member" }}
+        projectLabel="Personal"
+        runsState={NO_RUNS}
+        actionPending={false}
+        editing
+        viewerUserId="usr_member"
+        onUpdateAgent={onUpdateAgent}
+        onToggle={() => {}}
+        onEdit={() => {}}
+        onRunNow={() => {}}
+        onDelete={() => {}}
+        onOpenThread={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Automation prompt"), {
+      target: { value: "Summarize today's commits." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Save Prompt/ }));
+    expect(onUpdateAgent).toHaveBeenCalledWith(expect.anything(), null);
+  });
+
+  it("shows the full execution before adopting the revision that was shown", () => {
+    const onConfirm = vi.fn();
+    const automation = {
+      ...AUTOMATION,
+      runsAsUserId: "usr_member",
+      executionRevision: 3,
+      execution: {
+        mode: "agent",
+        prompt: "Delete stale branches.",
+        providerId: "claude",
+        model: "claude-opus-5",
+        reasoningLevel: "medium",
+        permissionMode: "auto",
+        environment: { type: "project-default" },
+        targetThreadId: "thr_target",
+      },
+    } satisfies AutomationDetailResponse;
+    render(
+      <AdoptAutomationDialog
+        automation={automation}
+        pending={false}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+      />,
+    );
+    const content = document.querySelector(
+      "[data-automation-adopt-content]",
+    )!.textContent;
+    expect(content).toContain("Delete stale branches.");
+    expect(content).toContain("Existing thread thr_target");
+    expect(content).toContain("claude-opus-5");
+    expect(content).toContain("auto");
+    expect(
+      screen.getByText(/will run as you/).closest("[role=dialog]")?.textContent,
+    ).toMatch(/until you revoke it.*Plugin access.*bb user grants/);
+    fireEvent.click(screen.getByRole("button", { name: "Run as me" }));
+    expect(onConfirm).toHaveBeenCalledWith(3);
   });
 
   it("does not treat a project named Local as the personal project", () => {

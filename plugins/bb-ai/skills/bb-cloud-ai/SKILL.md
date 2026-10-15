@@ -15,7 +15,8 @@ Automatic skips it, and nothing is sent to getbb.app. It has no settings page.
 
 - `bb ai off [--json]` turns bb cloud off and keeps the bb account signed in;
   `bb ai on [--json]` turns it back on. Only turn it on when the user asks: it
-  sends prompt text, diffs, and voice recordings off the machine. Disabling the
+  sends prompt text, diffs, and voice recordings off the machine. Both are
+  admin-only on a multi-user server; members get `admin_required`. Disabling the
   `bb-ai` plugin in Settings → Plugins also stops it.
 - `bb ai status [--json]` shows the account, whether bb cloud is on and ready,
   and today's usage.

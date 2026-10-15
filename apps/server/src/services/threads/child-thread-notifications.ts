@@ -128,6 +128,8 @@ function childThreadInterruptionCauseText(
       return " because its provider turn went idle";
     case "manual-stop":
       return "";
+    case "other-author":
+      return " so a message from another author could start a new turn";
   }
 }
 

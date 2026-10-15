@@ -4,6 +4,7 @@ import {
   type NormalizedPluginEnvironmentComposition,
 } from "../internal/host-policy.js";
 import type { MachineBootstrapApi } from "../machine-bootstrap.js";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,15 +32,24 @@ import {
   normalizeMentionProviderRegistration,
   normalizePluginAgentConfiguration,
   normalizeRealtimePayload,
+  normalizeRealtimeUserId,
+  isUserScopedSetting,
+  partitionSettingsUpdate,
   normalizeRpcJsonResult,
   normalizeRpcRegistration,
   publishRpcMethod,
   normalizeWebSocketRouteRegistration,
+  pluginAsCallerRefusal,
+  parsePluginCallerGrantRequest,
+  pluginCallerAuthority,
   pluginCliCollisionWarning,
+  pluginRequiredRoleRefusal,
+  PLUGIN_SETTINGS_WRITE_FORBIDDEN_MESSAGE,
   providerAlreadyRegisteredMessage,
   providerIconRefusalMessage,
   providerWithoutBridgeMessage,
   registerSettingDescriptors,
+  rpcHandlerError,
   runPluginStorageMigrations,
   undeclaredIconProblem,
   validateBackgroundServiceRegistration,
@@ -110,6 +120,7 @@ import type {
   PluginThreadEventPayloads,
   PluginUi,
   PluginRpcError,
+  ExperimentalPluginCaller,
   ExperimentalPluginRpcCaller,
   ExperimentalPluginRpcHandlerContext,
   StandardSchemaV1,
@@ -120,6 +131,7 @@ import {
   type FakeSdkHarness,
   type FakeSdkOverrides,
 } from "./fake-sdk.js";
+import { experimental_PluginRpcForbiddenError } from "../rpc-contract.js";
 
 /**
  * `createFakePluginHost` — an in-process stand-in for the BB server's plugin
@@ -164,6 +176,18 @@ export type FakeLogLevel = "debug" | "info" | "warn" | "error";
 export interface FakeLogEntry {
   level: FakeLogLevel;
   message: string;
+}
+
+function defaultClientCaller(
+  role: "admin" | "member",
+): ExperimentalPluginCaller {
+  return {
+    kind: "client",
+    userId: FAKE_LOCAL_OWNER_USER_ID,
+    role,
+    roleCeiling: null,
+    effectiveRole: role,
+  };
 }
 
 export interface FakeHttpRouteRecord {
@@ -248,6 +272,8 @@ export interface FakeRealtimeSignal {
   channel: string;
   /** JSON-round-tripped, like the WS broadcast; `undefined` → `null`. */
   payload: unknown;
+  /** Present when the publish targeted one user's clients. */
+  experimental_userId?: string;
 }
 
 export interface ExperimentalFakeHostRpcCall {
@@ -323,6 +349,17 @@ export interface FakePluginRegistrations {
 }
 
 /** Read-only state for assertions after a plugin registers or handles work. */
+/** A grant recorded by `bb.sdk.experimental_createCallerGrant`. */
+export interface ExperimentalFakeCallerGrant {
+  grantId: string;
+  pluginId: string;
+  userId: string;
+  maxRole: "admin" | "member";
+  purpose: string;
+  createdAt: number;
+  expiresAt: number | null;
+}
+
 export interface FakePluginInspectionState {
   readonly pluginId: string;
   /** Every `bb.log` line, in order. */
@@ -349,6 +386,8 @@ export interface FakePluginInspectionState {
   readonly pendingInteractions: readonly (PluginInteractionRequest & {
     id: string;
   })[];
+  /** Live caller grants, oldest first; they survive `reload()`. */
+  readonly experimental_callerGrants: readonly ExperimentalFakeCallerGrant[];
 }
 
 /** Deterministic inputs that stand in for behavior normally driven by BB. */
@@ -371,14 +410,37 @@ export interface FakePluginBehaviorDrivers {
    */
   setSettings(values: Record<string, PluginSettingValue | null>): Promise<void>;
   /**
+   * Apply a user's own save of `experimental_scope: "user"` settings, the way
+   * bb's settings page saves them for the signed-in user. Rejects team
+   * fields and unknown users; `onChange` listeners do not fire.
+   */
+  experimental_setUserSettings(
+    userId: string,
+    values: Record<string, PluginSettingValue | null>,
+  ): Promise<void>;
+  /**
+   * Remove a user the way bb's account removal does: their
+   * `storage.experimental_forUser` rows and per-user settings are deleted
+   * and the id stops naming a user.
+   */
+  experimental_removeUser(userId: string): void;
+  /**
+   * Revoke a caller grant the way `bb user grants revoke` does; later
+   * `bb.sdk.experimental_asGrant` calls for it throw.
+   */
+  experimental_revokeCallerGrant(grantId: string): void;
+  /**
    * Invoke a registered rpc method with host semantics: input/output schemas,
    * strict JSON result normalization, and structured failure codes. Rejects
    * with the same message/code/issues the frontend client surfaces. The
-   * handler sees `options.experimental_caller` as its caller, `{ kind:
-   * "client" }` by default; pass `{ kind: "plugin", pluginId }` to act as
-   * another plugin calling through `bb.sdk.plugins.callRpc`. The caller is an
-   * admin unless `options.experimental_callerRole` is `"member"`, in which
-   * case admin-only methods reject with code `forbidden`.
+   * handler sees `options.experimental_caller` as its caller, by default a
+   * `client` with id `"usr_local_owner"` whose role is
+   * `options.experimental_callerRole` (default `"admin"`); pass
+   * `{ kind: "plugin", pluginId }` to act as another plugin calling through
+   * `bb.sdk.plugins.callRpc`. Admin-only methods reject with code `forbidden`
+   * unless the caller's effective role (or `experimental_callerRole`) is
+   * `"admin"`. `bb.sdk.experimental_asCaller(ctx)` works only while the
+   * handler runs.
    */
   callRpc(
     method: string,
@@ -392,7 +454,8 @@ export interface FakePluginBehaviorDrivers {
    * Invoke the plugin's CLI command with host semantics: the result's
    * exitCode must be a number, stdout/stderr default to "", and a throwing
    * run() becomes `{ exitCode: 1, stderr: "bb <name> failed: …" }`.
-   * `ctx.experimental_callerRole` defaults to `"admin"`.
+   * `ctx.experimental_caller` defaults to an admin `client`, and
+   * `ctx.experimental_callerRole` to that caller's effective role.
    */
   runCli(
     argv: string[],
@@ -402,17 +465,25 @@ export interface FakePluginBehaviorDrivers {
    * Dispatch a request to a registered `bb.http` route (exact method+path
    * match, like the host's V1 router) through a real Hono context. Auth
    * modes are not enforced. A throwing handler yields the host's 500
-   * `{ ok: false, error: "plugin route failed: …" }` response.
+   * `{ ok: false, error: "plugin route failed: …" }` response. The handler
+   * sees `options.experimental_caller`, an admin `client` by default; an
+   * admin-only route answers other callers 403 `forbidden`.
    */
   fetchHttp(
     method: string,
     path: string,
     init?: RequestInit,
+    options?: { experimental_caller?: ExperimentalPluginCaller },
   ): Promise<Response>;
-  /** Open and drive an exact-match `bb.http.experimental_websocket` route. */
+  /**
+   * Open and drive an exact-match `bb.http.experimental_websocket` route as
+   * `options.experimental_caller` (an admin `client` by default). An
+   * admin-only route rejects other callers before the handler runs.
+   */
   experimental_openWebSocket(
     path: string,
     init?: RequestInit,
+    options?: { experimental_caller?: ExperimentalPluginCaller },
   ): Promise<ExperimentalFakeWebSocketSession>;
   /**
    * Start a registered background service once, deterministically. `done`
@@ -440,7 +511,9 @@ export interface FakePluginBehaviorDrivers {
    * Call a registered agent tool the way a provider tool-call would:
    * arguments go through the tool's parse step (zod-validated for zod
    * registrations; a parse failure throws), then execute. `ctx` fields
-   * default to "thread-test"/"project-test" and a fresh signal.
+   * default to "thread-test"/"project-test", a fresh signal, and an admin
+   * `client` caller. An admin-only tool returns an error result to other
+   * callers without running.
    */
   callAgentTool(
     name: string,
@@ -533,6 +606,11 @@ export interface CreateFakePluginHostOptions {
    * the descriptor default on read, like the host.
    */
   settings?: Record<string, PluginSettingValue>;
+  /**
+   * Ids that name users, for `storage.experimental_forUser` and per-user
+   * settings. Defaults to `["usr_local_owner"]`, the local owner.
+   */
+  experimental_userIds?: readonly string[];
   /** Initial `bb.sdk` stubs; extend later via `harness.sdk.stub`. */
   sdk?: FakeSdkOverrides;
   /** Static manifest skill ids available to configure() in this fake host. */
@@ -570,10 +648,14 @@ export interface FakePluginHost {
 function readSettingsValues(
   descriptors: PluginSettingDescriptors,
   stored: Map<string, PluginSettingValue>,
+  userStored?: Map<string, PluginSettingValue>,
 ): Record<string, PluginSettingValue | undefined> {
   const values: Record<string, PluginSettingValue | undefined> = {};
   for (const [key, descriptor] of Object.entries(descriptors)) {
-    values[key] = coerceStoredPluginSettingValue(descriptor, stored.get(key));
+    values[key] = coerceStoredPluginSettingValue(
+      descriptor,
+      isUserScopedSetting(descriptor) ? userStored?.get(key) : stored.get(key),
+    );
   }
   return values;
 }
@@ -637,7 +719,14 @@ interface FakePluginPersistentState {
   kvRows: Map<string, string>;
   storageRoot: string;
   storedSettings: Map<string, PluginSettingValue>;
+  userIds: Set<string>;
+  userKvRows: Map<string, Map<string, string>>;
+  userSettings: Map<string, Map<string, PluginSettingValue>>;
+  callerGrants: Map<string, ExperimentalFakeCallerGrant>;
+  callerGrantsCreated: number;
 }
+
+const FAKE_LOCAL_OWNER_USER_ID = "usr_local_owner";
 
 const fakeHostDisposers = new WeakMap<
   FakePluginHarness,
@@ -662,6 +751,13 @@ function createFakePluginHostInternal(
       storedSettings: new Map<string, PluginSettingValue>(
         Object.entries(options.settings ?? {}),
       ),
+      userIds: new Set(
+        options.experimental_userIds ?? [FAKE_LOCAL_OWNER_USER_ID],
+      ),
+      userKvRows: new Map(),
+      userSettings: new Map(),
+      callerGrants: new Map(),
+      callerGrantsCreated: 0,
     } satisfies FakePluginPersistentState);
   const pluginId = options.pluginId ?? "test-plugin";
   const declaredIconNames = new Set(
@@ -691,40 +787,63 @@ function createFakePluginHostInternal(
   };
 
   // --- storage ---
+  function createKv(rows: () => Map<string, string>): PluginKvStorage {
+    return {
+      async get(key) {
+        assertLive();
+        const raw = rows().get(key);
+        if (raw === undefined) return undefined;
+        return JSON.parse(raw);
+      },
+      async set(key, value) {
+        assertLive();
+        const json = JSON.stringify(value);
+        if (json === undefined) {
+          throw new Error(`kv value for "${key}" is not JSON-serializable`);
+        }
+        const bytes = Buffer.byteLength(json, "utf8");
+        if (bytes > KV_VALUE_MAX_BYTES) {
+          throw new Error(
+            `kv value for "${key}" is ${bytes} bytes; the limit is ${KV_VALUE_MAX_BYTES} (256KB). ` +
+              `Store large data in storage.database() instead.`,
+          );
+        }
+        rows().set(key, json);
+      },
+      async delete(key) {
+        assertLive();
+        rows().delete(key);
+      },
+      async list(prefix) {
+        assertLive();
+        return [...rows().keys()]
+          .filter((key) => prefix === undefined || key.startsWith(prefix))
+          .sort();
+      },
+    };
+  }
+
   const kvRows = persistentState.kvRows;
-  const kv: PluginKvStorage = {
-    async get(key) {
-      assertLive();
-      const raw = kvRows.get(key);
-      if (raw === undefined) return undefined;
-      return JSON.parse(raw);
-    },
-    async set(key, value) {
-      assertLive();
-      const json = JSON.stringify(value);
-      if (json === undefined) {
-        throw new Error(`kv value for "${key}" is not JSON-serializable`);
-      }
-      const bytes = Buffer.byteLength(json, "utf8");
-      if (bytes > KV_VALUE_MAX_BYTES) {
-        throw new Error(
-          `kv value for "${key}" is ${bytes} bytes; the limit is ${KV_VALUE_MAX_BYTES} (256KB). ` +
-            `Store large data in storage.database() instead.`,
-        );
-      }
-      kvRows.set(key, json);
-    },
-    async delete(key) {
-      assertLive();
-      kvRows.delete(key);
-    },
-    async list(prefix) {
-      assertLive();
-      return [...kvRows.keys()]
-        .filter((key) => prefix === undefined || key.startsWith(prefix))
-        .sort();
-    },
-  };
+  const kv = createKv(() => kvRows);
+
+  function assertKnownUser(userId: string): void {
+    if (!persistentState.userIds.has(userId)) {
+      throw new Error(`unknown user "${userId}"`);
+    }
+  }
+
+  function userRows<Value>(
+    table: Map<string, Map<string, Value>>,
+    userId: string,
+  ): Map<string, Value> {
+    assertKnownUser(userId);
+    let rows = table.get(userId);
+    if (rows === undefined) {
+      rows = new Map();
+      table.set(userId, rows);
+    }
+    return rows;
+  }
 
   const storageRoot = persistentState.storageRoot;
 
@@ -746,7 +865,39 @@ function createFakePluginHostInternal(
       assertLive();
       runPluginStorageMigrations(database, statements);
     },
+    experimental_forUser(userId) {
+      assertLive();
+      assertKnownUser(userId);
+      return {
+        kv: createKv(() => userRows(persistentState.userKvRows, userId)),
+      };
+    },
   };
+
+  const liveCallers = new WeakSet<object>();
+  const invocationAuthority = new AsyncLocalStorage<"admin" | "member">();
+  function beginInvocation(caller: ExperimentalPluginCaller): {
+    caller: ExperimentalPluginCaller;
+    end(): void;
+  } {
+    const issued = Object.freeze({ ...caller });
+    liveCallers.add(issued);
+    return { caller: issued, end: () => liveCallers.delete(issued) };
+  }
+  async function runInvocation<T>(
+    caller: ExperimentalPluginCaller,
+    run: (caller: ExperimentalPluginCaller) => T | Promise<T>,
+  ): Promise<T> {
+    const invocation = beginInvocation(caller);
+    try {
+      return await invocationAuthority.run(
+        pluginCallerAuthority(invocation.caller),
+        () => run(invocation.caller),
+      );
+    } finally {
+      invocation.end();
+    }
+  }
 
   // --- settings ---
   const settingsDescriptors: PluginSettingDescriptors = {};
@@ -758,10 +909,52 @@ function createFakePluginHostInternal(
   > = [];
   const storedSettings = persistentState.storedSettings;
 
+  function settingsScopeErrors(
+    values: Record<string, unknown>,
+    scope: "team" | "user",
+  ): string[] {
+    const { team, user } = partitionSettingsUpdate(settingsDescriptors, values);
+    const misplaced = Object.keys(scope === "team" ? user : team).filter(
+      (key) => settingsDescriptors[key] !== undefined,
+    );
+    return misplaced.map((key) =>
+      scope === "team"
+        ? `setting "${key}" is a per-user setting; only the user changes it`
+        : `setting "${key}" is a team setting`,
+    );
+  }
+
+  async function setUserSettingsValues(
+    userId: string,
+    values: Record<string, unknown>,
+  ): Promise<void> {
+    const errors = [
+      ...settingsScopeErrors(values, "user"),
+      ...validateSettingsUpdate(settingsDescriptors, values),
+    ];
+    if (errors.length > 0) {
+      throw new Error(errors.join("; "));
+    }
+    const stored = userRows(persistentState.userSettings, userId);
+    for (const [key, value] of Object.entries(values)) {
+      if (value === null) stored.delete(key);
+      else if (
+        typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "boolean"
+      ) {
+        stored.set(key, value);
+      }
+    }
+  }
+
   async function setSettingsValues(
     values: Record<string, unknown>,
   ): Promise<void> {
-    const errors = validateSettingsUpdate(settingsDescriptors, values);
+    const errors = [
+      ...settingsScopeErrors(values, "team"),
+      ...validateSettingsUpdate(settingsDescriptors, values),
+    ];
     if (errors.length > 0) {
       throw new Error(errors.join("; "));
     }
@@ -807,11 +1000,19 @@ function createFakePluginHostInternal(
         },
         async experimental_set(values) {
           assertLive();
+          if (invocationAuthority.getStore() === "member") {
+            throw new experimental_PluginRpcForbiddenError(
+              PLUGIN_SETTINGS_WRITE_FORBIDDEN_MESSAGE,
+            );
+          }
           const rawValues: Record<string, unknown> = {};
           for (const [key, value] of Object.entries(values)) {
             rawValues[key] = value;
           }
-          const errors = validateSettingsUpdate(validated, rawValues);
+          const errors = [
+            ...settingsScopeErrors(rawValues, "team"),
+            ...validateSettingsUpdate(validated, rawValues),
+          ];
           if (errors.length > 0) {
             throw new Error(errors.join("; "));
           }
@@ -826,11 +1027,20 @@ function createFakePluginHostInternal(
         },
       };
     },
+    async experimental_getForUser(userId) {
+      assertLive();
+      return readSettingsValues(
+        settingsDescriptors,
+        storedSettings,
+        userRows(persistentState.userSettings, userId),
+      );
+    },
   };
 
   // --- http ---
   const httpRoutes: FakeHttpRouteRecord[] = [];
   const websocketRoutes: ExperimentalFakeWebSocketRouteRecord[] = [];
+  const requiredRoles = new WeakMap<object, "admin" | null>();
   const websocketSessions = new Set<{
     closeForReload(): Promise<void>;
   }>();
@@ -844,7 +1054,14 @@ function createFakePluginHostInternal(
         opts,
         httpRoutes,
       );
-      httpRoutes.push({ ...route, handler });
+      const record: FakeHttpRouteRecord = {
+        method: route.method,
+        path: route.path,
+        auth: route.auth,
+        handler,
+      };
+      requiredRoles.set(record, route.requiredRole);
+      httpRoutes.push(record);
     },
     experimental_websocket(path, handler, opts) {
       assertLive();
@@ -854,7 +1071,13 @@ function createFakePluginHostInternal(
         opts,
         websocketRoutes,
       );
-      websocketRoutes.push({ ...route, handler });
+      const record: ExperimentalFakeWebSocketRouteRecord = {
+        path: route.path,
+        auth: route.auth,
+        handler,
+      };
+      requiredRoles.set(record, route.requiredRole);
+      websocketRoutes.push(record);
     },
   };
 
@@ -877,11 +1100,13 @@ function createFakePluginHostInternal(
   // --- realtime ---
   const realtimeSignals: FakeRealtimeSignal[] = [];
   const realtime: PluginRealtime = {
-    publish(channel, payload) {
+    publish(channel, payload, publishOptions) {
       assertLive();
+      const userId = normalizeRealtimeUserId(publishOptions);
       realtimeSignals.push({
         channel,
         payload: normalizeRealtimePayload(channel, payload),
+        ...(userId === null ? {} : { experimental_userId: userId }),
       });
     },
   };
@@ -1056,6 +1281,7 @@ function createFakePluginHostInternal(
       description: string;
       instructions?: string;
       presentation?: PluginRowPresentation;
+      experimental_requiredRole?: "admin";
       parameters: unknown;
       execute(
         params: never,
@@ -1071,6 +1297,7 @@ function createFakePluginHostInternal(
       if (agentTools.some((existing) => existing.name === record.name)) {
         throw new Error(`tool "${record.name}" is already registered`);
       }
+      requiredRoles.set(record, record.requiredRole);
       agentTools.push(record);
     },
   };
@@ -1127,6 +1354,63 @@ function createFakePluginHostInternal(
   const { sdk, harness: sdkHarness } = createFakeSdk({
     pluginId,
     overrides: options.sdk,
+    resolveCaller(context) {
+      const resolution = pluginAsCallerRefusal(context, (caller) =>
+        liveCallers.has(caller),
+      );
+      if (!resolution.ok) throw new Error(resolution.message);
+      return resolution.caller;
+    },
+    callerGrants: {
+      create(context, request) {
+        const resolution = pluginAsCallerRefusal(
+          context,
+          (caller) => liveCallers.has(caller),
+          "bb.sdk.experimental_createCallerGrant",
+        );
+        if (!resolution.ok) throw new Error(resolution.message);
+        const now = Date.now();
+        const parsed = parsePluginCallerGrantRequest(request, now);
+        if (!parsed.ok) throw new Error(parsed.message);
+        persistentState.callerGrantsCreated += 1;
+        const grantId = `grant_fake_${persistentState.callerGrantsCreated}_${now}`;
+        persistentState.callerGrants.set(grantId, {
+          grantId,
+          pluginId,
+          userId: resolution.caller.userId,
+          maxRole: pluginCallerAuthority(resolution.caller),
+          purpose: parsed.purpose,
+          createdAt: now,
+          expiresAt: parsed.expiresAt,
+        });
+        return { grantId };
+      },
+      resolve(grantId) {
+        const grant = persistentState.callerGrants.get(grantId);
+        if (grant === undefined || grant.pluginId !== pluginId) {
+          throw new Error(
+            `bb.sdk.experimental_asGrant: grant "${grantId}" does not exist or was revoked`,
+          );
+        }
+        if (grant.expiresAt !== null && grant.expiresAt <= Date.now()) {
+          throw new Error(
+            `bb.sdk.experimental_asGrant: grant "${grantId}" expired`,
+          );
+        }
+        return {
+          kind: "client",
+          userId: grant.userId,
+          role: grant.maxRole,
+          roleCeiling: grant.maxRole === "member" ? "member" : null,
+          effectiveRole: grant.maxRole,
+        };
+      },
+      revoke(grantId) {
+        if (persistentState.callerGrants.get(grantId)?.pluginId === pluginId) {
+          persistentState.callerGrants.delete(grantId);
+        }
+      },
+    },
   });
 
   // --- thread events / dispose ---
@@ -1613,6 +1897,9 @@ function createFakePluginHostInternal(
     },
     sharedPortDeclarations,
     experimental_hostRpcCalls: hostRpcCalls,
+    get experimental_callerGrants() {
+      return [...persistentState.callerGrants.values()];
+    },
     sdk: sdkHarness,
     registrations: {
       settingsDescriptors,
@@ -1785,6 +2072,24 @@ function createFakePluginHostInternal(
       await setSettingsValues(values);
     },
 
+    async experimental_setUserSettings(userId, values) {
+      await setUserSettingsValues(userId, values);
+    },
+
+    experimental_removeUser(userId) {
+      persistentState.userIds.delete(userId);
+      persistentState.userKvRows.delete(userId);
+      persistentState.userSettings.delete(userId);
+      for (const [grantId, grant] of persistentState.callerGrants) {
+        if (grant.userId === userId)
+          persistentState.callerGrants.delete(grantId);
+      }
+    },
+
+    experimental_revokeCallerGrant(grantId) {
+      persistentState.callerGrants.delete(grantId);
+    },
+
     async callRpc(method, input, options = {}) {
       const record = rpcHandlers.get(method);
       if (!record) {
@@ -1793,14 +2098,16 @@ function createFakePluginHostInternal(
           message: `plugin "${pluginId}" has no rpc method "${method}"`,
         });
       }
-      if (
-        record.requiredRole === "admin" &&
-        (options.experimental_callerRole ?? "admin") !== "admin"
-      ) {
-        return throwRpcError({
-          code: "forbidden",
-          message: `rpc method "${method}" requires an admin`,
-        });
+      const caller =
+        options.experimental_caller ??
+        defaultClientCaller(options.experimental_callerRole ?? "admin");
+      const refusal = pluginRequiredRoleRefusal(
+        record.requiredRole,
+        options.experimental_callerRole ?? pluginCallerAuthority(caller),
+        `rpc method "${method}"`,
+      );
+      if (refusal !== null) {
+        return throwRpcError({ code: "forbidden", message: refusal });
       }
       const parsedInput =
         input === undefined
@@ -1814,16 +2121,13 @@ function createFakePluginHostInternal(
       );
       let result: unknown;
       try {
-        result = await record.handler(validatedInput as never, {
-          experimental_caller: options.experimental_caller ?? {
-            kind: "client",
-          },
-        });
+        result = await runInvocation(caller, (issued) =>
+          record.handler(validatedInput as never, {
+            experimental_caller: issued,
+          }),
+        );
       } catch (error) {
-        return throwRpcError({
-          code: "handler_error",
-          message: errorMessage(error),
-        });
+        return throwRpcError(rpcHandlerError(error, errorMessage(error)));
       }
       const validatedOutput = await validateRpcValue(
         record.outputSchema,
@@ -1839,11 +2143,17 @@ function createFakePluginHostInternal(
       if (!registration) {
         throw new Error(`plugin "${pluginId}" registers no CLI command`);
       }
+      const caller =
+        ctx.experimental_caller ??
+        defaultClientCaller(ctx.experimental_callerRole ?? "admin");
       try {
-        const result = await registration.run(argv, {
-          experimental_callerRole: "admin",
-          ...ctx,
-        });
+        const result = await runInvocation(caller, (issued) =>
+          registration.run(argv, {
+            experimental_callerRole: pluginCallerAuthority(issued),
+            ...ctx,
+            experimental_caller: issued,
+          }),
+        );
         if (typeof result?.exitCode !== "number") {
           throw new Error(
             "cli run() must return { exitCode: number, stdout?, stderr? }",
@@ -1869,7 +2179,7 @@ function createFakePluginHostInternal(
       }
     },
 
-    async fetchHttp(method, path, init) {
+    async fetchHttp(method, path, init, fetchOptions = {}) {
       const normalizedMethod = String(method).toUpperCase();
       const pathname = new URL(path, "http://plugin.test").pathname;
       const route = httpRoutes.find(
@@ -1885,10 +2195,27 @@ function createFakePluginHostInternal(
             }`,
         );
       }
+      const caller =
+        fetchOptions.experimental_caller ?? defaultClientCaller("admin");
+      const refusal = pluginRequiredRoleRefusal(
+        requiredRoles.get(route) ?? null,
+        pluginCallerAuthority(caller),
+        `plugin "${pluginId}" route ${route.method} ${route.path}`,
+      );
+      if (refusal !== null) {
+        return Response.json(
+          { ok: false, error: { code: "forbidden", message: refusal } },
+          { status: 403 },
+        );
+      }
       const app = new Hono();
       app.on(route.method, route.path, async (context) => {
         try {
-          return adoptHttpRouteResponse(await route.handler(context));
+          return adoptHttpRouteResponse(
+            await runInvocation(caller, (issued) =>
+              route.handler(context, { experimental_caller: issued }),
+            ),
+          );
         } catch (error) {
           const message = errorMessage(error);
           emitLog(
@@ -1904,7 +2231,7 @@ function createFakePluginHostInternal(
       return app.request(path, { ...init, method: normalizedMethod });
     },
 
-    async experimental_openWebSocket(path, init) {
+    async experimental_openWebSocket(path, init, socketOptions = {}) {
       assertLive();
       const url = new URL(path, "http://plugin.test");
       const route = websocketRoutes.find(
@@ -1918,14 +2245,29 @@ function createFakePluginHostInternal(
           }`,
         );
       }
+      const refusal = pluginRequiredRoleRefusal(
+        requiredRoles.get(route) ?? null,
+        pluginCallerAuthority(
+          socketOptions.experimental_caller ?? defaultClientCaller("admin"),
+        ),
+        `plugin "${pluginId}" websocket ${route.path}`,
+      );
+      if (refusal !== null) throw new Error(refusal);
+      const invocation = beginInvocation(
+        socketOptions.experimental_caller ?? defaultClientCaller("admin"),
+      );
+      const authority = pluginCallerAuthority(invocation.caller);
       const request = new Request(url, { ...init, method: "GET" });
       let handlers: ExperimentalPluginWebSocketHandlers;
       try {
-        handlers = route.handler({
-          request,
-          url,
-          headers: request.headers,
-        });
+        handlers = invocationAuthority.run(authority, () =>
+          route.handler({
+            request,
+            url,
+            headers: request.headers,
+            experimental_caller: invocation.caller,
+          }),
+        );
         if (
           typeof handlers !== "object" ||
           handlers === null ||
@@ -1947,6 +2289,7 @@ function createFakePluginHostInternal(
           }
         }
       } catch (error) {
+        invocation.end();
         emitLog(
           "warn",
           `websocket ${route.path} connect failed: ${errorMessage(error)}`,
@@ -1968,7 +2311,7 @@ function createFakePluginHostInternal(
       ): Promise<void> => {
         eventQueue = eventQueue.then(async () => {
           try {
-            await run();
+            await invocationAuthority.run(authority, run);
           } catch (error) {
             emitLog(
               "warn",
@@ -1997,6 +2340,7 @@ function createFakePluginHostInternal(
         if (closeNotified) return;
         closeNotified = true;
         readyState = 3;
+        invocation.end();
         websocketSessions.delete(session);
         if (handlers.onClose !== undefined) {
           await invoke("close", () =>
@@ -2103,11 +2447,23 @@ function createFakePluginHostInternal(
           `tool "${name}" arguments are invalid: ${parsed.error}`,
         );
       }
-      return record.execute(parsed.value, {
-        threadId: ctx?.threadId ?? "thread-test",
-        projectId: ctx?.projectId ?? "project-test",
-        signal: ctx?.signal ?? new AbortController().signal,
-      });
+      const caller = ctx?.experimental_caller ?? defaultClientCaller("admin");
+      const refusal = pluginRequiredRoleRefusal(
+        requiredRoles.get(record) ?? null,
+        pluginCallerAuthority(caller),
+        `Tool "${name}"`,
+      );
+      if (refusal !== null) {
+        return { content: [{ type: "text", text: refusal }], isError: true };
+      }
+      return runInvocation(caller, (issued) =>
+        record.execute(parsed.value, {
+          threadId: ctx?.threadId ?? "thread-test",
+          projectId: ctx?.projectId ?? "project-test",
+          signal: ctx?.signal ?? new AbortController().signal,
+          experimental_caller: issued,
+        }),
+      );
     },
 
     async resolveAgentConfiguration(context) {

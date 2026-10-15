@@ -1,3 +1,4 @@
+import { LOCAL_OWNER_USER_ID } from "@bb/domain";
 import { actAsLocalOwner } from "../../helpers/principal.js";
 import { createPluginUpdateJobs } from "../../../src/services/plugins/plugin-update-jobs.js";
 import {
@@ -94,6 +95,7 @@ describe("plugin settings + storage", () => {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: (kinds) => {
           systemBroadcasts.push([...kinds]);
         },
@@ -172,12 +174,16 @@ describe("plugin settings + storage", () => {
 
     it("round-trips secrets through 0600 files and fires onChange with next/prev", async () => {
       await installConfigurable();
-      const view = await service.updateSettings("configurable", {
-        apiKey: "sk-secret-123",
-        autoSync: false,
-        retries: 4.5,
-        note: "hello",
-      });
+      const view = await service.updateSettings(
+        "configurable",
+        {
+          apiKey: "sk-secret-123",
+          autoSync: false,
+          retries: 4.5,
+          note: "hello",
+        },
+        LOCAL_OWNER_USER_ID,
+      );
 
       const secretPath = join(
         dataDir,
@@ -213,12 +219,20 @@ describe("plugin settings + storage", () => {
       expect(change.next.autoSync).toBe(false);
       expect(change.next.apiKey).toBe("sk-secret-123");
 
-      await service.updateSettings("configurable", { note: "hello" });
+      await service.updateSettings(
+        "configurable",
+        { note: "hello" },
+        LOCAL_OWNER_USER_ID,
+      );
       expect(state().changes).toHaveLength(1);
 
-      const cleared = await service.updateSettings("configurable", {
-        apiKey: null,
-      });
+      const cleared = await service.updateSettings(
+        "configurable",
+        {
+          apiKey: null,
+        },
+        LOCAL_OWNER_USER_ID,
+      );
       await expect(stat(secretPath)).rejects.toThrow();
       expect(cleared?.values.apiKey).toEqual({ set: false });
       expect((await state().settings.get()).apiKey).toBeUndefined();
@@ -229,13 +243,21 @@ describe("plugin settings + storage", () => {
       await installConfigurable();
       systemBroadcasts.length = 0;
 
-      await service.updateSettings("configurable", { note: "hi" });
+      await service.updateSettings(
+        "configurable",
+        { note: "hi" },
+        LOCAL_OWNER_USER_ID,
+      );
       expect(
         systemBroadcasts.filter((kinds) => kinds.includes("plugins-changed")),
       ).toHaveLength(1);
 
       systemBroadcasts.length = 0;
-      await service.updateSettings("configurable", { note: "hi" });
+      await service.updateSettings(
+        "configurable",
+        { note: "hi" },
+        LOCAL_OWNER_USER_ID,
+      );
       expect(
         systemBroadcasts.some((kinds) => kinds.includes("plugins-changed")),
       ).toBe(false);
@@ -323,28 +345,48 @@ describe("plugin settings + storage", () => {
     it("rejects unknown keys and type mismatches", async () => {
       await installConfigurable();
       await expect(
-        service.updateSettings("configurable", { nope: "x" }),
+        service.updateSettings(
+          "configurable",
+          { nope: "x" },
+          LOCAL_OWNER_USER_ID,
+        ),
       ).rejects.toThrow(PluginSettingsValidationError);
       await expect(
-        service.updateSettings("configurable", { autoSync: "yes" }),
+        service.updateSettings(
+          "configurable",
+          { autoSync: "yes" },
+          LOCAL_OWNER_USER_ID,
+        ),
       ).rejects.toThrow(/expects a boolean/);
       await expect(
-        service.updateSettings("configurable", { retries: "4" }),
+        service.updateSettings(
+          "configurable",
+          { retries: "4" },
+          LOCAL_OWNER_USER_ID,
+        ),
       ).rejects.toThrow(/expects a finite number/);
       await expect(
-        service.updateSettings("configurable", { mode: "warp" }),
+        service.updateSettings(
+          "configurable",
+          { mode: "warp" },
+          LOCAL_OWNER_USER_ID,
+        ),
       ).rejects.toThrow(/must be one of/);
       expect(
-        await service.updateSettings("missing-plugin", {}),
+        await service.updateSettings("missing-plugin", {}, LOCAL_OWNER_USER_ID),
       ).toBeUndefined();
     });
 
     it("remove clears settings rows and secret files", async () => {
       await installConfigurable();
-      await service.updateSettings("configurable", {
-        apiKey: "sk-remove-me",
-        note: "kept?",
-      });
+      await service.updateSettings(
+        "configurable",
+        {
+          apiKey: "sk-remove-me",
+          note: "kept?",
+        },
+        LOCAL_OWNER_USER_ID,
+      );
       expect(
         Object.keys(getPluginSettingsValues(db, "configurable")),
       ).toContain("note");
@@ -649,7 +691,11 @@ describe("plugin settings + storage", () => {
     );
     expect(globals.__needsKeyLoads).toBe(1);
 
-    await service.updateSettings("needs-key", { apiKey: "shhh" });
+    await service.updateSettings(
+      "needs-key",
+      { apiKey: "shhh" },
+      LOCAL_OWNER_USER_ID,
+    );
     expect(globals.__needsKeyLoads).toBe(2);
     expect(service.list().find((p) => p.id === "needs-key")?.status).toBe(
       "running",
@@ -672,7 +718,11 @@ describe("plugin settings + storage", () => {
     const globals = globalThis as Record<string, unknown>;
     delete globals.__healthyLoads;
     await service.installPath(rootDir);
-    await service.updateSettings("healthy", { note: "hi" });
+    await service.updateSettings(
+      "healthy",
+      { note: "hi" },
+      LOCAL_OWNER_USER_ID,
+    );
     expect(globals.__healthyLoads).toBe(1);
     expect(service.list().find((p) => p.id === "healthy")?.status).toBe(
       "running",

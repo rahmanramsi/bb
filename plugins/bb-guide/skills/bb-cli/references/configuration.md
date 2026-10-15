@@ -70,20 +70,44 @@ option, `bb login` reads a PAT from a hidden prompt or standard input. Login
 validates the credential before saving it to the server origin's profile in
 `<BB_DATA_DIR>/client.json`, with file permissions `0600`. `BB_SERVER_URL`
 selects the server; `BB_TOKEN` overrides its saved token for CLI requests,
-including plugin commands. `bb whoami [--json]` shows the current user.
+including plugin commands. `bb whoami [--json]` shows the current user and
+the role the credential acts with: a member-capped `BB_TOKEN` reports
+`effectiveRole: "member"` and `roleCeiling: "member"` even after its user is
+promoted, and the text output names the cap and the account role.
+`GET /api/v1/auth/session` (SDK `experimental_auth.session`) reports the same
+`effectiveRole` and `roleCeiling`, both null while signed out; the app and
+plugin pages read the signed-in user from it.
 `bb logout [--json]` removes only that profile's saved login. It does not
 revoke the PAT or unset `BB_TOKEN`.
 
 Admins use `bb user list`, `bb user role USER_ID admin|member`, and
-`bb user remove USER_ID`. System users and the last account admin cannot be
-removed or demoted. `bb invite create [--email EMAIL] [--role admin|member]`
+`bb user remove USER_ID`. Removing a user also deletes their queued and
+scheduled messages. System users and the last account admin cannot be removed
+or demoted. `bb invite create [--email EMAIL] [--role admin|member]`
 prints a seven-day, single-use token. `bb invite list` lists pending unexpired
 invites without tokens; `bb invite revoke ID` invalidates one. New users run
 `bb invite accept TOKEN --email EMAIL --name NAME` and enter their password,
 or supply `--password-file PATH`, then sign in with `bb login`.
 `bb token create NAME`, `bb token list`, and `bb token revoke ID` manage only
-the current user's PATs. New token values are shown once. All these commands
-accept `--json`.
+the current user's PATs. New token values are shown once. A member-capped
+`BB_TOKEN` cannot create a PAT: `POST /api/v1/auth/tokens` answers 403
+`credential_role_capped`. All these commands accept `--json`.
+
+`bb user grants list [USER_ID]` lists the plugin grants a person gave. A plugin
+records a grant when it must act as that person later, such as an automation
+that runs on a schedule; each grant names the plugin, its purpose, the role it
+was granted with, and its expiry. A grant expires after 90 days unless the
+plugin chose another expiry, or none for work the person expects to run
+indefinitely; the list marks expired grants. Work done through a grant never
+has more than the granted role or the person's current role: a member's grant
+stays member after promotion. Demoting an admin permanently lowers each of
+their grants to member, so promoting them again does not restore admin
+authority; the plugin must record a new grant.
+`bb user grants revoke GRANT_ID [--user USER_ID]` revokes one, and the plugin's
+later work as that person fails instead of running as someone else. Both
+default to the signed-in user; only admins may name another user. A plugin
+acting as a user gets 403 `credential_delegated`. Removing a user or a plugin
+deletes its grants. Both commands accept `--json`.
 
 In the multi-mode app, open the user menu in the navigation rail to sign out
 or open Settings → Account. Everyone manages their own personal access
@@ -94,13 +118,77 @@ not show these controls. Thread lists and headers show creators in multi mode.
 
 Roles are guardrails for a trusted team. A member who runs an agent effectively
 has shell access to its host. In multi mode, each turn supplies a signed
-seven-day `BB_TOKEN` to the agent shell through the launch environment. It
-authenticates as the user who sent the turn, or as the thread creator for
-turns no user sent, with that user's current role. It stops authenticating if
-that user is removed and is masked in runtime environment displays. Turns with
-neither a sending user nor a remaining creator, including threads created
-before multi mode, get no `BB_TOKEN`. In local mode, shells need no
+seven-day `BB_TOKEN` to the agent shell through the launch environment. For a
+turn a user sent, it authenticates as that user with their current role. For a
+turn no user sent, or that a plugin or other service credential sent, it
+authenticates as the thread creator only if the creator exists and is a member
+when the turn starts, and it stays capped at member even if that user is later
+promoted to admin. The cap carries over to work the capped token requests: a
+thread, fork, sent, queued, scheduled, retried, or edited message it authors
+gets a capped `BB_TOKEN` for that user, and a queued message it edits becomes
+capped. Tokens and sessions the user creates by signing in keep their current
+role. Such turns in a thread whose creator is an admin, a removed
+user, or nobody get no `BB_TOKEN`, so plugin-driven work never runs with admin
+authority. A thread that a plugin creates under a parent, fork source, or
+lifecycle owner thread is attributed to that thread's creator for display; the
+attribution grants no authority beyond this rule. A user's own thread is always
+attributed to that user. The token stops authenticating if its user is removed
+and is masked in runtime environment displays. Threads created before multi
+mode and threads a plugin creates without a parent have no creator to fall back
+to. In local mode, shells need no credential.
+
+A plugin can also act as a person, either while handling that person's request
+or later through a grant they gave (`bb user grants`). Threads and messages it
+creates that way count as sent by that person under the rules above, capped at
+member when the person called with member authority or a member-capped
+credential, so the cap survives a later promotion. An agent automation runs as
+the person who last saved it through such a grant: its scheduled and manual
+runs get that person's `BB_TOKEN` and attribution. If the grant is revoked,
+expired, or its person removed, the run fails instead of running as the plugin.
+Turns started through a grant record it, and their `BB_TOKEN` stops
+authenticating with 401 once the grant is revoked, expires, or its plugin or
+person is removed, including threads that token goes on to create; it is capped
+at member whenever the grant is. Such a token cannot create a PAT or list or
+revoke grants (403 `credential_delegated`), and a plugin it calls cannot record
+a new grant from it. Automations saved before grants existed run as the plugin
+without a user identity, as before, and say so in the app and the Automations
+CLI until someone saves them again.
+
+A running turn keeps the `BB_TOKEN` it started with, so in multi mode a
+message steers into it only when it would get the same credential: the same
+user with the same role ceiling, or no token for both. A message from anyone
+else, including a plugin, an automation, or the same user's member-capped
+`BB_TOKEN`, interrupts the running turn instead and starts as a new turn with
+its own credential under the rules above. The timeline shows the interruption
+as stopped because another author sent a message, and the send answers
+`delivery: "queued"` until the new turn starts. A queued message that another
+user or a plugin edits is attributed to the editor and runs with the editor's
 credential.
+
+Notices that bb sends a thread on its own, such as a child thread's outcome or
+a delivered tool result, carry no token. While the thread runs a turn with a
+different credential, a notice neither steers into that turn nor interrupts it:
+it waits in the queue and starts as a new turn once the running turn ends. Send
+now on a waiting notice answers that the thread is already running a turn.
+Editing a waiting notice turns it into an ordinary message by the editor, with
+the editor's credential.
+
+These credential checks hold only for the turn bb checked. If that turn ends
+and another one starts before the message reaches the host, bb decides again
+against the new turn: a notice waits in the queue, and any other message
+follows the interrupt rule above. The host never steers a message into a turn
+other than the one it was checked against; it hands the message back to the
+queue instead.
+
+bb stores each message's author and role ceiling with its turn request, so a
+message handed back keeps them, including after a server restart. If bb cannot
+recover the author, for example because an older bb version accepted the
+message or its author was removed, it drops the message rather than running it
+with any other credential, and the timeline shows the error
+`turn_request_author_unknown`: the message was not delivered and must be sent
+again. The same holds for a message that waits while bb sets up the thread's
+environment, including a new thread's first message: when setup finishes, bb
+does not start it, shows the error, and leaves the thread idle.
 
 Plugin RPC methods and commands that change server-wide settings, such as
 `bb concurrency-limit global 0` or `bb pool routing claude`, are admin-only and

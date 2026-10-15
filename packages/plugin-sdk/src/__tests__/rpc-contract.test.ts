@@ -40,8 +40,15 @@ const contextHandlers: ExperimentalPluginRpcHandlersWithContext<
   ...handlers,
   ping(_input, context) {
     expectTypeOf(context.experimental_caller).toEqualTypeOf<
+      | {
+          readonly kind: "client";
+          readonly userId: string;
+          readonly role: "admin" | "member";
+          readonly roleCeiling: "member" | null;
+          readonly effectiveRole: "admin" | "member";
+        }
       | { readonly kind: "plugin"; readonly pluginId: string }
-      | { readonly kind: "client" }
+      | { readonly kind: "system" }
     >();
     return { ok: true };
   },

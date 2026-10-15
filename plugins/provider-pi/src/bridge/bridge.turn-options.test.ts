@@ -118,6 +118,45 @@ it(
 );
 
 it(
+  "runs each turn with that turn's BB_TOKEN and reuses the session while it is unchanged",
+  async () => {
+    const threadId = "thr_turn_options_token";
+    const tokenLog = join(harness.workspaceDir, "token.log");
+    const options = (token: string | null) => ({
+      ...MINI,
+      envVars: {
+        FAKE_PI_TOKEN_LOG: tokenLog,
+        BB_THREAD_ID: threadId,
+        ...(token === null ? {} : { BB_TOKEN: token }),
+      },
+    });
+    await harness.startThread(threadId, { options: options("token-a") });
+
+    let seen = 0;
+    for (const [index, token] of [
+      "token-a",
+      "token-a",
+      null,
+      "token-b",
+    ].entries()) {
+      expect(
+        (await turnStart(index + 1, threadId, `turn ${index}`, options(token)))
+          .error,
+      ).toBeUndefined();
+      seen = await harness.waitForTurnBoundary(threadId, seen);
+    }
+
+    expect(readFileSync(tokenLog, "utf8").trim().split("\n")).toEqual([
+      "token-a",
+      "<none>",
+      "token-b",
+    ]);
+    expect(sessionReplacements(threadId)).toHaveLength(2);
+  },
+  TURN_OPTIONS_TEST_TIMEOUT_MS,
+);
+
+it(
   "rebuilds the session on the model a later turn carries",
   async () => {
     const threadId = "thr_turn_options_model";

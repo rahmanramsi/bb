@@ -128,6 +128,8 @@ function threadInterruptedTitle(
       return "Stopped because the machine was removed";
     case "manual-stop":
       return "Stopped manually";
+    case "other-author":
+      return "Stopped — another author sent a message, which starts a new turn";
     case "host-daemon-restarted":
       return "Stopped — host daemon restarted";
     case "provider-turn-idle":

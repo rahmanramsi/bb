@@ -48,6 +48,8 @@ function seedPointerlessThread(
   const thread = seedThread(deps, { projectId: project.id, status });
   if (status === "starting") {
     requestThreadProvision(deps, {
+      authorGrantId: null,
+      authorRoleCeiling: null,
       authorUserId: LOCAL_OWNER_USER_ID,
       thread,
       environmentIntent: {

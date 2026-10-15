@@ -1,5 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode, UIEvent } from "react";
+import {
+  AUTOMATION_REVOKE_HINT,
+  AUTOMATION_RUNS_AS_YOU_LABEL,
+  AUTOMATION_WITHOUT_USER_IDENTITY_NOTE,
+} from "./lib/run-identity";
 import type {
   AgentEnvironment,
   AutomationDetailResponse,
@@ -17,6 +22,14 @@ import {
   type ExperimentalProviderModelPickerValue,
 } from "@get-bb/plugin-sdk/app";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { HOVER_REVEAL_NO_HOVER_VISIBLE_CLASS } from "@/components/ui/hover-reveal";
 import { DelayedLoading } from "@/components/ui/delayed-loading";
 import { Icon, type IconName } from "@/components/ui/icon";
@@ -74,7 +87,12 @@ interface AutomationDetailViewProps {
   onToggle: (enabled: boolean) => void;
   onEdit: () => void;
   onCancelEdit: () => void;
-  onUpdateAgent: (update: AgentExecutionUpdate) => Promise<void>;
+  viewerUserId: string | null;
+  onUpdateAgent: (
+    update: AgentExecutionUpdate,
+    adoptRevision: number | null,
+  ) => Promise<void>;
+  onAdopt: (expectedRevision: number) => Promise<void>;
   onRunNow: () => void;
   onDelete: () => void;
   onOpenThread: (threadId: string) => void;
@@ -492,6 +510,7 @@ export function AgentAutomationDefinition({
   personalProject,
   projectContextLabel,
   pending,
+  adoptOnSave = false,
   onCancel,
   onUpdate,
 }: {
@@ -500,6 +519,7 @@ export function AgentAutomationDefinition({
   personalProject: boolean;
   projectContextLabel: string;
   pending: boolean;
+  adoptOnSave?: boolean;
   onCancel: () => void;
   onUpdate: (update: AgentExecutionUpdate) => Promise<void>;
 }) {
@@ -636,9 +656,19 @@ export function AgentAutomationDefinition({
           disabled={pending || !dirty || trimmedPrompt.length === 0}
         >
           <Icon name="Check" className="size-3.5" aria-hidden />
-          Save Prompt
+          {adoptOnSave ? "Save and run as me" : "Save Prompt"}
         </Button>
       </div>
+      {adoptOnSave ? (
+        <p
+          data-automation-adopt-on-save=""
+          className="px-3.5 pb-2 text-xs text-muted-foreground"
+        >
+          This automation runs as someone else. Saving a change to what it runs
+          makes it run as you, with your permissions, until you revoke it.{" "}
+          {AUTOMATION_REVOKE_HINT}
+        </p>
+      ) : null}
       {promptFooter}
     </form>
   ) : (
@@ -733,6 +763,122 @@ export function ScriptAutomationDefinition({
   );
 }
 
+export function automationRunsAsLabel(
+  automation: AutomationResponse,
+  viewerUserId: string | null,
+): string {
+  if (!automation.runsAsCreator) return AUTOMATION_WITHOUT_USER_IDENTITY_NOTE;
+  if (
+    automation.runsAsUserId !== null &&
+    automation.runsAsUserId === viewerUserId
+  ) {
+    return AUTOMATION_RUNS_AS_YOU_LABEL;
+  }
+  return "Runs as another person";
+}
+
+function runsAsViewer(
+  automation: AutomationResponse,
+  viewerUserId: string | null,
+): boolean {
+  return (
+    automation.runsAsCreator &&
+    automation.runsAsUserId !== null &&
+    automation.runsAsUserId === viewerUserId
+  );
+}
+
+function AdoptExecutionField({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 gap-2 text-sm">
+      <dt className="w-24 shrink-0 text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-words">{children}</dd>
+    </div>
+  );
+}
+
+export function AdoptAutomationDialog({
+  automation,
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  automation: AutomationResponse | null;
+  pending: boolean;
+  onCancel: () => void;
+  onConfirm: (expectedRevision: number) => void;
+}) {
+  const execution = automation?.execution;
+  return (
+    <Dialog
+      open={automation !== null}
+      onOpenChange={(open) => {
+        if (!open) onCancel();
+      }}
+    >
+      <DialogContent>
+        {automation !== null && execution?.mode === "agent" ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Run this automation as you?</DialogTitle>
+              <DialogDescription>
+                &ldquo;{automation.name}&rdquo; will run as you, with your
+                identity and permissions, until you revoke it or someone else
+                adopts it. {AUTOMATION_REVOKE_HINT} Review exactly what it runs.
+              </DialogDescription>
+            </DialogHeader>
+            <dl data-automation-adopt-content="" className="space-y-1.5">
+              <AdoptExecutionField label="Prompt">
+                <span className="whitespace-pre-wrap">{execution.prompt}</span>
+              </AdoptExecutionField>
+              <AdoptExecutionField label="Runs in">
+                {execution.targetThreadId !== undefined
+                  ? `Existing thread ${execution.targetThreadId}`
+                  : automationEnvironmentLabel(execution)}
+              </AdoptExecutionField>
+              <AdoptExecutionField label="Provider">
+                {execution.providerId}
+              </AdoptExecutionField>
+              <AdoptExecutionField label="Model">
+                {`${execution.model} · ${execution.reasoningLevel}${execution.serviceTier === undefined ? "" : ` · ${execution.serviceTier}`}`}
+              </AdoptExecutionField>
+              <AdoptExecutionField label="Permissions">
+                {execution.permissionMode}
+              </AdoptExecutionField>
+              <AdoptExecutionField label="Revision">
+                {automation.executionRevision}
+              </AdoptExecutionField>
+            </dl>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pending}
+                onClick={onCancel}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={pending}
+                onClick={() => onConfirm(automation.executionRevision)}
+              >
+                Run as me
+              </Button>
+            </DialogFooter>
+          </>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function AutomationDetailView({
   automation,
   projectLabel,
@@ -742,13 +888,31 @@ export function AutomationDetailView({
   onToggle,
   onEdit,
   onCancelEdit,
+  viewerUserId,
   onUpdateAgent,
+  onAdopt,
   onRunNow,
   onDelete,
   onOpenThread,
   footer,
 }: AutomationDetailViewProps) {
   useResourceRouteLabel(automation.name);
+  const [adoptReview, setAdoptReview] = useState<AutomationResponse | null>(
+    null,
+  );
+  const [editRevision, setEditRevision] = useState<number | null>(
+    editing ? automation.executionRevision : null,
+  );
+  if (editing && editRevision === null) {
+    setEditRevision(automation.executionRevision);
+  } else if (!editing && editRevision !== null) {
+    setEditRevision(null);
+  }
+  const ownsIdentity = runsAsViewer(automation, viewerUserId);
+  const canAdopt =
+    automation.execution.mode === "agent" &&
+    viewerUserId !== null &&
+    !ownsIdentity;
   const oneShotLifecycle = getOneShotLifecycle({
     enabled: automation.enabled,
     trigger: automation.trigger,
@@ -797,6 +961,21 @@ export function AutomationDetailView({
               {formatAutomationTrigger(automation.trigger)}
             </AutomationMetadataItem>,
             automationDetailNextRun(automation),
+            automation.execution.mode === "agent" ? (
+              <AutomationMetadataItem
+                icon="UserRound"
+                iconLabel="User identity"
+                title={
+                  ownsIdentity
+                    ? `${AUTOMATION_RUNS_AS_YOU_LABEL}. ${AUTOMATION_REVOKE_HINT}`
+                    : automation.runsAsCreator
+                      ? `Runs as ${automation.runsAsUserId ?? "a person bb did not record"}`
+                      : automationRunsAsLabel(automation, viewerUserId)
+                }
+              >
+                {automationRunsAsLabel(automation, viewerUserId)}
+              </AutomationMetadataItem>
+            ) : null,
           ]}
         />
       }
@@ -829,6 +1008,7 @@ export function AutomationDetailView({
               : undefined
           }
           onRunNow={onRunNow}
+          {...(canAdopt ? { onAdopt: () => setAdoptReview(automation) } : {})}
           onDelete={onDelete}
         />
       }
@@ -855,10 +1035,18 @@ export function AutomationDetailView({
               execution={execution}
               editing={editing}
               pending={actionPending}
+              adoptOnSave={!ownsIdentity}
               personalProject={personalProject}
               projectContextLabel={projectContextLabel}
               onCancel={onCancelEdit}
-              onUpdate={onUpdateAgent}
+              onUpdate={(update) =>
+                onUpdateAgent(
+                  update,
+                  ownsIdentity
+                    ? null
+                    : (editRevision ?? automation.executionRevision),
+                )
+              }
             />
           ) : (
             <ScriptAutomationDefinition execution={execution} />
@@ -943,6 +1131,14 @@ export function AutomationDetailView({
           )}
         </ResourceActivitySection>
       </ResourceDetailStack>
+      <AdoptAutomationDialog
+        automation={adoptReview}
+        pending={actionPending}
+        onCancel={() => setAdoptReview(null)}
+        onConfirm={(expectedRevision) => {
+          void onAdopt(expectedRevision).finally(() => setAdoptReview(null));
+        }}
+      />
       {footer}
     </ResourceDetailPage>
   );

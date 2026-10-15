@@ -36,6 +36,12 @@ beforeEach(async () => {
       requests.push(request);
       if (request.url.endsWith("/auth/session"))
         return Response.json({ authMode: "multi" });
+      if (request.url.endsWith("/me"))
+        return Response.json({
+          user,
+          effectiveRole: "member",
+          roleCeiling: "member",
+        });
       if (
         request.url.endsWith("/users") ||
         request.url.endsWith("/users/directory")
@@ -108,6 +114,16 @@ describe("CLI authentication", () => {
     expect(stored.servers["http://other"].authToken).toBe("bbpat_other");
   });
 
+  it("shows the effective role of a capped credential and keeps login output to the user", async () => {
+    const log = vi.mocked(console.log);
+    await run(["whoami"]);
+    expect(log).toHaveBeenLastCalledWith(
+      "u  user@example.test  member (credential capped at member; account role admin)",
+    );
+    await run(["login", "--token", "bbpat_saved", "--json"]);
+    expect(JSON.parse(String(log.mock.calls.at(-1)?.[0]))).toEqual({ user });
+  });
+
   it.each([
     { argv: ["user", "list"], method: "GET", path: "/users", body: null },
     {
@@ -134,6 +150,18 @@ describe("CLI authentication", () => {
       method: "POST",
       path: "/auth/invites",
       body: { role: "admin", email: "new@example.test" },
+    },
+    {
+      argv: ["user", "grants", "list", "u2"],
+      method: "GET",
+      path: "/users/u2/plugin-grants",
+      body: null,
+    },
+    {
+      argv: ["user", "grants", "revoke", "grant_1", "--user", "u2"],
+      method: "DELETE",
+      path: "/users/u2/plugin-grants/grant_1",
+      body: null,
     },
     {
       argv: ["invite", "list"],
@@ -177,6 +205,66 @@ describe("CLI authentication", () => {
       if (body !== null) expect(await requests[0].json()).toEqual(body);
     },
   );
+
+  it("lists and revokes the signed-in user's plugin grants by default", async () => {
+    vi.stubEnv("BB_TOKEN", "bbpat_env");
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const request = new Request(input, init);
+      requests.push(request);
+      if (request.url.endsWith("/me")) {
+        return Response.json({
+          user,
+          effectiveRole: "admin",
+          roleCeiling: null,
+        });
+      }
+      if (request.method === "DELETE") return Response.json({ ok: true });
+      return Response.json({
+        grants: [
+          {
+            id: "grant_1",
+            pluginId: "automations",
+            userId: "u",
+            maxRole: "member",
+            purpose: 'Automation "Nightly"',
+            createdAt: 1,
+            expiresAt: null,
+          },
+          {
+            id: "grant_2",
+            pluginId: "automations",
+            userId: "u",
+            maxRole: "member",
+            purpose: 'Automation "Weekly"',
+            createdAt: 1,
+            expiresAt: Date.parse("2001-02-03T00:00:00.000Z"),
+          },
+        ],
+      });
+    });
+    const log = vi.mocked(console.log);
+
+    await run(["user", "grants", "list"]);
+    expect(requests.map((request) => request.url)).toEqual([
+      "http://server/api/v1/me",
+      "http://server/api/v1/users/u/plugin-grants",
+    ]);
+    const table = log.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(table).toContain("grant_1");
+    expect(table).toContain('Automation "Nightly"');
+    expect(table).toContain("never");
+    expect(table).toContain("expired 2001-02-03T00:00:00.000Z");
+
+    requests.length = 0;
+    await run(["user", "grants", "revoke", "grant_1"]);
+    expect(
+      requests.map((request) => `${request.method} ${request.url}`),
+    ).toEqual([
+      "GET http://server/api/v1/me",
+      "DELETE http://server/api/v1/users/u/plugin-grants/grant_1",
+    ]);
+    expect(log).toHaveBeenLastCalledWith("Revoked grant_1");
+  });
 
   it("creates a PAT using the sign-in cookie and clears the temporary session", async () => {
     const passwordFile = join(dataDir, "password");

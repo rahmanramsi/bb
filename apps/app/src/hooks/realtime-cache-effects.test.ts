@@ -50,7 +50,11 @@ import {
   threadTimelineQueryKeyPrefix,
   threadTimelineTurnSummaryDetailsQueryKey,
 } from "./queries/query-keys";
-import { pluginContributionsQueryKey } from "./queries/query-keys";
+import {
+  pluginContributionsQueryKey,
+  userDirectoryQueryKey,
+} from "./queries/query-keys";
+import { AUTH_SESSION_QUERY_KEY } from "./useAuth";
 import { systemEnvironmentProvidersQueryKey } from "./queries/environment-provider-queries";
 import {
   createRealtimeCacheEffects,
@@ -291,6 +295,54 @@ describe("createRealtimeCacheEffects", () => {
 
     expect(queryClient.getQueryState(statusKey)?.isInvalidated).toBe(true);
     expect(queryClient.getQueryState(configKey)?.isInvalidated).toBe(false);
+    effects.dispose();
+  });
+
+  it("refreshes who is signed in and the user directory when users change", () => {
+    const { effects, queryClient } = createRealtimeEffectsTestContext();
+    const configKey = systemConfigQueryKey();
+    queryClient.setQueryData(AUTH_SESSION_QUERY_KEY, {});
+    queryClient.setQueryData(userDirectoryQueryKey(), { users: [] });
+    queryClient.setQueryData(configKey, {});
+
+    effects.handleChanged({
+      type: "changed",
+      entity: "system",
+      changes: ["users-changed"],
+    });
+
+    expect(
+      queryClient.getQueryState(AUTH_SESSION_QUERY_KEY)?.isInvalidated,
+    ).toBe(true);
+    expect(
+      queryClient.getQueryState(userDirectoryQueryKey())?.isInvalidated,
+    ).toBe(true);
+    expect(queryClient.getQueryState(configKey)?.isInvalidated).toBe(false);
+    effects.dispose();
+  });
+
+  it("refreshes who is signed in after the server closes a socket whose role changed", () => {
+    const { effects, queryClient } = createRealtimeEffectsTestContext();
+    const disconnectedAt = Date.now();
+    queryClient.setQueryData(
+      AUTH_SESSION_QUERY_KEY,
+      {},
+      { updatedAt: disconnectedAt - 1 },
+    );
+    queryClient.setQueryData(
+      userDirectoryQueryKey(),
+      { users: [] },
+      { updatedAt: disconnectedAt - 1 },
+    );
+
+    effects.handleConnected({ reconnected: true, disconnectedAt });
+
+    expect(
+      queryClient.getQueryState(AUTH_SESSION_QUERY_KEY)?.isInvalidated,
+    ).toBe(true);
+    expect(
+      queryClient.getQueryState(userDirectoryQueryKey())?.isInvalidated,
+    ).toBe(true);
     effects.dispose();
   });
 

@@ -1972,6 +1972,38 @@ describe("acp bridge", () => {
     expect(notifications("session/replaced")).toHaveLength(1);
   });
 
+  it("runs each turn with that turn's BB_TOKEN and keeps the agent while it is unchanged", async () => {
+    const { bbThreadId, providerThreadId } = await startThread();
+    const turnOptions = (token: string | null) =>
+      executionOptions({
+        envVars: {
+          BB_THREAD_ID: bbThreadId,
+          ...(token === null ? {} : { BB_TOKEN: token }),
+        },
+        providerOptions: { acpLaunchSpec: acpLaunchSpec({}) },
+      });
+
+    const replacedBefore = notifications("session/replaced").length;
+    const seen: Array<string | undefined> = [];
+    for (const token of ["token-a", "token-a", null, "token-b"]) {
+      seen.push(
+        await completeTurnWith(
+          providerThreadId,
+          "echo-bb-token",
+          turnOptions(token),
+        ),
+      );
+    }
+
+    expect(seen).toEqual([
+      "bb-token:token-a",
+      "bb-token:token-a",
+      "bb-token:none",
+      "bb-token:token-b",
+    ]);
+    expect(notifications("session/replaced").length - replacedBefore).toBe(3);
+  });
+
   it("authenticates ACP sessions with cached tokens when advertised", async () => {
     const { providerThreadId } = await startThread({
       envVars: { FAKE_ACP_AUTH_METHODS: "cached_token" },

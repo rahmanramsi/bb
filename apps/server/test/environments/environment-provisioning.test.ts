@@ -34,6 +34,8 @@ describe("environment reprovisioning", () => {
       let thrownError: ApiError | null = null;
       try {
         await createThreadFromRequest(harness.deps, {
+          createdByGrantId: null,
+          createdByRoleCeiling: null,
           createdByUserId: LOCAL_OWNER_USER_ID,
           startedOnBehalfOf: null,
           environment: {

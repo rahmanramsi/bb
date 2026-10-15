@@ -20,6 +20,7 @@ async function createRuntime() {
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
+        notifyUserSystem: () => {},
         notifySystem: () => {},
       },
       logger: testLogger as unknown as Logger,

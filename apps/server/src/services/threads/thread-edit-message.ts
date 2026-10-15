@@ -19,6 +19,7 @@ import {
   type PromptInput,
   type ThreadRecord,
   type ThreadEvent,
+  type RoleCeiling,
 } from "@bb/domain";
 import type {
   EditMessageRequest,
@@ -425,6 +426,8 @@ function rewindPrepareCommandFromStart(
 export async function editThreadMessage(
   deps: LoggedPendingInteractionWorkSessionDeps,
   args: {
+    authorGrantId: string | null;
+    authorRoleCeiling: RoleCeiling | null;
     authorUserId: string | null;
     environment: Parameters<typeof requireReadyThreadEnvironment>[0];
     payload: EditMessageRequest;
@@ -501,6 +504,8 @@ export async function editThreadMessage(
     }
     rewindLeaseId = randomUUID();
     const startCommand = await buildThreadStartCommand(deps, {
+      authorGrantId: args.authorGrantId,
+      authorRoleCeiling: args.authorRoleCeiling,
       authorUserId: args.authorUserId,
       thread: editableThread,
       fork: null,
@@ -559,6 +564,8 @@ export async function editThreadMessage(
   let cancelledRetryCount = 0;
   try {
     await sendThreadMessage(deps, {
+      authorGrantId: args.authorGrantId,
+      authorRoleCeiling: args.authorRoleCeiling,
       authorUserId: args.authorUserId,
       beforeAppendInTransaction: ({ tx }) => {
         if (getActivePendingInteractionForThread(tx, editableThread.id)) {

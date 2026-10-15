@@ -104,15 +104,21 @@ export const connectRpcContract = defineRpcContract({
       .strict(),
   },
   unexposeAll: {
+    experimental_requiredRole: "admin",
     input: z.object({ hostId: z.string().min(1) }).strict(),
     output: z.object({ removed: z.number().int().nonnegative() }).strict(),
   },
   listShares: { input: z.null(), output: z.array(shareListingSchema) },
   listAccountServers: {
+    experimental_requiredRole: "admin",
     input: z.null(),
     output: listAccountServersResultSchema,
   },
-  createDesktopSession: { input: z.null(), output: desktopSessionSchema },
+  createDesktopSession: {
+    experimental_requiredRole: "admin",
+    input: z.null(),
+    output: desktopSessionSchema,
+  },
   createMachineCode: {
     experimental_requiredRole: "admin",
     input: z.null(),

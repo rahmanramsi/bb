@@ -24,8 +24,10 @@ bb thread-list prefs reset <key> [--json]
 `bb thread-list prefs set organizationMode machine` and
 `bb thread-list prefs set manualSectionOrder '["pinned","sections","threads"]'`
 both work. A value the key's schema rejects fails with
-`invalid_preference_value` and leaves the stored value alone. Every open
-window applies a change immediately. Sections themselves and a thread's
+`invalid_preference_value` and leaves the stored value alone. Preferences
+belong to the signed-in user the command runs as (an agent's thread acts for
+its owner), so a change never alters another person's sidebar. Every window
+that user has open applies it immediately. Sections themselves and a thread's
 section are bb core state: use `bb thread section` and `bb thread update`.
 
 On first load the plugin copies any non-default `sidebar.*` values from

@@ -120,6 +120,8 @@ describe("child outcome reconciliation", () => {
     await withChildThreadNotificationClock(async (harness) => {
       const fixture = seedFamily(harness, "late-acceptance");
       await sendThreadMessage(harness.deps, {
+        authorGrantId: null,
+        authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment: fixture.environment,
         payload: {

@@ -1,4 +1,9 @@
-import { userRoleSchema } from "@bb/domain";
+import {
+  roleCeilingValues,
+  userRoleSchema,
+  type RoleCeiling,
+  type UserRole,
+} from "@bb/domain";
 import { z } from "zod";
 
 export const authModeSchema = z.enum(["local", "multi"]);
@@ -23,6 +28,8 @@ export const authSessionResponseSchema = z
     needsBootstrap: z.boolean(),
     principalKind: authPrincipalKindSchema.nullable(),
     user: authUserSchema.nullable(),
+    effectiveRole: userRoleSchema.nullable(),
+    roleCeiling: z.enum(roleCeilingValues).nullable(),
   })
   .strict();
 export type AuthSessionResponse = z.infer<typeof authSessionResponseSchema>;
@@ -47,6 +54,12 @@ export type AuthSignUpRequest = z.infer<typeof authSignUpRequestSchema>;
 
 export interface AuthUserResponse {
   user: AuthUser;
+}
+
+export interface AuthMeResponse {
+  user: AuthUser;
+  effectiveRole: UserRole;
+  roleCeiling: RoleCeiling | null;
 }
 
 export interface UserListResponse {
@@ -105,6 +118,19 @@ export const updateUserRoleRequestSchema = z
 export type UpdateUserRoleRequest = z.infer<typeof updateUserRoleRequestSchema>;
 export type PathUserId = { param: { id: string } };
 export type PathUserInviteId = { param: { id: string } };
+export type PathUserPluginGrantId = { param: { id: string; grantId: string } };
+export interface PluginCallerGrantSummary {
+  id: string;
+  pluginId: string;
+  userId: string;
+  maxRole: UserRole;
+  purpose: string;
+  createdAt: number;
+  expiresAt: number | null;
+}
+export interface PluginCallerGrantListResponse {
+  grants: PluginCallerGrantSummary[];
+}
 export interface UserInviteSummary {
   id: string;
   role: z.infer<typeof userRoleSchema>;

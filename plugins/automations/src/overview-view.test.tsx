@@ -53,6 +53,9 @@ const INSTALLED_AUTOMATIONS: AutomationsOverviewResponse["automations"] = [
       },
       origin: "human",
       createdByThreadId: null,
+      runsAsCreator: true,
+      runsAsUserId: "usr_local_owner",
+      executionRevision: 1,
       nextRunAt: 1_800_000_000_000,
       lastRunAt: null,
       runCount: 0,
@@ -277,10 +280,13 @@ describe("AutomationOverviewView", () => {
     fireEvent.pointerDown(actions());
     fireEvent.click(await screen.findByRole("menuitem", { name: "Run now" }));
 
-    expect(onRunNow).toHaveBeenCalledWith({
-      projectId: "proj_1",
-      automationId: "auto_1",
-    });
+    expect(onRunNow).toHaveBeenCalledWith(
+      {
+        projectId: "proj_1",
+        automationId: "auto_1",
+      },
+      "agent",
+    );
     expect(onOpenDetail).not.toHaveBeenCalled();
     expect(actions()).toHaveProperty("disabled", true);
 
@@ -289,6 +295,34 @@ describe("AutomationOverviewView", () => {
     });
     expect(actions()).toHaveProperty("disabled", false);
     expect(screen.queryByRole("menuitem", { name: "Run now" })).toBeNull();
+  });
+
+  it("passes the execution mode when toggling an automation from its row", () => {
+    const onEnabledChange = vi.fn(async () => {});
+    render(
+      <AutomationOverviewView
+        entries={INSTALLED_AUTOMATIONS}
+        error={null}
+        onRetry={() => {}}
+        onOpenDetail={() => {}}
+        onEnabledChange={onEnabledChange}
+        onRunNow={async () => {}}
+        onDelete={() => {}}
+        onCreateViaChat={() => {}}
+        activeMode="installed"
+        onModeChange={() => {}}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Disable Nightly digest" }),
+    );
+
+    expect(onEnabledChange).toHaveBeenCalledWith(
+      false,
+      { projectId: "proj_1", automationId: "auto_1" },
+      "agent",
+    );
   });
 
   it("uses the shared row menu to request deletion", async () => {

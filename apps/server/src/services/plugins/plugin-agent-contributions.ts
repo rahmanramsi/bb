@@ -6,6 +6,7 @@ import type {
   PluginAgentToolContext,
   PluginAgentToolRecord,
 } from "./plugin-api.js";
+import type { PluginCallerIdentity } from "./plugin-invocation.js";
 import type {
   PluginAgentToolContribution,
   PluginMentionResolveResult,
@@ -119,7 +120,11 @@ export async function resolvePluginMention(args: {
 
 export async function invokePluginAgentTool(
   tool: { pluginId: string; record: PluginAgentToolRecord },
-  args: { input: unknown; ctx: PluginAgentToolContext },
+  args: {
+    input: unknown;
+    ctx: Omit<PluginAgentToolContext, "experimental_caller">;
+    identity: PluginCallerIdentity;
+  },
 ): Promise<ToolCallResponse> {
   const active = contributions;
   if (!active) {
@@ -135,5 +140,6 @@ export async function invokePluginAgentTool(
     record: tool.record,
     input: args.input,
     ctx: args.ctx,
+    identity: args.identity,
   });
 }

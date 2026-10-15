@@ -295,7 +295,7 @@ service id, including third-party plugins. Only services supporting the task
 participate; unavailable services and failed requests fall through to the next.
 Codex (`codex`, the `provider-codex` plugin) uses the Codex CLI login on the
 primary machine. bb cloud is on by default once you sign in; `bb ai off` turns it off
-(it then sends nothing to getbb.app) and `bb ai on` turns it back on. A service you pick
+(it then sends nothing to getbb.app) and `bb ai on` turns it back on; both are admin-only. A service you pick
 is used alone; if it fails, titles fall back to the start of the prompt and
 commits to `bb: automated commit`. Each plugin picks its own model.
 
@@ -843,7 +843,8 @@ in both directions. The new adapter adds agent options in the model picker
 composer, agent questions as question cards, sign-in
 guidance, and the official ACP registry: its settings page lists the
 registry's agents with an Add button, and `bb acp registry`, `bb acp add
-<agent-id>` and `bb acp remove <agent-id>` do the same from the CLI. Adding
+<agent-id>` and `bb acp remove <agent-id>` do the same from the CLI. In
+multi-user mode only admins can add or remove registry agents. Adding
 one writes a `customAgents` entry that runs the registry's `npx` or `uvx`
 package on the thread's host, so the host needs Node.js or uv. Agents the
 registry ships only as a downloadable binary are listed but must be installed
@@ -1605,7 +1606,8 @@ Plugin state lives under the data dir:
 <dataDir>/plugins/<id>/data.db     Per-plugin SQLite database
 <dataDir>/plugins/<id>/secrets/    Secret settings and the plugin HTTP token
 <dataDir>/plugins/<id>/logs/       bb.log output (plugin.log, JSONL, rotated
-                                   at 5MB; read with `bb plugin logs <id>`)
+                                   at 5MB; read with `bb plugin logs <id>`,
+                                   admins only in multi-user mode)
 <dataDir>/plugins/git/, npm/       Managed installs for git:/npm: sources
 <dataDir>/marketplaces/staging/    Throwaway checkouts a git: marketplace
                                    refresh reads its manifest from, deleted
@@ -1884,7 +1886,15 @@ already signed in, sign out before accepting an invite for another account.
 Thread lists and headers show each creator in multi mode. Local mode keeps
 the existing interface without sign-in, account controls, or creator labels.
 The app hides administrative settings for members; the server enforces the
-same role restrictions for API, SDK, and CLI callers.
+same role restrictions for API, SDK, and CLI callers. A member-capped
+credential counts as a member there too. `GET /api/v1/auth/session` reports the
+caller's `effectiveRole` and `roleCeiling` alongside the user. When an admin
+changes a role, the app refreshes the signed-in user without a reload. Plugin
+pages read the same user with `experimental_useCurrentUser()` to hide
+admin-only controls, such as Docs **Add vault** and bb connect **Revoke all**.
+They scope browser storage per user with `experimental_useUserStorageKey()`.
+Environment providers receive the thread creator and their role as
+`experimental_requester`, for per-user git identity or branch prefixes.
 
 On a fresh `multi` server the first account registered with
 `POST /api/v1/auth/sign-up` becomes an admin. After that, sign-up requires an
@@ -1908,8 +1918,12 @@ on a machine effectively has shell access to that machine.
 Some state belongs to each user rather than to the server. Each user has their
 own thread read and unread state, pinned threads and pin order, UI preferences
 (`/api/v1/preferences/ui`), appearance (theme and favicon color), and prompt
-history. Changing them affects only that user, and realtime updates for them
-reach only that user's connected apps. A user who has never opened a thread
+history. The Thread list plugin's sidebar layout (organization, sort, section
+order, collapsed groups, row actions) is also per user, and so is any plugin
+setting the plugin marks per user, which members may change for themselves.
+Changing them affects only that user, and realtime updates for them reach only
+that user's connected apps. Removing a user deletes their per-user plugin data
+and settings. A user who has never opened a thread
 sees it as read up to its creation. Projects, threads, and everything else stay
 shared. Admins list users with `GET /api/v1/users` (`bb user list`).
 Authenticated clients use `GET /api/v1/users/directory` to resolve attribution: threads record `createdByUserId`, queued
@@ -1948,32 +1962,132 @@ option, `bb login` reads a PAT from a hidden prompt or standard input. Login
 validates the credential before saving it to the server origin's profile in
 `<BB_DATA_DIR>/client.json`, with file permissions `0600`. `BB_SERVER_URL`
 selects the server; `BB_TOKEN` overrides its saved token for CLI requests,
-including plugin commands. `bb whoami [--json]` shows the current user.
+including plugin commands. `bb whoami [--json]` shows the current user and
+the role the credential acts with: a member-capped `BB_TOKEN` reports
+`effectiveRole: "member"` and `roleCeiling: "member"` even after its user is
+promoted, and the text output names the cap and the account role.
 `bb logout [--json]` removes only that profile's saved login. It does not
 revoke the PAT or unset `BB_TOKEN`.
 
 Admins use `bb user list`, `bb user role USER_ID admin|member`, and
-`bb user remove USER_ID`. System users and the last account admin cannot be
-removed or demoted. `bb invite create [--email EMAIL] [--role admin|member]`
+`bb user remove USER_ID`. Removing a user also deletes their queued and
+scheduled messages. System users and the last account admin cannot be removed
+or demoted. `bb invite create [--email EMAIL] [--role admin|member]`
 prints a seven-day, single-use token. `bb invite list` lists pending unexpired
 invites without tokens; `bb invite revoke ID` invalidates one. New users run
 `bb invite accept TOKEN --email EMAIL --name NAME` and enter their password,
 or supply `--password-file PATH`, then sign in with `bb login`.
 `bb token create NAME`, `bb token list`, and `bb token revoke ID` manage only
-the current user's PATs. New token values are shown once. All these commands
-accept `--json`.
+the current user's PATs. New token values are shown once. A member-capped
+`BB_TOKEN` cannot create a PAT: `POST /api/v1/auth/tokens` answers 403
+`credential_role_capped`. All these commands accept `--json`.
+
+`bb user grants list [USER_ID]` lists the plugin grants a person gave. A plugin
+records a grant when it must act as that person later, such as an automation
+that runs on a schedule; each grant names the plugin, its purpose, the role it
+was granted with, and its expiry. A grant expires after 90 days unless the
+plugin chose another expiry, or none for work the person expects to run
+indefinitely; the list marks expired grants. Work done through a grant never
+has more than the granted role or the person's current role: a member's grant
+stays member after promotion. Demoting an admin permanently lowers each of
+their grants to member, so promoting them again does not restore admin
+authority; the plugin must record a new grant.
+`bb user grants revoke GRANT_ID [--user USER_ID]` revokes one, and the plugin's
+later work as that person fails instead of running as someone else. Both
+default to the signed-in user; only admins may name another user. A plugin
+acting as a user gets 403 `credential_delegated`. Removing a user or a plugin
+deletes its grants. Both commands accept `--json`.
 
 Roles are guardrails for a trusted team. A member who runs an agent effectively
 has shell access to its host. In multi mode, each turn supplies a signed
-seven-day `BB_TOKEN` to the agent shell through the launch environment. It
-authenticates as the user who sent the turn, or as the thread creator for
-turns no user sent, with that user's current role. It stops authenticating if
-that user is removed and is masked in runtime environment displays. Turns with
-neither a sending user nor a remaining creator, including threads created
-before multi mode, get no `BB_TOKEN`. In local mode, shells need no
+seven-day `BB_TOKEN` to the agent shell through the launch environment. For a
+turn a user sent, it authenticates as that user with their current role. The
+first turn of a thread a user creates, that turn restarted after its environment
+is provisioned again, and a manual context compaction count as sent by the user
+who requested them. For a turn no user sent, or that a plugin or other service credential sent, it
+authenticates as the thread creator only if the creator exists and is a member
+when the turn starts, and it stays capped at member even if that user is later
+promoted to admin. The cap carries over to work the capped token requests: a
+thread, fork, sent, queued, scheduled, retried, or edited message it authors
+gets a capped `BB_TOKEN` for that user, and a queued message it edits becomes
+capped. Tokens and sessions the user creates by signing in keep their current
+role. Such turns in a thread whose creator is an admin, a removed
+user, or nobody get no `BB_TOKEN`, so plugin-driven work never runs with admin
+authority. A thread that a plugin creates under a parent, fork source, or
+lifecycle owner thread is attributed to that thread's creator for display; the
+attribution grants no authority beyond this rule. A user's own thread is always
+attributed to that user. The token stops authenticating if its user is removed
+and is masked in runtime environment displays. Threads created before multi
+mode and threads a plugin creates without a parent have no creator to fall back
+to. In local mode, shells need no credential.
+
+A plugin can also act as a person, either while handling that person's request
+or later through a grant they gave (`bb user grants`). Threads and messages it
+creates that way count as sent by that person under the rules above, capped at
+member when the person called with member authority or a member-capped
+credential, so the cap survives a later promotion. Turns started through a grant
+record it, and their `BB_TOKEN` stops authenticating with 401 once the grant is
+revoked, expires, or its plugin or person is removed, including threads that
+token goes on to create; it is capped at member whenever the grant is. Such a
+token cannot create a PAT or list or revoke grants (403 `credential_delegated`),
+and a plugin it calls cannot record a new grant from it. An agent automation
+runs as the person who last changed what it runs, or who adopted it, through
+such a grant: its scheduled and manual runs get that person's `BB_TOKEN` and
+attribution. Automations request that grant without an expiry, so the
+automation runs as that person until they revoke it with `bb user grants
+revoke` or under Plugin access in account settings; the app's Runs as label,
+Run as me dialog, and save prompt, and `bb automation show` and `bb automation
+adopt`, say so. Renaming, rescheduling, pausing, or resuming it keeps that
+person.
+Changing its prompt, target, provider, model, reasoning, service tier, or
+permission mode as anyone else is refused with `automation_adoption_required`
+unless the change also adopts it; adopting (`bb automation adopt`, or Run as me
+in the app) shows the full execution, names its execution revision, and fails
+with `automation_revision_stale` if the execution changed since. A plugin or bb
+itself changing the execution revokes the grant. If the grant is revoked,
+expired, or its person removed, the run fails instead of running as the plugin.
+Automations without a grant, including those saved before grants existed, run as
+the plugin without a user identity and say so in the app and in `bb automation
+show` until someone adopts them.
+
+A running turn keeps the `BB_TOKEN` it started with, so in multi mode a
+message steers into it only when it would get the same credential: the same
+user with the same role ceiling, or no token for both. A message from anyone
+else, including a plugin, an automation, or the same user's member-capped
+`BB_TOKEN`, interrupts the running turn instead and starts as a new turn with
+its own credential under the rules above. The timeline shows the interruption
+as stopped because another author sent a message, and the send answers
+`delivery: "queued"` until the new turn starts. A queued message that another
+user or a plugin edits is attributed to the editor and runs with the editor's
 credential.
 
-`GET /api/v1/me` returns the authenticated user. Admins update roles with
+Notices that bb sends a thread on its own, such as a child thread's outcome or
+a delivered tool result, carry no token. While the thread runs a turn with a
+different credential, a notice neither steers into that turn nor interrupts it:
+it waits in the queue and starts as a new turn once the running turn ends. Send
+now on a waiting notice answers that the thread is already running a turn.
+Editing a waiting notice turns it into an ordinary message by the editor, with
+the editor's credential.
+
+These credential checks hold only for the turn bb checked. If that turn ends
+and another one starts before the message reaches the host, bb decides again
+against the new turn: a notice waits in the queue, and any other message
+follows the interrupt rule above. The host never steers a message into a turn
+other than the one it was checked against; it hands the message back to the
+queue instead.
+
+bb stores each message's author and role ceiling with its turn request, so a
+message handed back keeps them, including after a server restart. If bb cannot
+recover the author, for example because an older bb version accepted the
+message or its author was removed, it drops the message rather than running it
+with any other credential, and the timeline shows the error
+`turn_request_author_unknown`: the message was not delivered and must be sent
+again. The same holds for a message that waits while bb sets up the thread's
+environment, including a new thread's first message: when setup finishes, bb
+does not start it, shows the error, and leaves the thread idle.
+
+`GET /api/v1/me` returns the authenticated user, the role the credential acts
+with as `effectiveRole`, and its `roleCeiling` (`"member"` or null). Admins update roles with
 `PUT /api/v1/users/:id/role` (`{"role":"admin"|"member"}`) and remove accounts
 with `DELETE /api/v1/users/:id`. Invite management uses
 `GET /api/v1/auth/invites` and `DELETE /api/v1/auth/invites/:id`.

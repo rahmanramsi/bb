@@ -61,6 +61,7 @@ import type {
 } from "../backend-contract.js";
 import type { JsonValue } from "../json-value.js";
 import type {
+  ExperimentalPluginCaller,
   ExperimentalPluginRpcHandlerContext,
   PluginRpcError,
   PluginRpcMethodContract,
@@ -190,6 +191,7 @@ export const SETTING_KEY_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const settingsBaseFields = {
   label: z.string().min(1),
   description: z.string().min(1).optional(),
+  experimental_scope: z.enum(["team", "user"]).optional(),
 };
 
 const stringSettingSchemaSchema = z.custom<StandardSchemaV1<string, string>>(
@@ -224,6 +226,16 @@ const settingDescriptorSchema = z.discriminatedUnion("type", [
       {
         message: "a secret setting cannot be experimental_multiline",
         path: ["experimental_multiline"],
+      },
+    )
+    .refine(
+      (descriptor) =>
+        !(
+          descriptor.secret === true && descriptor.experimental_scope === "user"
+        ),
+      {
+        message: 'a secret setting cannot have experimental_scope "user"',
+        path: ["experimental_scope"],
       },
     ),
   z
@@ -351,6 +363,29 @@ function settingSchemaError<T extends string | number | boolean>(
     const detail = error instanceof Error ? error.message : String(error);
     return `schema for setting "${key}" failed: ${detail}`;
   }
+}
+
+export function isUserScopedSetting(
+  descriptor: PluginSettingDescriptor,
+): boolean {
+  return descriptor.experimental_scope === "user";
+}
+
+export function partitionSettingsUpdate(
+  descriptors: PluginSettingDescriptors,
+  values: Record<string, unknown>,
+): { team: Record<string, unknown>; user: Record<string, unknown> } {
+  const team: Record<string, unknown> = {};
+  const user: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(values)) {
+    const descriptor = descriptors[key];
+    if (descriptor !== undefined && isUserScopedSetting(descriptor)) {
+      user[key] = value;
+    } else {
+      team[key] = value;
+    }
+  }
+  return { team, user };
 }
 
 /** Validate a settings update. `null` means unset. */
@@ -2020,7 +2055,10 @@ function rejectStaleAgentToolFields(toolName: string, tool: object): void {
     if (renamed !== undefined) {
       throw new Error(`registerTool: ${renamed} (tool "${toolName}")`);
     }
-    if (key.startsWith("experimental_")) {
+    if (
+      key.startsWith("experimental_") &&
+      key !== "experimental_requiredRole"
+    ) {
       unknownKeys.push(key);
     }
   }
@@ -2812,13 +2850,34 @@ export function runPluginStorageMigrations(
   })();
 }
 
+function readRouteRequiredRole(
+  opts: { experimental_requiredRole?: unknown } | undefined,
+  label: string,
+): "admin" | null {
+  const requiredRole = opts?.experimental_requiredRole;
+  if (requiredRole === undefined) return null;
+  if (requiredRole !== "admin") {
+    throw new Error(
+      `invalid experimental_requiredRole ${JSON.stringify(requiredRole)} for ${label} — use "admin" or omit it`,
+    );
+  }
+  return requiredRole;
+}
+
 export function normalizeHttpRouteRegistration(
   method: string,
   path: string,
   handler: unknown,
-  opts: { auth?: PluginHttpAuthMode } | undefined,
+  opts:
+    | { auth?: PluginHttpAuthMode; experimental_requiredRole?: "admin" }
+    | undefined,
   existingRoutes: readonly { method: string; path: string }[],
-): { method: string; path: string; auth: PluginHttpAuthMode } {
+): {
+  method: string;
+  path: string;
+  auth: PluginHttpAuthMode;
+  requiredRole: "admin" | null;
+} {
   const normalizedMethod = String(method).toUpperCase();
   if (!PLUGIN_HTTP_METHODS.has(normalizedMethod)) {
     throw new Error(
@@ -2850,15 +2909,22 @@ export function normalizeHttpRouteRegistration(
       `http route ${normalizedMethod} ${path} is already registered`,
     );
   }
-  return { method: normalizedMethod, path, auth };
+  return {
+    method: normalizedMethod,
+    path,
+    auth,
+    requiredRole: readRouteRequiredRole(opts, `${normalizedMethod} ${path}`),
+  };
 }
 
 export function normalizeWebSocketRouteRegistration(
   path: string,
   handler: unknown,
-  opts: { auth?: PluginHttpAuthMode } | undefined,
+  opts:
+    | { auth?: PluginHttpAuthMode; experimental_requiredRole?: "admin" }
+    | undefined,
   existingRoutes: readonly { path: string }[],
-): { path: string; auth: PluginHttpAuthMode } {
+): { path: string; auth: PluginHttpAuthMode; requiredRole: "admin" | null } {
   if (typeof path !== "string" || !path.startsWith("/")) {
     throw new Error(
       `websocket route path must be a string starting with "/", got ${JSON.stringify(path)}`,
@@ -2876,7 +2942,11 @@ export function normalizeWebSocketRouteRegistration(
   if (existingRoutes.some((route) => route.path === path)) {
     throw new Error(`websocket route ${path} is already registered`);
   }
-  return { path, auth };
+  return {
+    path,
+    auth,
+    requiredRole: readRouteRequiredRole(opts, `websocket ${path}`),
+  };
 }
 
 type RpcRegistrationRecord = {
@@ -2969,6 +3039,19 @@ export function normalizeRealtimePayload(
     );
   }
   return JSON.parse(json);
+}
+
+export function normalizeRealtimeUserId(options: unknown): string | null {
+  if (options === undefined) return null;
+  if (typeof options !== "object" || options === null) {
+    throw new Error("realtime publish options must be an object");
+  }
+  const userId: unknown = Reflect.get(options, "experimental_userId");
+  if (userId === undefined) return null;
+  if (typeof userId !== "string" || userId.length === 0) {
+    throw new Error("realtime experimental_userId must be a non-empty string");
+  }
+  return userId;
 }
 
 export function validateBackgroundServiceRegistration(
@@ -3099,6 +3182,7 @@ export function normalizeAgentToolRegistration(args: {
     description: string;
     instructions?: string;
     presentation?: PluginRowPresentation;
+    experimental_requiredRole?: "admin";
     parameters: unknown;
     execute(
       params: never,
@@ -3110,6 +3194,7 @@ export function normalizeAgentToolRegistration(args: {
   description: string;
   presentation: PluginRowPresentation | null;
   instructions: string | null;
+  requiredRole: "admin" | null;
   inputSchema: unknown;
   parse: AgentToolParse;
   execute: AgentToolExecute;
@@ -3214,6 +3299,7 @@ export function normalizeAgentToolRegistration(args: {
       tool.instructions !== undefined && tool.instructions.trim().length > 0
         ? tool.instructions
         : null,
+    requiredRole: readRouteRequiredRole(tool, `tool "${name}"`),
     inputSchema,
     parse,
     execute: (tool.execute as AgentToolExecute).bind(tool),
@@ -3607,6 +3693,20 @@ function normalizeRpcIssues(
   });
 }
 
+export function rpcHandlerError(
+  error: unknown,
+  handlerErrorMessage: string,
+): PluginRpcError {
+  if (
+    error instanceof Error &&
+    error.name === "PluginRpcForbiddenError" &&
+    Reflect.get(error, "code") === "forbidden"
+  ) {
+    return { code: "forbidden", message: error.message };
+  }
+  return { code: "handler_error", message: handlerErrorMessage };
+}
+
 export async function validateRpcValue(
   schema: StandardSchemaV1,
   value: unknown,
@@ -3698,4 +3798,107 @@ export function normalizeRpcJsonResult(
   }
 
   return visit(value, "$result");
+}
+
+export function pluginCallerAuthority(
+  caller: ExperimentalPluginCaller,
+): "admin" | "member" {
+  return caller.kind === "client" ? caller.effectiveRole : "admin";
+}
+
+export function pluginRequiredRoleRefusal(
+  requiredRole: "admin" | null,
+  authority: "admin" | "member",
+  label: string,
+): string | null {
+  return requiredRole === "admin" && authority !== "admin"
+    ? `${label} requires a server admin`
+    : null;
+}
+
+export const PLUGIN_SETTINGS_WRITE_FORBIDDEN_MESSAGE =
+  "settings.experimental_set requires a server admin caller";
+
+export function pluginAsCallerRefusal(
+  context: unknown,
+  isLiveCaller: (caller: object) => boolean,
+  method = "bb.sdk.experimental_asCaller",
+):
+  | { ok: true; caller: Extract<ExperimentalPluginCaller, { kind: "client" }> }
+  | {
+      ok: false;
+      message: string;
+    } {
+  const caller =
+    typeof context === "object" && context !== null
+      ? Reflect.get(context, "experimental_caller")
+      : undefined;
+  if (typeof caller !== "object" || caller === null || !isLiveCaller(caller)) {
+    return {
+      ok: false,
+      message: `${method} needs the context bb passed to a handler of this plugin that is still running`,
+    };
+  }
+  const known = caller as ExperimentalPluginCaller;
+  if (known.kind !== "client") {
+    return {
+      ok: false,
+      message: `${method} cannot act as a ${known.kind} caller`,
+    };
+  }
+  return { ok: true, caller: known };
+}
+
+export const PLUGIN_CALLER_GRANT_PURPOSE_MAX_LENGTH = 200;
+export const PLUGIN_CALLER_GRANT_MAX_DAYS = 3650;
+export const PLUGIN_CALLER_GRANT_DEFAULT_DAYS = 90;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export function parsePluginCallerGrantRequest(
+  request: unknown,
+  now: number,
+):
+  | { ok: true; purpose: string; expiresAt: number | null }
+  | {
+      ok: false;
+      message: string;
+    } {
+  const purpose =
+    typeof request === "object" && request !== null
+      ? Reflect.get(request, "purpose")
+      : undefined;
+  const days =
+    typeof request === "object" && request !== null
+      ? Reflect.get(request, "expiresInDays")
+      : undefined;
+  if (
+    typeof purpose !== "string" ||
+    purpose.trim().length === 0 ||
+    purpose.length > PLUGIN_CALLER_GRANT_PURPOSE_MAX_LENGTH
+  ) {
+    return {
+      ok: false,
+      message: `bb.sdk.experimental_createCallerGrant: purpose must be 1 to ${PLUGIN_CALLER_GRANT_PURPOSE_MAX_LENGTH} characters`,
+    };
+  }
+  if (days === null) return { ok: true, purpose, expiresAt: null };
+  if (days === undefined) {
+    return {
+      ok: true,
+      purpose,
+      expiresAt: now + PLUGIN_CALLER_GRANT_DEFAULT_DAYS * DAY_MS,
+    };
+  }
+  if (
+    typeof days !== "number" ||
+    !Number.isInteger(days) ||
+    days < 1 ||
+    days > PLUGIN_CALLER_GRANT_MAX_DAYS
+  ) {
+    return {
+      ok: false,
+      message: `bb.sdk.experimental_createCallerGrant: expiresInDays must be a whole number from 1 to ${PLUGIN_CALLER_GRANT_MAX_DAYS}, or null for no expiry`,
+    };
+  }
+  return { ok: true, purpose, expiresAt: now + days * DAY_MS };
 }

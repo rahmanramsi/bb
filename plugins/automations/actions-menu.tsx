@@ -5,12 +5,14 @@ export function AutomationActionsMenu({
   pending,
   runDisabledReason,
   onRunNow,
+  onAdopt,
   onDelete,
 }: {
   name: string;
   pending: boolean;
   runDisabledReason?: string;
   onRunNow: () => void;
+  onAdopt?: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -25,6 +27,15 @@ export function AutomationActionsMenu({
           disabledReason: runDisabledReason,
           onSelect: onRunNow,
         },
+        ...(onAdopt === undefined
+          ? []
+          : [
+              {
+                label: "Run as me",
+                icon: "UserRound" as const,
+                onSelect: onAdopt,
+              },
+            ]),
         { kind: "separator" },
         {
           label: "Delete",

@@ -193,21 +193,34 @@ describe("completed event output migration", () => {
       const migratedAt = 1_800_000_000_000;
       try {
         const args = {
-          db, threadId: thread.id, eventId: "rewrite", sequence: 1,
-          createdAt: migratedAt - 1, output: "x".repeat(50_000),
+          db,
+          threadId: thread.id,
+          eventId: "rewrite",
+          sequence: 1,
+          createdAt: migratedAt - 1,
+          output: "x".repeat(50_000),
         };
         if (kind === "completed")
-          insertLegacyOutput({ ...args, itemKind: "commandExecution", outputPath: "aggregatedOutput" });
+          insertLegacyOutput({
+            ...args,
+            itemKind: "commandExecution",
+            outputPath: "aggregatedOutput",
+          });
         else insertLegacyImageGeneration(args);
-        const migrateOutput = () => kind === "completed"
-          ? migrateCommandOutput(db, migratedAt)
-          : migrateLegacyImageGeneration(db, migratedAt);
+        const migrateOutput = () =>
+          kind === "completed"
+            ? migrateCommandOutput(db, migratedAt)
+            : migrateLegacyImageGeneration(db, migratedAt);
         const before = listStoredEventRows(db, { threadId: thread.id });
-        expect(() => db.transaction(() => {
-          expect(migrateOutput().action).toBe("migrated");
-          throw new Error("rollback rewrite");
-        })).toThrow("rollback rewrite");
-        expect(listStoredEventRows(db, { threadId: thread.id })).toEqual(before);
+        expect(() =>
+          db.transaction(() => {
+            expect(migrateOutput().action).toBe("migrated");
+            throw new Error("rollback rewrite");
+          }),
+        ).toThrow("rollback rewrite");
+        expect(listStoredEventRows(db, { threadId: thread.id })).toEqual(
+          before,
+        );
         expect(db.select().from(threadPruningWork).all()).toEqual([]);
         expect(migrateOutput().action).toBe("migrated");
         expect(db.select().from(threadPruningWork).all()).toEqual([
