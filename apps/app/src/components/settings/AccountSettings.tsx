@@ -8,6 +8,7 @@ import { CopyButton } from "@/components/ui/copy-button";
 import { useAuth, useCurrentUser } from "@/hooks/useAuth";
 import {
   INVITES_QUERY_KEY,
+  PLUGIN_GRANTS_QUERY_KEY,
   TOKENS_QUERY_KEY,
   USERS_QUERY_KEY,
   useAuthCacheOwner,
@@ -218,6 +219,71 @@ function TokenSettings() {
                   description={`Revoke ${token.name}? Clients using it will lose access.`}
                   pending={revoke.isPending}
                   onConfirm={() => revoke.mutateAsync(token.id)}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </SettingsSection>
+  );
+}
+
+function PluginGrantSettings({ userId }: { userId: string }) {
+  const cache = useAuthCacheOwner();
+  const grants = useQuery({
+    queryKey: [...PLUGIN_GRANTS_QUERY_KEY, userId],
+    queryFn: ({ signal }) =>
+      sdk.experimental_users.listPluginGrants({ userId, signal }),
+  });
+  const revoke = useMutation({
+    mutationFn: (grantId: string) =>
+      sdk.experimental_users.revokePluginGrant({ userId, grantId }),
+    onSuccess: () => void cache.refreshPluginGrants(),
+  });
+  return (
+    <SettingsSection
+      title="Plugin access"
+      description="Plugins you let act as you later, such as automations you saved. They never get more access than you have."
+    >
+      <div className="space-y-4">
+        <RequestError error={revoke.error ?? grants.error} />
+        {grants.isPending ? (
+          <p role="status" className="text-sm text-subtle-foreground">
+            Loading plugin access...
+          </p>
+        ) : grants.isError ? (
+          <Button variant="outline" onClick={() => void grants.refetch()}>
+            Retry plugin access
+          </Button>
+        ) : grants.data?.grants.length === 0 ? (
+          <p className="text-sm text-subtle-foreground">
+            No plugin can act as you.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {grants.data?.grants.map((grant) => (
+              <li
+                key={grant.id}
+                className="flex flex-wrap items-center justify-between gap-3 py-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="break-words text-sm font-medium">
+                    {grant.purpose}
+                  </p>
+                  <p className="text-xs text-subtle-foreground">
+                    {grant.pluginId}, {grant.maxRole} access. Granted{" "}
+                    {new Date(grant.createdAt).toLocaleDateString()}.{" "}
+                    {grant.expiresAt === null
+                      ? "Never expires."
+                      : `Expires ${new Date(grant.expiresAt).toLocaleDateString()}.`}
+                  </p>
+                </div>
+                <ConfirmAction
+                  label="Revoke"
+                  description={`Revoke ${grant.purpose}? ${grant.pluginId} can no longer act as you for it.`}
+                  pending={revoke.isPending}
+                  onConfirm={() => revoke.mutateAsync(grant.id)}
                 />
               </li>
             ))}
@@ -451,6 +517,7 @@ export function AccountSettings() {
         </p>
       </SettingsSection>
       <TokenSettings />
+      <PluginGrantSettings userId={auth.user.id} />
       {currentUser?.effectiveRole === "admin" && (
         <>
           <UserSettings currentUserId={auth.user.id} />

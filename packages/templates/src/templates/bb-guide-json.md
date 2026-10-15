@@ -139,6 +139,12 @@ and the plugin's skill.
   bb user remove <userId> --json
     {ok: true}
 
+  bb user grants list [userId] --json
+    {grants: [{id, pluginId, userId, maxRole, purpose, createdAt, expiresAt}]}
+
+  bb user grants revoke <grantId> [--user <userId>] --json
+    {ok: true}
+
   bb invite create --json
     {id, token, role, email, expiresAt}
 

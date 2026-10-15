@@ -3648,7 +3648,7 @@ export interface PluginSdkApp {
    * `key` scoped to the signed-in user, for browser storage that must not be
    * shared between people using the same browser: `${key}:user:${userId}` in
    * multi-user mode and `key` unchanged in local mode. Null while nobody is
-   * signed in; skip reads and writes then. Combine it with
+   * signed in or the session is still loading; skip reads and writes then. Combine it with
    * `experimental_usePluginId()` like any other key. Experimental: see
    * docs/api_to_audit.md.
    */

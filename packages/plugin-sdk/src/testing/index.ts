@@ -24,6 +24,7 @@ export {
   type FakePluginInspectionState,
   type FakePluginLifecycleControls,
   type FakePluginRegistrations,
+  type ExperimentalFakeCallerGrant,
   type FakeRealtimeSignal,
   type FakeScheduleRecord,
   type FakeServiceRecord,
@@ -31,6 +32,7 @@ export {
 export {
   createFakeSdk,
   type FakeSdkCall,
+  type FakeSdkCallerGrants,
   type FakeSdkHarness,
   type FakeSdkOverrides,
 } from "./fake-sdk.js";

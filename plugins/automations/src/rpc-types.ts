@@ -330,6 +330,7 @@ export const automationResponseSchema = z
     execution: automationResponseExecutionSchema,
     origin: automationOriginSchema,
     createdByThreadId: z.string().min(1).nullable(),
+    runsAsCreator: z.boolean(),
     nextRunAt: z.number().nullable(),
     lastRunAt: z.number().nullable(),
     runCount: z.number().int().min(0),

@@ -53,6 +53,7 @@ const INSTALLED_AUTOMATIONS: AutomationsOverviewResponse["automations"] = [
       },
       origin: "human",
       createdByThreadId: null,
+      runsAsCreator: true,
       nextRunAt: 1_800_000_000_000,
       lastRunAt: null,
       runCount: 0,

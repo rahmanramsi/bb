@@ -74,6 +74,7 @@ import {
 import {
   claimPluginScheduledRun,
   deleteAllPluginSettings,
+  deletePluginCallerGrantsForPlugin,
   deleteInstalledPlugin,
   deletePluginSchedules,
   forgetPluginProviders,
@@ -400,10 +401,6 @@ export interface PluginService {
     context: Context,
     identity: PluginCallerIdentity,
   ): Promise<Response>;
-  /**
-   * Run a WebSocket route's handler as `identity`. The returned invocation
-   * stays live for the socket; the caller ends it when the socket closes.
-   */
   invokeWebSocketRoute(
     id: string,
     route: PluginWebSocketRouteRecord,
@@ -1303,6 +1300,7 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
     forgetMutableRoot(row.rootDir);
     deletePluginSchedules(deps.db, row.id);
     deleteAllPluginSettings(deps.db, row.id);
+    deletePluginCallerGrantsForPlugin(deps.db, row.id);
     await rm(pluginSecretsDir(deps.dataDir, row.id), {
       recursive: true,
       force: true,

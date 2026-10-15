@@ -1,5 +1,5 @@
 import { isAbsolute, join } from "node:path";
-import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { BbPluginApi, ExperimentalPluginCaller } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
   createAutomation,
@@ -74,8 +74,17 @@ type ServiceApi = Pick<BbPluginApi, "realtime" | "log"> & {
     projects: Pick<BbPluginApi["sdk"]["projects"], "get" | "list">;
     providers: Pick<BbPluginApi["sdk"]["providers"], "list">;
     threads: Pick<BbPluginApi["sdk"]["threads"], "get" | "send" | "spawn">;
+    experimental_asGrant(grantId: string): {
+      threads: Pick<BbPluginApi["sdk"]["threads"], "get" | "send" | "spawn">;
+    };
+    experimental_createCallerGrant: BbPluginApi["sdk"]["experimental_createCallerGrant"];
+    experimental_revokeCallerGrant: BbPluginApi["sdk"]["experimental_revokeCallerGrant"];
   };
 };
+
+export interface AutomationCallerContext {
+  readonly experimental_caller?: ExperimentalPluginCaller;
+}
 
 export interface AutomationService {
   overview(): Promise<AutomationsOverviewResponse>;
@@ -90,8 +99,12 @@ export interface AutomationService {
   }): AutomationRunMode;
   create(
     input: ResolvedCreateAutomationInput,
+    context: AutomationCallerContext,
   ): Promise<AutomationDetailResponse>;
-  update(input: UpdateAutomationInput): Promise<AutomationDetailResponse>;
+  update(
+    input: UpdateAutomationInput,
+    context: AutomationCallerContext,
+  ): Promise<AutomationDetailResponse>;
   delete(input: {
     projectId: string;
     automationId: string;
@@ -561,6 +574,37 @@ function defaultScriptWorkingDirectory(
   return PROJECT_WORKING_DIRECTORY;
 }
 
+async function grantFromCaller(
+  bb: ServiceApi,
+  context: AutomationCallerContext,
+  args: { name: string; execution: AutomationExecution },
+): Promise<string | null> {
+  if (
+    args.execution.mode !== "agent" ||
+    context.experimental_caller?.kind !== "client"
+  ) {
+    return null;
+  }
+  const { grantId } = await bb.sdk.experimental_createCallerGrant(context, {
+    purpose: `Automation "${args.name}"`,
+  });
+  return grantId;
+}
+
+async function revokeGrant(
+  bb: ServiceApi,
+  grantId: string | null,
+): Promise<void> {
+  if (grantId === null) return;
+  try {
+    await bb.sdk.experimental_revokeCallerGrant(grantId);
+  } catch (error) {
+    bb.log.warn(
+      `Failed to revoke automation caller grant ${grantId}: ${errorMessage(error)}`,
+    );
+  }
+}
+
 export function createAutomationService(args: {
   bb: ServiceApi;
   db: Db;
@@ -605,7 +649,7 @@ export function createAutomationService(args: {
       return requireProjectAutomation(db, input).runMode;
     },
 
-    async create(payload) {
+    async create(payload, context) {
       const project = await requireProjectAvailable(bb, payload.projectId);
       const now = Date.now();
       validateTrigger(payload.trigger, now);
@@ -632,6 +676,10 @@ export function createAutomationService(args: {
               )
             : AUTOMATION_STORAGE_WORKING_DIRECTORY,
       });
+      const callerGrantId = await grantFromCaller(bb, context, {
+        name: payload.name,
+        execution: stored.execution,
+      });
       let created: AutomationRow;
       try {
         created = createAutomation(db, {
@@ -644,6 +692,7 @@ export function createAutomationService(args: {
           execution: stored.execution,
           origin: payload.origin,
           createdByThreadId: payload.createdByThreadId ?? null,
+          callerGrantId,
           nextRunAt: computeInitialNextRunAt({
             trigger: payload.trigger,
             enabled: payload.enabled,
@@ -651,6 +700,7 @@ export function createAutomationService(args: {
           }),
         });
       } catch (error) {
+        await revokeGrant(bb, callerGrantId);
         await discardUncommittedScript({
           bb,
           pluginDataDir,
@@ -667,7 +717,7 @@ export function createAutomationService(args: {
       });
     },
 
-    async update(input) {
+    async update(input, context) {
       const project = await requireProjectAvailable(bb, input.projectId);
       const current = requireProjectAutomation(db, input);
       const currentAutomation = decodeAutomationRow(current).automation;
@@ -772,6 +822,14 @@ export function createAutomationService(args: {
           currentAutomation.problem,
         );
       }
+      const nextExecution = patch.execution ?? currentExecution;
+      const nextGrantId = await grantFromCaller(bb, context, {
+        name: patch.name ?? current.name,
+        execution: nextExecution,
+      });
+      if (nextGrantId !== null || nextExecution.mode !== "agent") {
+        patch.callerGrantId = nextGrantId;
+      }
       let updated: AutomationRow | null;
       try {
         updated = updateAutomation(db, {
@@ -780,6 +838,7 @@ export function createAutomationService(args: {
           patch,
         });
       } catch (error) {
+        await revokeGrant(bb, nextGrantId);
         await discardUncommittedScript({
           bb,
           pluginDataDir,
@@ -789,6 +848,7 @@ export function createAutomationService(args: {
         throw error;
       }
       if (!updated) {
+        await revokeGrant(bb, nextGrantId);
         await discardUncommittedScript({
           bb,
           pluginDataDir,
@@ -796,6 +856,9 @@ export function createAutomationService(args: {
           scriptFile: stagedScriptFile,
         });
         throw new Error("Automation not found");
+      }
+      if (current.callerGrantId !== updated.callerGrantId) {
+        await revokeGrant(bb, current.callerGrantId);
       }
       if (patch.execution !== undefined) {
         await cleanupSupersededScript({
@@ -817,6 +880,7 @@ export function createAutomationService(args: {
     async delete(input) {
       const automation = requireProjectAutomation(db, input);
       deleteAutomation(db, input);
+      await revokeGrant(bb, automation.callerGrantId);
       await deleteAutomationScriptDir({
         dataDir: pluginDataDir,
         automationId: automation.id,

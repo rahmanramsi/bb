@@ -26,6 +26,7 @@ import type {
   ResolvedCreateAutomationInput,
   UpdateAutomationInput,
 } from "./rpc-types.js";
+import { AUTOMATION_WITHOUT_USER_IDENTITY_NOTE } from "../lib/run-identity.js";
 import {
   providerRoutingForEnvironment,
   resolvePermissionMode,
@@ -917,6 +918,9 @@ function printAutomation(
       `  Permission: ${automation.execution.permissionMode}`,
     );
   }
+  if (automation.execution.mode === "agent" && !automation.runsAsCreator) {
+    lines.push(`  Note:      ${AUTOMATION_WITHOUT_USER_IDENTITY_NOTE}`);
+  }
   if (automation.lastError) lines.push(`  Error:     ${automation.lastError}`);
   lines.push("");
   return `${lines.join("\n")}\n`;
@@ -1144,7 +1148,7 @@ export function registerAutomationCli(args: {
                 origin: ctx.threadId ? "agent" : "human",
                 ...(ctx.threadId ? { createdByThreadId: ctx.threadId } : {}),
               };
-              const created = await service.create(request);
+              const created = await service.create(request, ctx);
               return {
                 exitCode: 0,
                 stdout: input.options.json
@@ -1215,7 +1219,7 @@ export function registerAutomationCli(args: {
                 input.positionals.automationId,
                 ctx,
               );
-              const updated = await service.update(request);
+              const updated = await service.update(request, ctx);
               return {
                 exitCode: 0,
                 stdout: input.options.json

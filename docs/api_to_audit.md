@@ -241,9 +241,13 @@ plugin id, the invocation's authority as `maxRole`, the caller's
 `roleCeiling`, and an expiry five minutes out. The id must also be live in
 server memory; core revokes it when the invocation ends (handler return, or
 WebSocket close) and a restart forgets every id. The request principal is the
-user with `role = min(current account role, maxRole, roleCeiling)`, the caller's
-`roleCeiling`, and `delegatedPluginId`; it never exceeds the caller's
-authority at mint time and drops when the account is demoted or removed.
+user with `role = min(current account role, maxRole, roleCeiling)`, a
+`roleCeiling` of `"member"` whenever `maxRole` or the caller's ceiling is
+member (so threads and turns it creates for a member get a capped `BB_TOKEN`
+that stays capped after promotion), and `delegatedPluginId`; it never exceeds
+the caller's authority at mint time and drops when the account is demoted or
+removed. A delegated credential that reaches a plugin entry point is presented
+as a `plugin` caller, never as a `client`.
 `POST /auth/tokens` refuses it with 403 `credential_delegated`, as it refuses
 capped credentials. Threads, forks, and messages created through it record the
 user as creator and turn author through the ordinary routes, so `BB_TOKEN` and
@@ -258,20 +262,81 @@ a member's side chat is created by the member.
 
 Before stabilizing, audit request logs and telemetry attribution for
 delegated principals, whether long-lived WebSockets need renewable
-credentials, whether the five-minute expiry suits slow handlers, and how
-deferred work should act as a user. A minimal design for deferred work:
+credentials, and whether the five-minute expiry suits slow handlers. Deferred
+work acts as a user through caller grants (next section).
+
+## Caller grants (`PluginBbSdk.experimental_createCallerGrant`, `experimental_asGrant`, `experimental_revokeCallerGrant`, and `experimental_users.listPluginGrants`/`revokePluginGrant`)
+
 `bb.sdk.experimental_createCallerGrant(ctx, { purpose, expiresInDays? })`
-inserts a `plugin_caller_grants` row (id, plugin id, user id with cascade
-delete, role at mint, role ceiling, purpose, created, expires, revoked) and
-returns an opaque id; `bb.sdk.experimental_asGrant(grantId)` mints the same
-`bbcaller_` credential only when the row belongs to the calling plugin, is
-unrevoked and unexpired, and the user's current role is at least the role at
-mint, with authority `min(role at mint, current role, ceiling)`;
-`experimental_revokeCallerGrant(grantId)` revokes it. Users and admins list and
-revoke grants through `GET/DELETE /users/:id/plugin-grants` and
-`bb user grants list|revoke`. Grants must be refused from delegated or capped
-credentials, minted only by `client` callers, and revoked on role change and
-user removal.
+resolves to `{ grantId }`. It takes the context of a running invocation of the
+same plugin whose caller is a `client`, found through the same server-side
+invocation map as `experimental_asCaller`, and throws for `plugin` and
+`system` callers, forged or ended contexts, and on a caller- or grant-bound
+SDK. `purpose` is 1 to 200 characters; `expiresInDays` is a whole number from
+1 to 3650, and omitting it means the grant lasts until revoked. Core inserts a
+`plugin_caller_grants` row: id, plugin id, user id (cascading delete with the
+user), `max_role` = the invocation's effective authority, purpose, created,
+and expiry. A member's grant and one minted through a member-capped `BB_TOKEN`
+record `member`.
+
+`bb.sdk.experimental_asGrant(grantId)` returns a `PluginBbSdk` authenticated
+by a `bbcaller_` credential (five-minute lifetime, as for `asCaller`) that
+also names the grant. It throws when the row is missing (revoked, its user or
+plugin removed), belongs to another plugin, or has expired. Every request
+re-reads the row, so revocation, expiry, and user removal stop credentials
+minted earlier, and the credential is refused unless its plugin id and user id
+match the row. The principal is the grant's user with
+`role = min(max_role, current account role)` and `roleCeiling: "member"` when
+`max_role` is member: a member's grant stays member after promotion, and an
+admin's grant acts as a member while the admin is demoted and as an admin
+again only after an admin promotes them back. Threads, forks, and messages it
+creates record that user as creator and turn author through the ordinary
+routes, so the existing `BB_TOKEN` rules apply and a member grant's turns get
+a capped token. `POST /auth/tokens` refuses it with 403 `credential_delegated`;
+the grant-bound SDK throws for `experimental_asCaller`,
+`experimental_asGrant`, `experimental_createCallerGrant`, and
+`experimental_revokeCallerGrant`, and a plugin RPC reached through it sees a
+`plugin` caller, which cannot grant. Call `experimental_asGrant` for each unit
+of work. In local mode it returns `bb.sdk` for the local owner's grants.
+
+`bb.sdk.experimental_revokeCallerGrant(grantId)` deletes one of the plugin's
+own grants and resolves without effect for any other id. Removing a plugin
+deletes its grants. `GET /api/v1/users/:id/plugin-grants` and
+`DELETE /api/v1/users/:id/plugin-grants/:grantId` (SDK
+`experimental_users.listPluginGrants({ userId })` and
+`revokePluginGrant({ userId, grantId })`, CLI `bb user grants list|revoke`)
+serve the user themself or an admin acting with admin authority, and refuse a
+plugin acting as a user with 403 `credential_delegated`; an unknown grant
+answers 404 `grant_not_found`. The fake plugin host implements the three SDK
+members, records calls through a grant with `experimental_grantId`, and offers
+`harness.experimental_callerGrants` and
+`harness.experimental_revokeCallerGrant(grantId)`; `experimental_removeUser`
+deletes the user's grants.
+
+This differs from the earlier design note in four ways. Grants from
+member-capped credentials are allowed and recorded at member authority, so an
+agent holding a capped `BB_TOKEN` can still create an automation that runs as
+its user without gaining authority. Demotion caps a grant instead of revoking
+it, so a demoted admin's automations keep running as a member. Revoking
+deletes the row instead of keeping a revoked flag. Delegated credentials never
+mint grants because they reach plugins as `plugin` callers.
+
+Before stabilizing, audit renewable grant credentials for long work, whether
+the app should list grants per plugin and notify plugins of revocation,
+request-log attribution of grant-backed requests, whether grants need a
+default expiry, and whether admins need a server-wide grant list.
+
+Core callers: Automations records a grant from the person who creates or
+saves an agent automation, revokes the replaced grant and the grant of a
+deleted automation, and spawns or messages every scheduled and manual run
+through `experimental_asGrant`, so the run gets that person's `BB_TOKEN` and
+attribution. Automations saved before grants existed keep running through
+`bb.sdk` and report `runsAsCreator: false`, shown in the app and
+`bb automation show` until saved again. `bb user grants` and the routes use
+the `experimental_users` SDK area. The server suite
+`plugin-caller-grants.test.ts` covers promotion and demotion, revocation,
+expiry, user and plugin removal, cross-plugin use, PAT and grant minting from a
+grant, the routes, local mode, and an automation's scheduled run.
 
 ## User-scoped plugin data (`bb.storage.experimental_forUser`, `PluginSettingDescriptor.experimental_scope`, `bb.settings.experimental_getForUser`, and `bb.realtime.publish`'s `experimental_userId`)
 
@@ -4362,7 +4427,8 @@ re-renders when the session query refetches: on the `users-changed` system
 change, after the realtime socket reconnects (the server closes sockets whose
 user changes role), and on the session's 60-second refetch.
 `experimental_useUserStorageKey(key)` returns `key` unchanged in local mode,
-`${key}:user:${userId}` in multi-user mode, and null while signed out.
+`${key}:user:${userId}` in multi-user mode, and null while signed out or
+while the session is still loading.
 Hiding a control is presentation only; the server keeps enforcing
 `experimental_requiredRole` and `experimental_PluginRpcForbiddenError`.
 

@@ -83,26 +83,29 @@ async function createTargetAutomation(
   service: ReturnType<typeof createService>,
   name: string,
 ) {
-  return service.create({
-    projectId: PROJECT_ID,
-    name,
-    enabled: true,
-    trigger: {
-      triggerType: "once",
-      runAt: Date.now() + 60_000,
+  return service.create(
+    {
+      projectId: PROJECT_ID,
+      name,
+      enabled: true,
+      trigger: {
+        triggerType: "once",
+        runAt: Date.now() + 60_000,
+      },
+      execution: {
+        mode: "agent",
+        prompt: "run the check",
+        providerId: "codex",
+        model: "gpt-5",
+        reasoningLevel: "high",
+        permissionMode: "accept-edits",
+        environment: { type: "project-default" },
+        targetThreadId: THREAD_ID,
+      },
+      origin: "human",
     },
-    execution: {
-      mode: "agent",
-      prompt: "run the check",
-      providerId: "codex",
-      model: "gpt-5",
-      reasoningLevel: "high",
-      permissionMode: "accept-edits",
-      environment: { type: "project-default" },
-      targetThreadId: THREAD_ID,
-    },
-    origin: "human",
-  });
+    {},
+  );
 }
 
 async function waitForFailedRun(

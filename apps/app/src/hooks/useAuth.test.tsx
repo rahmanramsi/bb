@@ -167,4 +167,21 @@ describe("useUserStorageKey", () => {
     view.setSession(multiSession(null));
     expect(view.result.current).toBeNull();
   });
+
+  it("has no key until the session is known, then scopes it by mode", () => {
+    const view = renderWithSession(
+      () => useUserStorageKey("bb.palette.recents"),
+      null,
+    );
+    expect(view.result.current).toBeNull();
+
+    view.setSession(multiSession(SAM));
+    expect(view.result.current).toBe("bb.palette.recents:user:usr_sam");
+
+    view.setSession(null);
+    expect(view.result.current).toBeNull();
+
+    view.setSession(LOCAL_SESSION);
+    expect(view.result.current).toBe("bb.palette.recents");
+  });
 });

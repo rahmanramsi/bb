@@ -230,7 +230,9 @@ const settingDescriptorSchema = z.discriminatedUnion("type", [
     )
     .refine(
       (descriptor) =>
-        !(descriptor.secret === true && descriptor.experimental_scope === "user"),
+        !(
+          descriptor.secret === true && descriptor.experimental_scope === "user"
+        ),
       {
         message: 'a secret setting cannot have experimental_scope "user"',
         path: ["experimental_scope"],
@@ -369,10 +371,6 @@ export function isUserScopedSetting(
   return descriptor.experimental_scope === "user";
 }
 
-/**
- * Split a settings update into team-scoped and user-scoped fields. Keys with
- * no descriptor stay with the team fields so validation reports them.
- */
 export function partitionSettingsUpdate(
   descriptors: PluginSettingDescriptors,
   values: Record<string, unknown>,
@@ -3824,6 +3822,7 @@ export const PLUGIN_SETTINGS_WRITE_FORBIDDEN_MESSAGE =
 export function pluginAsCallerRefusal(
   context: unknown,
   isLiveCaller: (caller: object) => boolean,
+  method = "bb.sdk.experimental_asCaller",
 ):
   | { ok: true; caller: Extract<ExperimentalPluginCaller, { kind: "client" }> }
   | {
@@ -3837,16 +3836,61 @@ export function pluginAsCallerRefusal(
   if (typeof caller !== "object" || caller === null || !isLiveCaller(caller)) {
     return {
       ok: false,
-      message:
-        "bb.sdk.experimental_asCaller needs the context bb passed to a handler of this plugin that is still running",
+      message: `${method} needs the context bb passed to a handler of this plugin that is still running`,
     };
   }
   const known = caller as ExperimentalPluginCaller;
   if (known.kind !== "client") {
     return {
       ok: false,
-      message: `bb.sdk.experimental_asCaller cannot act as a ${known.kind} caller`,
+      message: `${method} cannot act as a ${known.kind} caller`,
     };
   }
   return { ok: true, caller: known };
+}
+
+export const PLUGIN_CALLER_GRANT_PURPOSE_MAX_LENGTH = 200;
+export const PLUGIN_CALLER_GRANT_MAX_DAYS = 3650;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export function parsePluginCallerGrantRequest(
+  request: unknown,
+  now: number,
+):
+  | { ok: true; purpose: string; expiresAt: number | null }
+  | {
+      ok: false;
+      message: string;
+    } {
+  const purpose =
+    typeof request === "object" && request !== null
+      ? Reflect.get(request, "purpose")
+      : undefined;
+  const days =
+    typeof request === "object" && request !== null
+      ? Reflect.get(request, "expiresInDays")
+      : undefined;
+  if (
+    typeof purpose !== "string" ||
+    purpose.trim().length === 0 ||
+    purpose.length > PLUGIN_CALLER_GRANT_PURPOSE_MAX_LENGTH
+  ) {
+    return {
+      ok: false,
+      message: `bb.sdk.experimental_createCallerGrant: purpose must be 1 to ${PLUGIN_CALLER_GRANT_PURPOSE_MAX_LENGTH} characters`,
+    };
+  }
+  if (days === undefined) return { ok: true, purpose, expiresAt: null };
+  if (
+    typeof days !== "number" ||
+    !Number.isInteger(days) ||
+    days < 1 ||
+    days > PLUGIN_CALLER_GRANT_MAX_DAYS
+  ) {
+    return {
+      ok: false,
+      message: `bb.sdk.experimental_createCallerGrant: expiresInDays must be a whole number from 1 to ${PLUGIN_CALLER_GRANT_MAX_DAYS}`,
+    };
+  }
+  return { ok: true, purpose, expiresAt: now + days * DAY_MS };
 }

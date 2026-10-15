@@ -38,6 +38,7 @@ import { PluginHostArtifactRegistry } from "./plugin-host-artifact-registry.js";
 import { getPluginBuildToolchain } from "./build-toolchain.js";
 import type { BbSdk } from "@bb/sdk";
 import {
+  deletePluginCallerGrant,
   getInstalledPlugin,
   getPluginSafeMode,
   listInstalledPlugins,
@@ -1643,6 +1644,9 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
       getServiceToken: () => boundServiceToken,
       rpcCaller: rpcCallers.issue(row.id),
       issuePluginCallerCredential: deps.issuePluginCallerCredential ?? null,
+      revokePluginCallerGrant:
+        deps.revokePluginCallerGrant ??
+        ((args) => deletePluginCallerGrant(deps.db, args)),
       publishSignal: (channel, payload, userId) => {
         deps.hub.notifyPluginSignal(row.id, channel, payload, userId);
       },

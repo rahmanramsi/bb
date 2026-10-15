@@ -24,6 +24,8 @@ import {
   getHost,
   listPluginKvKeys,
   setPluginKvValue,
+  createPluginCallerGrant,
+  getPluginCallerGrant,
   type DbConnection,
 } from "@bb/db";
 import {
@@ -127,6 +129,7 @@ import {
   validatePluginAiServiceDeclaration,
   validatePluginProviderDeclaration,
   pluginAsCallerRefusal,
+  parsePluginCallerGrantRequest,
   PLUGIN_SETTINGS_WRITE_FORBIDDEN_MESSAGE,
 } from "@get-bb/plugin-sdk/internal/host-policy";
 import type {
@@ -369,15 +372,39 @@ function withPluginThreadAttribution<
   return { ...args, ...attribution };
 }
 
+type PluginSdkDelegation = Pick<
+  PluginBbSdk,
+  | "experimental_asCaller"
+  | "experimental_asGrant"
+  | "experimental_createCallerGrant"
+  | "experimental_revokeCallerGrant"
+>;
+
+function boundSdkDelegation(kind: string): PluginSdkDelegation {
+  const unavailable = (method: string) => () => {
+    throw new Error(`bb.sdk.${method} is not available on a ${kind}-bound SDK`);
+  };
+  return {
+    experimental_asCaller: unavailable("experimental_asCaller"),
+    experimental_asGrant: unavailable("experimental_asGrant"),
+    experimental_createCallerGrant: unavailable(
+      "experimental_createCallerGrant",
+    ),
+    experimental_revokeCallerGrant: unavailable(
+      "experimental_revokeCallerGrant",
+    ),
+  };
+}
+
 function wrapSdkForPlugin(
   sdk: BbSdk,
   pluginId: string,
   rpcCallerSdk: BbSdk,
-  asCaller: PluginBbSdk["experimental_asCaller"],
+  delegation: PluginSdkDelegation,
 ): PluginBbSdk {
   return {
     ...sdk,
-    experimental_asCaller: asCaller,
+    ...delegation,
     plugins: {
       ...sdk.plugins,
       callRpc(args) {
@@ -521,14 +548,10 @@ export function createPluginApi(options: {
    * Revoked when the handle is invalidated.
    */
   rpcCaller: PluginRpcCallerCredential;
-  /**
-   * Mints the short-lived credential behind `bb.sdk.experimental_asCaller`.
-   * Null in local mode, where every caller is the local owner and
-   * `experimental_asCaller` returns `bb.sdk`.
-   */
   issuePluginCallerCredential:
     | ((args: PluginCallerCredentialArgs) => PluginCallerCredential)
     | null;
+  revokePluginCallerGrant: (args: { id: string; pluginId: string }) => boolean;
   publishSignal: (
     channel: string,
     payload: unknown,
@@ -600,6 +623,7 @@ export function createPluginApi(options: {
     getServiceToken,
     rpcCaller,
     issuePluginCallerCredential,
+    revokePluginCallerGrant,
     publishSignal,
     settingsChanged,
     reportNeedsConfiguration,
@@ -704,24 +728,106 @@ export function createPluginApi(options: {
     const cached = callerSdks.get(invocation);
     if (cached !== undefined) return cached;
     const credential = issuePluginCallerCredential({
+      grantId: null,
       maxRole: invocation.authority,
       pluginId,
       roleCeiling: resolution.caller.roleCeiling,
       userId: resolution.caller.userId,
     });
     invocation.onEnd(() => credential.revoke());
-    const callerSdk = createPluginLoopbackSdk({
+    const created = delegatedSdk(credential, loopbackBaseUrl, "caller");
+    callerSdks.set(invocation, created);
+    return created;
+  }
+
+  function delegatedSdk(
+    credential: PluginCallerCredential,
+    loopbackBaseUrl: string,
+    kind: string,
+  ): PluginBbSdk {
+    const delegated = createPluginLoopbackSdk({
       authToken: credential.token,
       baseUrl: loopbackBaseUrl,
       callerToken: rpcCaller.token,
     });
-    const created = wrapSdkForPlugin(callerSdk, pluginId, callerSdk, () => {
+    return wrapSdkForPlugin(
+      delegated,
+      pluginId,
+      delegated,
+      boundSdkDelegation(kind),
+    );
+  }
+
+  function createCallerGrant(
+    context: unknown,
+    request: unknown,
+  ): { grantId: string } {
+    assertLive();
+    const resolution = pluginAsCallerRefusal(
+      context,
+      (caller) => pluginInvocationForCaller(pluginId, caller) !== null,
+      "bb.sdk.experimental_createCallerGrant",
+    );
+    if (!resolution.ok) throw new Error(resolution.message);
+    const invocation = pluginInvocationForCaller(pluginId, resolution.caller);
+    if (invocation === null) {
       throw new Error(
-        "bb.sdk.experimental_asCaller is not available on a caller-bound SDK",
+        "bb.sdk.experimental_createCallerGrant: the invocation ended",
       );
+    }
+    const now = Date.now();
+    const parsed = parsePluginCallerGrantRequest(request, now);
+    if (!parsed.ok) throw new Error(parsed.message);
+    const grant = createPluginCallerGrant(db, {
+      pluginId,
+      userId: resolution.caller.userId,
+      maxRole: invocation.authority,
+      purpose: parsed.purpose,
+      createdAt: now,
+      expiresAt: parsed.expiresAt,
     });
-    callerSdks.set(invocation, created);
-    return created;
+    return { grantId: grant.id };
+  }
+
+  function asGrant(
+    grantId: string,
+    pluginSdk: PluginBbSdk,
+    loopbackBaseUrl: string,
+  ): PluginBbSdk {
+    assertLive();
+    const grant = getPluginCallerGrant(db, grantId);
+    if (grant === null || grant.pluginId !== pluginId) {
+      throw new Error(
+        `bb.sdk.experimental_asGrant: grant "${grantId}" does not exist or was revoked`,
+      );
+    }
+    if (grant.expiresAt !== null && grant.expiresAt <= Date.now()) {
+      throw new Error(
+        `bb.sdk.experimental_asGrant: grant "${grantId}" expired`,
+      );
+    }
+    if (issuePluginCallerCredential === null) {
+      if (grant.userId === LOCAL_OWNER_USER_ID) return pluginSdk;
+      throw new Error(
+        "bb.sdk.experimental_asGrant is unavailable on this server",
+      );
+    }
+    return delegatedSdk(
+      issuePluginCallerCredential({
+        grantId: grant.id,
+        maxRole: grant.maxRole,
+        pluginId,
+        roleCeiling: grant.maxRole === "member" ? "member" : null,
+        userId: grant.userId,
+      }),
+      loopbackBaseUrl,
+      "grant",
+    );
+  }
+
+  function revokeCallerGrant(grantId: string): void {
+    assertLive();
+    revokePluginCallerGrant({ id: grantId, pluginId });
   }
 
   const prefix = `[plugin:${pluginId}]`;
@@ -857,7 +963,8 @@ export function createPluginApi(options: {
           get: (key) => getPluginUserKvValue(db, { pluginId, userId, key }),
           set: (key, json) =>
             setPluginUserKvValue(db, { pluginId, userId, key, value: json }),
-          delete: (key) => deletePluginUserKvValue(db, { pluginId, userId, key }),
+          delete: (key) =>
+            deletePluginUserKvValue(db, { pluginId, userId, key }),
           list: (prefix) =>
             listPluginUserKvKeys(db, { pluginId, userId, prefix }),
         }),
@@ -1517,7 +1624,18 @@ export function createPluginApi(options: {
           baseUrl: loopbackBaseUrl,
           callerToken: rpcCaller.token,
         }),
-        (context) => asCaller(context, pluginSdk, loopbackBaseUrl),
+        {
+          experimental_asCaller: (context) =>
+            asCaller(context, pluginSdk, loopbackBaseUrl),
+          experimental_asGrant: (grantId) =>
+            asGrant(grantId, pluginSdk, loopbackBaseUrl),
+          async experimental_createCallerGrant(context, request) {
+            return createCallerGrant(context, request);
+          },
+          async experimental_revokeCallerGrant(grantId) {
+            revokeCallerGrant(grantId);
+          },
+        },
       ));
       return pluginSdk;
     },

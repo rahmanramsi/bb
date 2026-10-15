@@ -766,6 +766,8 @@ export function createApp(
     dataDir: deps.config.dataDir,
     appVersion: deps.config.appVersion,
     getAppUrl: () => deps.config.appUrl ?? null,
+    revokePluginCallerGrant: (args: { id: string; pluginId: string }) =>
+      deps.userAuth.revokePluginCallerGrant(args),
     ...(deps.config.authMode === "multi"
       ? {
           issuePluginCallerCredential: (args: PluginCallerCredentialArgs) =>

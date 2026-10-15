@@ -112,6 +112,7 @@ const AUTOMATION: AutomationDetailResponse = {
   },
   origin: "human",
   createdByThreadId: null,
+  runsAsCreator: true,
   nextRunAt: 1_800_000_000_000,
   lastRunAt: null,
   runCount: 0,
@@ -537,6 +538,30 @@ describe("Automation detail recipe", () => {
     expect(
       promptShell.querySelectorAll('[data-testid="bb-provider-model-picker"]'),
     ).toHaveLength(1);
+  });
+
+  it("notes an agent automation that runs without a user identity", () => {
+    const view = (automation: AutomationDetailResponse) => (
+      <AutomationDetailView
+        automation={automation}
+        projectLabel="Personal"
+        runsState={NO_RUNS}
+        actionPending={false}
+        onToggle={() => {}}
+        onEdit={() => {}}
+        onRunNow={() => {}}
+        onDelete={() => {}}
+        onOpenThread={() => {}}
+      />
+    );
+    const note = "Runs without a user identity until it is saved again";
+    const { container, rerender } = render(
+      view({ ...AUTOMATION, runsAsCreator: false }),
+    );
+    expect(container.textContent).toContain(note);
+
+    rerender(view(AUTOMATION));
+    expect(container.textContent).not.toContain(note);
   });
 
   it("does not treat a project named Local as the personal project", () => {

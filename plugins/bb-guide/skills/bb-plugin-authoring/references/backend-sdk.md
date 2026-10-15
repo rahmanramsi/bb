@@ -111,6 +111,39 @@ for a context that another plugin's handler received. In local mode it returns
 tests, calls through it are recorded with `experimental_caller` in
 `harness.sdk.calls`.
 
+### Acting as the caller later
+
+For work that outlives the handler, such as a scheduled job, record a grant
+while the person's handler runs and use it later:
+
+```ts
+async create(input, ctx) {
+  const { grantId } = await bb.sdk.experimental_createCallerGrant(ctx, {
+    purpose: `Report "${input.name}"`,
+  });
+  saveJob({ ...input, grantId });
+},
+```
+
+```ts
+const sdk = bb.sdk.experimental_asGrant(job.grantId);
+await sdk.threads.spawn({ projectId: job.projectId, prompt: job.prompt });
+```
+
+A grant acts with the caller's effective authority at grant time and never
+more than the person's current role, so a member's grant stays member after
+promotion. Only `client` callers can grant; `purpose` (1 to 200 characters) is
+what the person sees in `bb user grants list` and the account settings, and
+`expiresInDays` (1 to 3650) is optional. `experimental_asGrant` throws once the
+grant expired, was revoked by the person, an admin, or
+`bb.sdk.experimental_revokeCallerGrant(grantId)`, or its person or your plugin
+was removed; fail the work then instead of falling back to `bb.sdk`. Only the
+plugin that created a grant can use it. Call `experimental_asGrant` for each
+unit of work, since its credential lasts a few minutes. In local mode it
+returns `bb.sdk`. In tests, `harness.experimental_callerGrants` lists grants,
+`harness.experimental_revokeCallerGrant(grantId)` revokes one, and calls
+through a grant carry `experimental_grantId` in `harness.sdk.calls`.
+
 ### Thread plugin metadata
 
 Each plugin can keep a JSON-object namespace on a thread. Seed your namespace

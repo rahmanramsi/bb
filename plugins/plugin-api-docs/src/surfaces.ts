@@ -905,7 +905,7 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
         summary:
           "Use RPC, HTTP, WebSocket, and realtime messages to connect the plugin. With this, a plugin can:",
         bullets: [
-          "Call its server with typed RPC that knows and can act as the caller, admin-only where needed",
+          "Call its server with typed RPC that acts as the caller, now or later via a grant",
           "Receive webhooks and serve HTTP or WebSocket routes",
           "Push live updates to open bb windows, or only to one user's windows",
           "Publish RPC methods other plugins can discover",
@@ -919,6 +919,11 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
           "ExperimentalPluginCaller",
           "ExperimentalPluginCallerContext",
           "PluginBbSdk.experimental_asCaller",
+          "PluginBbSdk.experimental_createCallerGrant",
+          "PluginBbSdk.experimental_asGrant",
+          "PluginBbSdk.experimental_revokeCallerGrant",
+          "ExperimentalCallerGrant",
+          "ExperimentalCallerGrantRequest",
           "experimental_PluginRpcForbiddenError",
           "PluginBbSdk.plugins.experimental_discoverRpc",
           "PluginHttp",

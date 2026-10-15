@@ -87,6 +87,9 @@ beforeEach(() => {
   vi.spyOn(sdk.experimental_users, "list").mockResolvedValue({
     users: [admin, member],
   });
+  vi.spyOn(sdk.experimental_users, "listPluginGrants").mockResolvedValue({
+    grants: [],
+  });
   vi.spyOn(sdk.experimental_users, "directory").mockResolvedValue({
     users: [admin, member],
   });
@@ -447,6 +450,43 @@ describe("account visibility and actions", () => {
     expect(revoke).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Confirm revoke" }));
     await waitFor(() => expect(revoke).toHaveBeenCalledWith({ id: "pat_1" }));
+  });
+
+  it("lists the signed-in user's plugin grants and revokes one after confirmation", async () => {
+    vi.mocked(sdk.experimental_users.listPluginGrants).mockResolvedValue({
+      grants: [
+        {
+          id: "grant_1",
+          pluginId: "automations",
+          userId: member.id,
+          maxRole: "member",
+          purpose: 'Automation "Nightly"',
+          createdAt: 1,
+          expiresAt: null,
+        },
+      ],
+    });
+    const revoke = vi
+      .spyOn(sdk.experimental_users, "revokePluginGrant")
+      .mockResolvedValue({ ok: true });
+    vi.mocked(sdk.experimental_auth.listTokens).mockResolvedValue({
+      tokens: [],
+    });
+    mount(<AccountSettings />, session(member));
+
+    expect(await screen.findByText('Automation "Nightly"')).toBeTruthy();
+    expect(sdk.experimental_users.listPluginGrants).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: member.id }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+    expect(revoke).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm revoke" }));
+    await waitFor(() =>
+      expect(revoke).toHaveBeenCalledWith({
+        userId: member.id,
+        grantId: "grant_1",
+      }),
+    );
   });
 
   it("shows creators in multi mode, including a server with one account", async () => {
