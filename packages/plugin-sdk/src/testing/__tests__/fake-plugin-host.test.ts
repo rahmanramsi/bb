@@ -2948,6 +2948,47 @@ describe("caller identity", () => {
     ).rejects.toThrow("cannot act as a system caller");
   });
 
+  it("never reuses a revoked caller grant's id for a later grant", async () => {
+    vi.useFakeTimers({ now: 1_700_000_000_000 });
+    try {
+      const { bb, harness } = createFakePluginHost();
+      bb.rpc.register(
+        defineRpcContract({
+          grant: { input: z.string(), output: z.string() },
+        }),
+        {
+          async grant(purpose, ctx) {
+            const { grantId } = await bb.sdk.experimental_createCallerGrant(
+              ctx,
+              { purpose },
+            );
+            return grantId;
+          },
+        },
+      );
+      const grant = async (purpose: string) =>
+        z
+          .string()
+          .parse(
+            await harness.callRpc("grant", purpose, {
+              experimental_caller: member,
+            }),
+          );
+
+      const first = await grant("First");
+      const second = await grant("Second");
+      await bb.sdk.experimental_revokeCallerGrant(first);
+      const third = await grant("Third");
+
+      expect(third).not.toBe(second);
+      expect(
+        harness.experimental_callerGrants.map((entry) => entry.purpose),
+      ).toEqual(["Second", "Third"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("creates caller grants from client callers and acts through them later", async () => {
     const { bb, harness } = createFakePluginHost({
       sdk: { projects: { list: async () => [] } },

@@ -1,6 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode, UIEvent } from "react";
-import { AUTOMATION_WITHOUT_USER_IDENTITY_NOTE } from "./lib/run-identity";
+import {
+  AUTOMATION_REVOKE_HINT,
+  AUTOMATION_RUNS_AS_YOU_LABEL,
+  AUTOMATION_WITHOUT_USER_IDENTITY_NOTE,
+} from "./lib/run-identity";
 import type {
   AgentEnvironment,
   AutomationDetailResponse,
@@ -661,7 +665,8 @@ export function AgentAutomationDefinition({
           className="px-3.5 pb-2 text-xs text-muted-foreground"
         >
           This automation runs as someone else. Saving a change to what it runs
-          makes it run as you, with your permissions.
+          makes it run as you, with your permissions, until you revoke it.{" "}
+          {AUTOMATION_REVOKE_HINT}
         </p>
       ) : null}
       {promptFooter}
@@ -767,7 +772,7 @@ export function automationRunsAsLabel(
     automation.runsAsUserId !== null &&
     automation.runsAsUserId === viewerUserId
   ) {
-    return "Runs as you";
+    return AUTOMATION_RUNS_AS_YOU_LABEL;
   }
   return "Runs as another person";
 }
@@ -824,8 +829,8 @@ export function AdoptAutomationDialog({
               <DialogTitle>Run this automation as you?</DialogTitle>
               <DialogDescription>
                 &ldquo;{automation.name}&rdquo; will run as you, with your
-                identity and permissions, until someone else adopts it. Review
-                exactly what it runs.
+                identity and permissions, until you revoke it or someone else
+                adopts it. {AUTOMATION_REVOKE_HINT} Review exactly what it runs.
               </DialogDescription>
             </DialogHeader>
             <dl data-automation-adopt-content="" className="space-y-1.5">
@@ -961,9 +966,11 @@ export function AutomationDetailView({
                 icon="UserRound"
                 iconLabel="User identity"
                 title={
-                  automation.runsAsCreator && !ownsIdentity
-                    ? `Runs as ${automation.runsAsUserId ?? "a person bb did not record"}`
-                    : automationRunsAsLabel(automation, viewerUserId)
+                  ownsIdentity
+                    ? `${AUTOMATION_RUNS_AS_YOU_LABEL}. ${AUTOMATION_REVOKE_HINT}`
+                    : automation.runsAsCreator
+                      ? `Runs as ${automation.runsAsUserId ?? "a person bb did not record"}`
+                      : automationRunsAsLabel(automation, viewerUserId)
                 }
               >
                 {automationRunsAsLabel(automation, viewerUserId)}

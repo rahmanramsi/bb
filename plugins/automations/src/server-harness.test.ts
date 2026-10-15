@@ -2086,6 +2086,7 @@ describe("automations run as the person who saved them", () => {
         expiresAt: null,
       }),
     ]);
+    expect(grant!.expiresAt).toBeNull();
 
     await sweepDueAutomations(host.bb as never, host.bb.storage.database(), {
       pluginDataDir: "/tmp/bb-automations-grant-test",
@@ -2095,6 +2096,10 @@ describe("automations run as the person who saved them", () => {
     });
     const manual = await createAs(harness, MEMBER_CALLER, "Manual triage");
     const manualGrant = harness.experimental_callerGrants[1];
+    expect(manualGrant).toMatchObject({
+      purpose: 'Automation "Manual triage"',
+      expiresAt: null,
+    });
     await runNow(harness, manual.id);
 
     const spawns = harness.sdk.calls.filter(
@@ -2272,6 +2277,55 @@ describe("automations run as the person who saved them", () => {
     });
     expect(harness.experimental_callerGrants).toEqual([
       expect.objectContaining({ userId: "usr_admin", maxRole: "admin" }),
+    ]);
+    await harness.dispose();
+  });
+
+  it("keeps the grant purpose within its limit for the longest names", async () => {
+    const { harness } = await bootAutomationsPlugin();
+    const name = "n".repeat(200);
+    const automation = await createAs(harness, MEMBER_CALLER, name);
+
+    expect(automation.name).toBe(name);
+    const [grant] = harness.experimental_callerGrants;
+    expect(grant!.purpose).toBe(`Automation "${"n".repeat(186)}…"`);
+    expect(grant!.purpose.length).toBeLessThanOrEqual(200);
+    await harness.dispose();
+  });
+
+  it("requests grants without expiry when a person re-saves or adopts an agent automation", async () => {
+    const { harness } = await bootAutomationsPlugin();
+    const automation = await createAs(harness, MEMBER_CALLER);
+
+    await updateAs(harness, MEMBER_CALLER, {
+      automationId: automation.id,
+      agent: { prompt: "summarize the outbox" },
+    });
+    expect(harness.experimental_callerGrants).toEqual([
+      expect.objectContaining({ userId: "usr_member", expiresAt: null }),
+    ]);
+
+    const current = await readAutomation(harness, automation.id);
+    await adoptAs(
+      harness,
+      ADMIN_CALLER,
+      automation.id,
+      current.executionRevision,
+    );
+    expect(harness.experimental_callerGrants).toEqual([
+      expect.objectContaining({
+        userId: "usr_admin",
+        purpose: 'Automation "Nightly triage"',
+        expiresAt: null,
+      }),
+    ]);
+
+    await updateAs(harness, MEMBER_CALLER, {
+      automationId: automation.id,
+      adopt: { expectedRevision: current.executionRevision },
+    });
+    expect(harness.experimental_callerGrants).toEqual([
+      expect.objectContaining({ userId: "usr_member", expiresAt: null }),
     ]);
     await harness.dispose();
   });
@@ -2510,7 +2564,9 @@ describe("automations run as the person who saved them", () => {
     );
     expect(preview.exitCode).toBe(0);
     expect(preview.stdout).toContain("summarize the inbox");
-    expect(preview.stdout).toContain("will run as you");
+    expect(preview.stdout).toContain("will run as you until you revoke it");
+    expect(preview.stdout).toContain("bb user grants");
+    expect(preview.stdout).toContain("Plugin access");
     expect(preview.stdout).toContain("--revision 1");
     expect(harness.experimental_callerGrants).toEqual([
       expect.objectContaining({ userId: "usr_member" }),
@@ -2521,7 +2577,11 @@ describe("automations run as the person who saved them", () => {
       asAdmin,
     );
     expect(adopted.exitCode, adopted.stderr).toBe(0);
-    expect(adopted.stdout).toContain("Runs as:   you (usr_admin)");
+    expect(adopted.stdout).toContain(
+      "Runs as:   you (usr_admin) until you revoke it",
+    );
+    expect(adopted.stdout).toContain("Revoke:    bb user grants");
+    expect(shown.stdout).not.toContain("until you revoke it");
     expect(harness.experimental_callerGrants).toEqual([
       expect.objectContaining({ userId: "usr_admin" }),
     ]);
