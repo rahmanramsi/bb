@@ -17,6 +17,7 @@ import { z } from "zod";
 import {
   defineRpcContract,
   experimental_PluginRpcForbiddenError,
+  type ExperimentalPluginRpcHandlerContext,
 } from "@get-bb/plugin-sdk";
 import type { AutomationService } from "./service.js";
 
@@ -109,18 +110,25 @@ export function createRpcHandlers(service: AutomationService) {
     automations_get(input: z.output<typeof projectAutomationInputSchema>) {
       return service.get(input);
     },
-    automations_create(input: z.output<typeof createAutomationInputSchema>) {
+    automations_create(
+      input: z.output<typeof createAutomationInputSchema>,
+      ctx: ExperimentalPluginRpcHandlerContext,
+    ) {
       if (input.execution.mode === "script") {
         throw scriptAdminRequired("automations_create");
       }
-      return service.create(input);
+      return service.create(input, ctx);
     },
     automations_create_script(
       input: z.output<typeof createAutomationInputSchema>,
+      ctx: ExperimentalPluginRpcHandlerContext,
     ) {
-      return service.create(input);
+      return service.create(input, ctx);
     },
-    automations_update(input: z.output<typeof updateAutomationInputSchema>) {
+    automations_update(
+      input: z.output<typeof updateAutomationInputSchema>,
+      ctx: ExperimentalPluginRpcHandlerContext,
+    ) {
       if (
         input.execution?.mode === "script" ||
         input.script !== undefined ||
@@ -128,12 +136,13 @@ export function createRpcHandlers(service: AutomationService) {
       ) {
         throw scriptAdminRequired("automations_update");
       }
-      return service.update(input);
+      return service.update(input, ctx);
     },
     automations_update_script(
       input: z.output<typeof updateAutomationInputSchema>,
+      ctx: ExperimentalPluginRpcHandlerContext,
     ) {
-      return service.update(input);
+      return service.update(input, ctx);
     },
     automations_delete(input: z.output<typeof projectAutomationInputSchema>) {
       return service.delete(input);

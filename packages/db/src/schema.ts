@@ -556,6 +556,25 @@ export const pluginUserSettings = sqliteTable(
   ],
 );
 
+export const pluginCallerGrants = sqliteTable(
+  "plugin_caller_grants",
+  {
+    id: text("id").primaryKey(),
+    pluginId: text("plugin_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    maxRole: text("max_role", { enum: userRoleValues }).notNull(),
+    purpose: text("purpose").notNull(),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at"),
+  },
+  (table) => [
+    index("plugin_caller_grants_user_idx").on(table.userId),
+    index("plugin_caller_grants_plugin_idx").on(table.pluginId),
+  ],
+);
+
 export const pluginSchedules = sqliteTable(
   "plugin_schedules",
   {

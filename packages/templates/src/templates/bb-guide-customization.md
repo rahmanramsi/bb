@@ -101,6 +101,18 @@ the current user's PATs. New token values are shown once. A member-capped
 `BB_TOKEN` cannot create a PAT: `POST /api/v1/auth/tokens` answers 403
 `credential_role_capped`. All these commands accept `--json`.
 
+`bb user grants list [USER_ID]` lists the plugin grants a person gave. A
+plugin records a grant when it must act as that person later, such as an
+automation that runs on a schedule; each grant names the plugin, its purpose,
+the role it was granted with, and its expiry. Work done through a grant never
+has more than the granted role or the person's current role: a member's grant
+stays member after promotion, and an admin's grant acts as a member while the
+admin is demoted. `bb user grants revoke GRANT_ID [--user USER_ID]` revokes
+one, and the plugin's later work as that person fails instead of running as
+someone else. Both default to the signed-in user; only admins may name another
+user. A plugin acting as a user gets 403 `credential_delegated`. Removing a
+user or a plugin deletes its grants. Both commands accept `--json`.
+
 In the multi-mode app, open the user menu in the navigation rail to sign out
 or open Settings → Account. Everyone manages their own personal access
 tokens; admins also manage users and invites. Copy new tokens and invite
@@ -128,6 +140,18 @@ attributed to that user. The token stops authenticating if its user is removed
 and is masked in runtime environment displays. Threads created before multi
 mode and threads a plugin creates without a parent have no creator to fall back
 to. In local mode, shells need no credential.
+
+A plugin can also act as a person, either while handling that person's
+request or later through a grant they gave (`bb user grants`). Threads and
+messages it creates that way count as sent by that person under the rules
+above, capped at member when the person called with member authority or a
+member-capped credential, so the cap survives a later promotion. An agent
+automation runs as the person who last saved it through such a grant: its
+scheduled and manual runs get that person's `BB_TOKEN` and attribution. If the
+grant is revoked, expired, or its person removed, the run fails instead of
+running as the plugin. Automations saved before grants existed run as the
+plugin without a user identity, as before, and say so in the app and in
+`bb automation show` until someone saves them again.
 
 A running turn keeps the `BB_TOKEN` it started with, so in multi mode a
 message steers into it only when it would get the same credential: the same

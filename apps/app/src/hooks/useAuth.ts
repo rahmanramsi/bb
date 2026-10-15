@@ -36,6 +36,7 @@ export function useActsAsMember(): boolean {
 
 export function useUserStorageKey(key: string): string | null {
   const auth = useAuth();
-  if (auth === null || auth.authMode === "local") return key;
+  if (auth === null) return null;
+  if (auth.authMode === "local") return key;
   return auth.user === null ? null : `${key}:user:${auth.user.id}`;
 }

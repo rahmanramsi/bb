@@ -40,6 +40,7 @@ import {
   publishRpcMethod,
   normalizeWebSocketRouteRegistration,
   pluginAsCallerRefusal,
+  parsePluginCallerGrantRequest,
   pluginCallerAuthority,
   pluginCliCollisionWarning,
   pluginRequiredRoleRefusal,
@@ -348,6 +349,17 @@ export interface FakePluginRegistrations {
 }
 
 /** Read-only state for assertions after a plugin registers or handles work. */
+/** A grant recorded by `bb.sdk.experimental_createCallerGrant`. */
+export interface ExperimentalFakeCallerGrant {
+  grantId: string;
+  pluginId: string;
+  userId: string;
+  maxRole: "admin" | "member";
+  purpose: string;
+  createdAt: number;
+  expiresAt: number | null;
+}
+
 export interface FakePluginInspectionState {
   readonly pluginId: string;
   /** Every `bb.log` line, in order. */
@@ -374,6 +386,8 @@ export interface FakePluginInspectionState {
   readonly pendingInteractions: readonly (PluginInteractionRequest & {
     id: string;
   })[];
+  /** Live caller grants, oldest first; they survive `reload()`. */
+  readonly experimental_callerGrants: readonly ExperimentalFakeCallerGrant[];
 }
 
 /** Deterministic inputs that stand in for behavior normally driven by BB. */
@@ -410,6 +424,11 @@ export interface FakePluginBehaviorDrivers {
    * and the id stops naming a user.
    */
   experimental_removeUser(userId: string): void;
+  /**
+   * Revoke a caller grant the way `bb user grants revoke` does; later
+   * `bb.sdk.experimental_asGrant` calls for it throw.
+   */
+  experimental_revokeCallerGrant(grantId: string): void;
   /**
    * Invoke a registered rpc method with host semantics: input/output schemas,
    * strict JSON result normalization, and structured failure codes. Rejects
@@ -703,6 +722,7 @@ interface FakePluginPersistentState {
   userIds: Set<string>;
   userKvRows: Map<string, Map<string, string>>;
   userSettings: Map<string, Map<string, PluginSettingValue>>;
+  callerGrants: Map<string, ExperimentalFakeCallerGrant>;
 }
 
 const FAKE_LOCAL_OWNER_USER_ID = "usr_local_owner";
@@ -735,6 +755,7 @@ function createFakePluginHostInternal(
       ),
       userKvRows: new Map(),
       userSettings: new Map(),
+      callerGrants: new Map(),
     } satisfies FakePluginPersistentState);
   const pluginId = options.pluginId ?? "test-plugin";
   const declaredIconNames = new Set(
@@ -1338,6 +1359,55 @@ function createFakePluginHostInternal(
       if (!resolution.ok) throw new Error(resolution.message);
       return resolution.caller;
     },
+    callerGrants: {
+      create(context, request) {
+        const resolution = pluginAsCallerRefusal(
+          context,
+          (caller) => liveCallers.has(caller),
+          "bb.sdk.experimental_createCallerGrant",
+        );
+        if (!resolution.ok) throw new Error(resolution.message);
+        const now = Date.now();
+        const parsed = parsePluginCallerGrantRequest(request, now);
+        if (!parsed.ok) throw new Error(parsed.message);
+        const grantId = `grant_fake_${persistentState.callerGrants.size + 1}_${now}`;
+        persistentState.callerGrants.set(grantId, {
+          grantId,
+          pluginId,
+          userId: resolution.caller.userId,
+          maxRole: pluginCallerAuthority(resolution.caller),
+          purpose: parsed.purpose,
+          createdAt: now,
+          expiresAt: parsed.expiresAt,
+        });
+        return { grantId };
+      },
+      resolve(grantId) {
+        const grant = persistentState.callerGrants.get(grantId);
+        if (grant === undefined || grant.pluginId !== pluginId) {
+          throw new Error(
+            `bb.sdk.experimental_asGrant: grant "${grantId}" does not exist or was revoked`,
+          );
+        }
+        if (grant.expiresAt !== null && grant.expiresAt <= Date.now()) {
+          throw new Error(
+            `bb.sdk.experimental_asGrant: grant "${grantId}" expired`,
+          );
+        }
+        return {
+          kind: "client",
+          userId: grant.userId,
+          role: grant.maxRole,
+          roleCeiling: grant.maxRole === "member" ? "member" : null,
+          effectiveRole: grant.maxRole,
+        };
+      },
+      revoke(grantId) {
+        if (persistentState.callerGrants.get(grantId)?.pluginId === pluginId) {
+          persistentState.callerGrants.delete(grantId);
+        }
+      },
+    },
   });
 
   // --- thread events / dispose ---
@@ -1824,6 +1894,9 @@ function createFakePluginHostInternal(
     },
     sharedPortDeclarations,
     experimental_hostRpcCalls: hostRpcCalls,
+    get experimental_callerGrants() {
+      return [...persistentState.callerGrants.values()];
+    },
     sdk: sdkHarness,
     registrations: {
       settingsDescriptors,
@@ -2004,6 +2077,14 @@ function createFakePluginHostInternal(
       persistentState.userIds.delete(userId);
       persistentState.userKvRows.delete(userId);
       persistentState.userSettings.delete(userId);
+      for (const [grantId, grant] of persistentState.callerGrants) {
+        if (grant.userId === userId)
+          persistentState.callerGrants.delete(grantId);
+      }
+    },
+
+    experimental_revokeCallerGrant(grantId) {
+      persistentState.callerGrants.delete(grantId);
     },
 
     async callRpc(method, input, options = {}) {

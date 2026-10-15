@@ -43,6 +43,8 @@ type ExpectedBbPluginApiKey =
 
 const EXPECTED_BACKEND_ROOT_TYPE_EXPORTS = [
   "BbPluginApi",
+  "ExperimentalCallerGrant",
+  "ExperimentalCallerGrantRequest",
   "MessageDispatchHookContext",
   "MessageDispatchHookDecision",
   "PluginAgents",

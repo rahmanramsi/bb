@@ -118,6 +118,19 @@ export const updateUserRoleRequestSchema = z
 export type UpdateUserRoleRequest = z.infer<typeof updateUserRoleRequestSchema>;
 export type PathUserId = { param: { id: string } };
 export type PathUserInviteId = { param: { id: string } };
+export type PathUserPluginGrantId = { param: { id: string; grantId: string } };
+export interface PluginCallerGrantSummary {
+  id: string;
+  pluginId: string;
+  userId: string;
+  maxRole: UserRole;
+  purpose: string;
+  createdAt: number;
+  expiresAt: number | null;
+}
+export interface PluginCallerGrantListResponse {
+  grants: PluginCallerGrantSummary[];
+}
 export interface UserInviteSummary {
   id: string;
   role: z.infer<typeof userRoleSchema>;

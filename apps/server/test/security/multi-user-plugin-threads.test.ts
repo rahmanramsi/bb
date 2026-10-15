@@ -478,7 +478,7 @@ describe("BB_TOKEN containment for turns no user sent", () => {
       expect(await listUsersStatus(harness, token)).toBe(200);
     });
   });
-  it("issues no token when a member's automation steers into an admin thread", async () => {
+  it("steers a member's automation into an admin thread with only the member's capped token", async () => {
     const server = await startTestServer({ authMode: "multi" });
     try {
       server.pluginService.bindSdk({
@@ -603,11 +603,25 @@ describe("BB_TOKEN containment for turns no user sent", () => {
       const contributed = z
         .object({
           resumeContext: z.object({
-            contributedEnv: z.array(z.object({ name: z.string() })),
+            contributedEnv: z.array(
+              z.object({ name: z.string(), value: z.unknown() }),
+            ),
           }),
         })
         .parse(submitted).resumeContext.contributedEnv;
-      expect(contributed.map((entry) => entry.name)).not.toContain("BB_TOKEN");
+      const token = z
+        .string()
+        .parse(contributed.find((entry) => entry.name === "BB_TOKEN")?.value);
+      expect(
+        await server.deps.userAuth.resolvePrincipal(
+          new Headers({ authorization: `Bearer ${token}` }),
+        ),
+      ).toMatchObject({
+        kind: "user",
+        userId: bob.id,
+        role: "member",
+        roleCeiling: "member",
+      });
     } finally {
       await server.pluginService.stop();
       await server.close();

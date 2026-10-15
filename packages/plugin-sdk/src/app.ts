@@ -155,8 +155,6 @@ export const useBbContext = runtimeFunction("useBbContext");
 export const experimental_usePluginId = runtimeFunction(
   "experimental_usePluginId",
 );
-// The signed-in user and per-user storage keys (experimental — see
-// docs/api_to_audit.md).
 export const experimental_useCurrentUser = runtimeFunction(
   "experimental_useCurrentUser",
 );

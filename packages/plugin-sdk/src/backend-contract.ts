@@ -2191,6 +2191,26 @@ export interface PluginStatusApi {
   needsConfiguration(message: string): void;
 }
 
+/** What `bb.sdk.experimental_createCallerGrant` records. */
+export interface ExperimentalCallerGrantRequest {
+  /**
+   * Why the plugin acts as this person, shown when they list or revoke their
+   * grants, such as `Automation "Nightly triage"`. 1 to 200 characters.
+   */
+  purpose: string;
+  /**
+   * Whole days until the grant stops working, 1 to 3650. Omitted, the grant
+   * lasts until it is revoked.
+   */
+  expiresInDays?: number;
+}
+
+/** A grant created by `bb.sdk.experimental_createCallerGrant`. */
+export interface ExperimentalCallerGrant {
+  /** Opaque id for `experimental_asGrant` and `experimental_revokeCallerGrant`. */
+  grantId: string;
+}
+
 /**
  * The BB SDK bound to one plugin (`bb.sdk`). `threads.getPluginMetadata`,
  * `threads.experimental_listPluginMetadata` and `threads.updatePluginMetadata`
@@ -2216,6 +2236,38 @@ export type PluginBbSdk = Omit<BbSdk, "threads"> & {
   experimental_asCaller(context: {
     readonly experimental_caller?: ExperimentalPluginCaller;
   }): PluginBbSdk;
+  /**
+   * Record that the caller of the given handler invocation lets this plugin
+   * act as them later, for work that outlives the invocation such as a
+   * scheduled run. The grant's authority is the caller's effective authority
+   * now, so a member's grant, or one minted through a capped `BB_TOKEN`, is
+   * member forever. Only a `client` caller inside a running invocation can
+   * grant; throws otherwise and on a grant-bound or caller-bound SDK. The
+   * person can list and revoke their grants (`bb user grants`), an admin can
+   * revoke anyone's, and removing the person or this plugin deletes them. In
+   * local mode the grant belongs to the local owner.
+   */
+  experimental_createCallerGrant(
+    context: { readonly experimental_caller?: ExperimentalPluginCaller },
+    request: ExperimentalCallerGrantRequest,
+  ): Promise<ExperimentalCallerGrant>;
+  /**
+   * An SDK whose requests authenticate as the person behind a grant this
+   * plugin created, with authority `min(grant authority, their current
+   * role)`. Threads and messages it creates record that person as creator and
+   * author, so their turns get that person's `BB_TOKEN`, capped like the
+   * grant. Throws when the grant is unknown, belongs to another plugin, has
+   * expired or been revoked, or its person was removed. The credential lasts
+   * a few minutes and cannot create personal access tokens or grants; call
+   * `experimental_asGrant` again for each unit of work. In local mode it
+   * returns `bb.sdk`.
+   */
+  experimental_asGrant(grantId: string): PluginBbSdk;
+  /**
+   * Delete one of this plugin's grants. Resolves without effect for an
+   * unknown grant or another plugin's grant.
+   */
+  experimental_revokeCallerGrant(grantId: string): Promise<void>;
   threads: Omit<
     BbSdk["threads"],
     | "getPluginMetadata"

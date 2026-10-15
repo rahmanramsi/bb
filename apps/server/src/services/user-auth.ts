@@ -18,7 +18,11 @@ import {
   authUsers,
   authVerifications,
   deleteQueuedThreadMessagesByAuthorInTransaction,
+  deletePluginCallerGrant,
+  getPluginCallerGrant,
+  listPluginCallerGrantsForUser,
   type DbConnection,
+  type PluginCallerGrantRow,
 } from "@bb/db";
 import {
   LOCAL_OWNER_USER_ID,
@@ -116,11 +120,13 @@ const pluginCallerTokenPayloadSchema = z
     pluginId: z.string().min(1),
     maxRole: userRoleSchema,
     roleCeiling: z.enum(roleCeilingValues).nullable(),
+    grantId: z.string().min(1).nullable(),
     expiresAt: z.number().int().positive(),
   })
   .strict();
 
 export interface PluginCallerCredentialArgs {
+  grantId: string | null;
   maxRole: UserRole;
   pluginId: string;
   roleCeiling: RoleCeiling | null;
@@ -241,6 +247,10 @@ export interface UserAuthService {
   issuePluginCallerCredential(
     args: PluginCallerCredentialArgs,
   ): PluginCallerCredential;
+  listPluginCallerGrants(userId: string): PluginCallerGrantRow[];
+  revokePluginCallerGrant(
+    args: { id: string } & ({ pluginId: string } | { userId: string }),
+  ): boolean;
   onAuthorizationChange(listener: () => void): () => void;
   resolvePrincipal(headers: Headers): Promise<RequestPrincipal | null>;
   revokePersonalAccessToken(args: { id: string; userId: string }): boolean;
@@ -603,12 +613,21 @@ export async function createUserAuthService(
         pluginId: issueArgs.pluginId,
         maxRole: issueArgs.maxRole,
         roleCeiling: issueArgs.roleCeiling,
+        grantId: issueArgs.grantId,
         expiresAt,
       })}`,
       revoke() {
         if (livePluginCallerCredentials.delete(id)) notifyAuthorizationChange();
       },
     };
+  }
+
+  function revokePluginCallerGrant(
+    revokeArgs: { id: string } & ({ pluginId: string } | { userId: string }),
+  ): boolean {
+    const revoked = deletePluginCallerGrant(args.db, revokeArgs);
+    if (revoked) notifyAuthorizationChange();
+    return revoked;
   }
 
   function authenticatePluginCaller(
@@ -619,19 +638,34 @@ export async function createUserAuthService(
     );
     if (!parsed.success) return null;
     const payload = parsed.data;
+    const grantHolds = () => {
+      if (payload.grantId === null) return true;
+      const grant = getPluginCallerGrant(args.db, payload.grantId);
+      return (
+        grant !== null &&
+        grant.pluginId === payload.pluginId &&
+        grant.userId === payload.userId &&
+        (grant.expiresAt === null || grant.expiresAt > Date.now())
+      );
+    };
     const live = () =>
       livePluginCallerCredentials.has(payload.id) &&
-      payload.expiresAt > Date.now();
+      payload.expiresAt > Date.now() &&
+      grantHolds();
     if (!live()) return null;
     const user = getUser(payload.userId);
     if (user === null || isSystemUserId(user.id)) return null;
     const accountRole = user.role;
+    const roleCeiling: RoleCeiling | null =
+      lowestRole([payload.maxRole, payload.roleCeiling]) === "member"
+        ? "member"
+        : null;
     return {
       principal: {
         delegatedPluginId: payload.pluginId,
         kind: "user",
-        role: lowestRole([accountRole, payload.maxRole, payload.roleCeiling]),
-        roleCeiling: payload.roleCeiling,
+        role: lowestRole([accountRole, roleCeiling]),
+        roleCeiling,
         userId: user.id,
       },
       isActive: async () =>
@@ -1126,6 +1160,9 @@ export async function createUserAuthService(
     needsBootstrap,
     authenticate,
     issuePluginCallerCredential,
+    listPluginCallerGrants: (userId: string) =>
+      listPluginCallerGrantsForUser(args.db, userId),
+    revokePluginCallerGrant,
     onAuthorizationChange,
     resolvePrincipal,
     revokePersonalAccessToken,

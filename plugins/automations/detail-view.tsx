@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode, UIEvent } from "react";
+import { AUTOMATION_WITHOUT_USER_IDENTITY_NOTE } from "./lib/run-identity";
 import type {
   AgentEnvironment,
   AutomationDetailResponse,
@@ -797,6 +798,16 @@ export function AutomationDetailView({
               {formatAutomationTrigger(automation.trigger)}
             </AutomationMetadataItem>,
             automationDetailNextRun(automation),
+            automation.execution.mode === "agent" &&
+            !automation.runsAsCreator ? (
+              <AutomationMetadataItem
+                icon="UserRound"
+                iconLabel="User identity"
+                title={AUTOMATION_WITHOUT_USER_IDENTITY_NOTE}
+              >
+                {AUTOMATION_WITHOUT_USER_IDENTITY_NOTE}
+              </AutomationMetadataItem>
+            ) : null,
           ]}
         />
       }

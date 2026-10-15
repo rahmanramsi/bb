@@ -93,6 +93,7 @@ function automation(
     },
     origin: "human",
     createdByThreadId: null,
+    runsAsCreator: true,
     nextRunAt: now + 86_400_000,
     lastRunAt: now - 3_600_000,
     runCount: 12,

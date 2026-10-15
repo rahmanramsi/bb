@@ -23,6 +23,7 @@ const AUTOMATION_COLUMNS = `id, project_id AS projectId, target_thread_id AS tar
   name, enabled, trigger_type AS triggerType,
   trigger_config AS triggerConfig, run_mode AS runMode, execution, origin,
   created_by_thread_id AS createdByThreadId,
+  caller_grant_id AS callerGrantId,
   next_run_at AS nextRunAt, last_run_at AS lastRunAt,
   run_count AS runCount, consecutive_failures AS consecutiveFailures,
   last_run_status AS lastRunStatus,
@@ -52,6 +53,7 @@ export interface AutomationRow {
   execution: string;
   origin: AutomationOrigin;
   createdByThreadId: string | null;
+  callerGrantId: string | null;
   nextRunAt: number | null;
   lastRunAt: number | null;
   runCount: number;
@@ -217,6 +219,7 @@ export const migrations = [
    CREATE UNIQUE INDEX IF NOT EXISTS automation_runs_single_flight_idx
      ON automation_runs(automation_id)
      WHERE status = 'running';`,
+  `ALTER TABLE automations ADD COLUMN caller_grant_id TEXT;`,
 ];
 
 function automationRetryDelayMs(consecutiveFailures: number): number {
@@ -234,11 +237,13 @@ export interface CreateAutomationInput {
   execution: AutomationExecution;
   origin: AutomationOrigin;
   createdByThreadId: string | null;
+  callerGrantId: string | null;
   nextRunAt: number | null;
 }
 
 export interface UpdateAutomationInput {
   name?: string;
+  callerGrantId?: string | null;
   trigger?: AutomationTrigger;
   execution?: AutomationExecution;
   targetThreadId?: string | null;
@@ -273,6 +278,10 @@ function resolveAutomationUpdate(
           : null,
     nextRunAt:
       patch.nextRunAt !== undefined ? patch.nextRunAt : existing.nextRunAt,
+    callerGrantId:
+      patch.callerGrantId !== undefined
+        ? patch.callerGrantId
+        : existing.callerGrantId,
   };
 }
 
@@ -308,6 +317,7 @@ function automationResponseValue(
     execution,
     origin: row.origin,
     createdByThreadId: row.createdByThreadId,
+    runsAsCreator: row.callerGrantId !== null,
     nextRunAt: row.nextRunAt,
     lastRunAt: row.lastRunAt,
     runCount: row.runCount,
@@ -419,12 +429,14 @@ export function createAutomation(
     `INSERT INTO automations (
        id, project_id, target_thread_id, name, enabled, trigger_type,
        trigger_config, run_mode, execution, origin,
-       created_by_thread_id, next_run_at, last_run_at, run_count,
-       last_run_status, last_run_thread_id, last_error, created_at, updated_at
+       created_by_thread_id, caller_grant_id, next_run_at, last_run_at,
+       run_count, last_run_status, last_run_thread_id, last_error, created_at,
+       updated_at
      ) VALUES (
        @id, @projectId, @targetThreadId, @name, @enabled, @triggerType,
        @triggerConfig, @runMode, @execution, @origin,
-       @createdByThreadId, @nextRunAt, NULL, 0, NULL, NULL, NULL, @now, @now
+       @createdByThreadId, @callerGrantId, @nextRunAt, NULL, 0, NULL, NULL,
+       NULL, @now, @now
      )`,
   ).run({
     id,
@@ -441,6 +453,7 @@ export function createAutomation(
     execution: serializeExecution(input.execution),
     origin: input.origin,
     createdByThreadId: input.createdByThreadId,
+    callerGrantId: input.callerGrantId,
     nextRunAt: input.nextRunAt,
     now,
   });
@@ -518,6 +531,7 @@ export function updateAutomation(
     execution: serializeExecution(next.execution),
     targetThreadId: next.targetThreadId,
     nextRunAt: next.nextRunAt,
+    callerGrantId: next.callerGrantId,
     updatedAt: now,
   };
   toAutomationResponse(updated);
@@ -530,6 +544,7 @@ export function updateAutomation(
        execution = @execution,
        target_thread_id = @targetThreadId,
        next_run_at = @nextRunAt,
+       caller_grant_id = @callerGrantId,
        updated_at = @now
      WHERE id = @automationId AND project_id = @projectId`,
   ).run({
@@ -542,6 +557,7 @@ export function updateAutomation(
     execution: updated.execution,
     targetThreadId: updated.targetThreadId,
     nextRunAt: updated.nextRunAt,
+    callerGrantId: updated.callerGrantId,
     now: updated.updatedAt,
   });
   return updated;

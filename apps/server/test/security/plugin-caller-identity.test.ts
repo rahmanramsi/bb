@@ -399,7 +399,7 @@ describe("plugin caller identity in multi-user mode", () => {
       value: {
         user: { id: team.memberId },
         effectiveRole: "member",
-        roleCeiling: null,
+        roleCeiling: "member",
       },
     });
     expect(await rpc("act", { op: "me" }, team.cappedAdmin)).toMatchObject({
@@ -478,6 +478,7 @@ describe("plugin caller identity in multi-user mode", () => {
       auth.authenticate(new Headers({ authorization: `Bearer ${token}` }));
 
     const admin = auth.issuePluginCallerCredential({
+      grantId: null,
       maxRole: "admin",
       pluginId: "identity",
       roleCeiling: null,
@@ -491,6 +492,7 @@ describe("plugin caller identity in multi-user mode", () => {
       userId: team.adminId,
     });
     const memberWithAdminClaim = auth.issuePluginCallerCredential({
+      grantId: null,
       maxRole: "admin",
       pluginId: "identity",
       roleCeiling: null,
@@ -500,6 +502,7 @@ describe("plugin caller identity in multi-user mode", () => {
       "member",
     );
     const capped = auth.issuePluginCallerCredential({
+      grantId: null,
       maxRole: "admin",
       pluginId: "identity",
       roleCeiling: "member",

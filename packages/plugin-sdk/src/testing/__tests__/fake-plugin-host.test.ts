@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   PLUGIN_CLI_OUTPUT_MAX_BYTES,
@@ -2659,9 +2659,9 @@ describe("user-scoped plugin data", () => {
     await expect(
       harness.behavior.experimental_setUserSettings(ALICE, { teamName: "x" }),
     ).rejects.toThrow(/"teamName" is a team setting/);
-    await expect(settings.experimental_set({ density: "compact" })).rejects.toThrow(
-      /"density" is a per-user setting/,
-    );
+    await expect(
+      settings.experimental_set({ density: "compact" }),
+    ).rejects.toThrow(/"density" is a per-user setting/);
     await expect(
       harness.behavior.setSettings({ density: "compact" }),
     ).rejects.toThrow(/"density" is a per-user setting/);
@@ -2946,6 +2946,163 @@ describe("caller identity", () => {
     await expect(
       harness.callRpc("act", null, { experimental_caller: { kind: "system" } }),
     ).rejects.toThrow("cannot act as a system caller");
+  });
+
+  it("creates caller grants from client callers and acts through them later", async () => {
+    const { bb, harness } = createFakePluginHost({
+      sdk: { projects: { list: async () => [] } },
+    });
+    bb.rpc.register(
+      defineRpcContract({
+        grant: { input: z.unknown(), output: z.string() },
+      }),
+      {
+        async grant(input, ctx) {
+          const { grantId } = await bb.sdk.experimental_createCallerGrant(
+            ctx,
+            input as { purpose: string; expiresInDays?: number },
+          );
+          return grantId;
+        },
+      },
+    );
+
+    const memberGrant = z
+      .string()
+      .parse(
+        await harness.callRpc(
+          "grant",
+          { purpose: "Nightly triage", expiresInDays: 1 },
+          { experimental_caller: member },
+        ),
+      );
+    const cappedGrant = z
+      .string()
+      .parse(
+        await harness.callRpc(
+          "grant",
+          { purpose: "Capped" },
+          { experimental_caller: cappedAdmin },
+        ),
+      );
+    expect(harness.experimental_callerGrants).toEqual([
+      {
+        grantId: memberGrant,
+        pluginId: "test-plugin",
+        userId: "usr_member",
+        maxRole: "member",
+        purpose: "Nightly triage",
+        createdAt: expect.any(Number),
+        expiresAt: expect.any(Number),
+      },
+      expect.objectContaining({
+        grantId: cappedGrant,
+        userId: "usr_admin",
+        maxRole: "member",
+        expiresAt: null,
+      }),
+    ]);
+
+    await bb.sdk.experimental_asGrant(cappedGrant).projects.list();
+    expect(harness.sdk.calls).toEqual([
+      {
+        path: "projects.list",
+        args: [],
+        experimental_caller: {
+          kind: "client",
+          userId: "usr_admin",
+          role: "member",
+          roleCeiling: "member",
+          effectiveRole: "member",
+        },
+        experimental_grantId: cappedGrant,
+      },
+    ]);
+    const grantSdk = bb.sdk.experimental_asGrant(cappedGrant);
+    expect(() =>
+      grantSdk.experimental_createCallerGrant({}, { purpose: "nested" }),
+    ).toThrow("not available on a grant-bound SDK");
+    expect(() => grantSdk.experimental_asGrant(memberGrant)).toThrow(
+      "not available on a grant-bound SDK",
+    );
+
+    await expect(
+      harness.callRpc(
+        "grant",
+        { purpose: "From a plugin" },
+        { experimental_caller: { kind: "plugin", pluginId: "other" } },
+      ),
+    ).rejects.toThrow("cannot act as a plugin caller");
+    await expect(
+      harness.callRpc(
+        "grant",
+        { purpose: "" },
+        { experimental_caller: member },
+      ),
+    ).rejects.toThrow("purpose must be 1 to 200 characters");
+    await expect(
+      bb.sdk.experimental_createCallerGrant(
+        { experimental_caller: member },
+        { purpose: "Outside a handler" },
+      ),
+    ).rejects.toThrow("still running");
+  });
+
+  it("refuses grants after revocation, expiry, and user removal", async () => {
+    vi.useFakeTimers();
+    try {
+      const host = createFakePluginHost();
+      const { bb, harness } = host;
+      bb.rpc.register(
+        defineRpcContract({
+          grant: { input: z.number().nullable(), output: z.string() },
+        }),
+        {
+          async grant(expiresInDays, ctx) {
+            return (
+              await bb.sdk.experimental_createCallerGrant(ctx, {
+                purpose: "Run later",
+                ...(expiresInDays === null ? {} : { expiresInDays }),
+              })
+            ).grantId;
+          },
+        },
+      );
+      const call = async (expiresInDays: number | null = null) =>
+        z.string().parse(
+          await harness.callRpc("grant", expiresInDays, {
+            experimental_caller: member,
+          }),
+        );
+
+      const revokedByPlugin = await call();
+      await bb.sdk.experimental_revokeCallerGrant(revokedByPlugin);
+      expect(() => bb.sdk.experimental_asGrant(revokedByPlugin)).toThrow(
+        "does not exist or was revoked",
+      );
+
+      const revokedByUser = await call();
+      harness.experimental_revokeCallerGrant(revokedByUser);
+      expect(() => bb.sdk.experimental_asGrant(revokedByUser)).toThrow(
+        "does not exist or was revoked",
+      );
+
+      const expiring = await call(1);
+      expect(() => bb.sdk.experimental_asGrant(expiring)).not.toThrow();
+      vi.advanceTimersByTime(24 * 60 * 60 * 1000);
+      expect(() => bb.sdk.experimental_asGrant(expiring)).toThrow("expired");
+
+      const kept = await call();
+      const replacement = await harness.lifecycle.reload(() => {});
+      expect(() => replacement.bb.sdk.experimental_asGrant(kept)).not.toThrow();
+      replacement.harness.experimental_removeUser("usr_member");
+      expect(() => replacement.bb.sdk.experimental_asGrant(kept)).toThrow(
+        "does not exist or was revoked",
+      );
+      await replacement.harness.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("refuses settings writes inside a member's invocation", async () => {

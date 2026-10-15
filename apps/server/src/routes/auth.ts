@@ -14,6 +14,7 @@ import {
   assertAdmin,
   getRequestPrincipal,
   requirePrincipal,
+  type PrincipalReader,
 } from "../request-context.js";
 import { UserAuthError } from "../services/user-auth.js";
 import type { ServerAppDeps } from "../types.js";
@@ -194,6 +195,39 @@ export function registerAuthRoutes(app: Hono, deps: AuthRouteDeps): void {
     } catch (error) {
       throw toApiError(error);
     }
+  });
+
+  function assertGrantAccess(context: PrincipalReader, userId: string): void {
+    const principal = requirePrincipal(context);
+    if (principal.delegatedPluginId !== null) {
+      throw new ApiError(
+        403,
+        "credential_delegated",
+        "A plugin acting as a user cannot manage plugin grants",
+      );
+    }
+    if (principal.userId !== userId) assertAdmin(context);
+  }
+
+  get(publicApiRoutes.users.listPluginGrants, (context) => {
+    const userId = context.req.param("id");
+    assertGrantAccess(context, userId);
+    return context.json({
+      grants: deps.userAuth.listPluginCallerGrants(userId),
+    });
+  });
+
+  del(publicApiRoutes.users.revokePluginGrant, (context) => {
+    const userId = context.req.param("id");
+    assertGrantAccess(context, userId);
+    const revoked = deps.userAuth.revokePluginCallerGrant({
+      id: context.req.param("grantId"),
+      userId,
+    });
+    if (!revoked) {
+      throw new ApiError(404, "grant_not_found", "Grant not found");
+    }
+    return context.json({ ok: true as const });
   });
 
   del(publicApiRoutes.users.remove, (context) => {

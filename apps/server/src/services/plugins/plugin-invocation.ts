@@ -24,8 +24,14 @@ export function pluginCallerForPrincipal(
     return { authority: principal.role, caller: pluginCaller };
   }
   if (principal.kind === "machine") return SYSTEM_PLUGIN_CALLER;
+  if (principal.delegatedPluginId !== null) {
+    return {
+      authority: principal.role,
+      caller: { kind: "plugin", pluginId: principal.delegatedPluginId },
+    };
+  }
   const role =
-    principal.roleCeiling === null && principal.delegatedPluginId === null
+    principal.roleCeiling === null
       ? principal.role
       : (readUserRole(db, principal.userId) ?? principal.role);
   return {

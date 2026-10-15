@@ -9,6 +9,7 @@ import {
 } from "@get-bb/plugin-sdk/testing";
 import plugin from "./server.js";
 import { createAutomationService } from "./service.js";
+import { sweepDueAutomations } from "./sweep.js";
 import {
   automationListResponseSchema,
   automationsOverviewResponseSchema,
@@ -1094,11 +1095,14 @@ describe("automations server plugin harness", () => {
       serverUrl: "http://127.0.0.1:38886",
     });
     await expect(
-      service.update({
-        projectId: PROJECT_ID,
-        automationId: partial.id,
-        agent: { prompt: "" },
-      } as never),
+      service.update(
+        {
+          projectId: PROJECT_ID,
+          automationId: partial.id,
+          agent: { prompt: "" },
+        } as never,
+        {},
+      ),
     ).rejects.toThrow();
 
     for (const automationId of [full.id, partial.id]) {
@@ -1631,7 +1635,7 @@ describe("automations server plugin harness", () => {
             { projectId: PROJECT_ID, automationId: script.id },
             MEMBER,
           ),
-        ).rejects.toThrow("requires an admin");
+        ).rejects.toThrow("requires a server admin");
       }
 
       const listed = automationListResponseSchema.parse(
@@ -1902,7 +1906,7 @@ describe("automations server plugin harness", () => {
             { projectId: PROJECT_ID, automationId },
             MEMBER,
           ),
-        ).rejects.toThrow("requires an admin");
+        ).rejects.toThrow("requires a server admin");
       }
       for (const argv of [
         ["resume", pausedScript.id, "--project", PROJECT_ID],
@@ -1997,5 +2001,207 @@ describe("automations server plugin harness", () => {
 
       await harness.dispose();
     });
+  });
+});
+
+describe("automations run as the person who saved them", () => {
+  const MEMBER_CALLER = {
+    kind: "client",
+    userId: "usr_member",
+    role: "member",
+    roleCeiling: null,
+    effectiveRole: "member",
+  } as const;
+  const ADMIN_CALLER = {
+    kind: "client",
+    userId: "usr_admin",
+    role: "admin",
+    roleCeiling: null,
+    effectiveRole: "admin",
+  } as const;
+
+  async function createAs(
+    harness: FakePluginHost["harness"],
+    caller:
+      | typeof MEMBER_CALLER
+      | typeof ADMIN_CALLER
+      | { readonly kind: "system" },
+    name = "Nightly triage",
+  ) {
+    return automationDetailResponseSchema.parse(
+      await harness.callRpc(
+        "automations_create",
+        {
+          projectId: PROJECT_ID,
+          name,
+          enabled: true,
+          trigger: oneShotTrigger(),
+          execution: agentExecution(),
+          origin: "human",
+        },
+        { experimental_caller: caller },
+      ),
+    );
+  }
+
+  async function runNow(
+    harness: FakePluginHost["harness"],
+    automationId: string,
+  ) {
+    const started = automationRunRpcResponseSchema.parse(
+      await harness.callRpc("automations_run", {
+        projectId: PROJECT_ID,
+        automationId,
+      }),
+    );
+    let settled: unknown;
+    await vi.waitFor(async () => {
+      const { runs } = automationRunListResponseSchema.parse(
+        await harness.callRpc("automations_runs", {
+          projectId: PROJECT_ID,
+          automationId,
+        }),
+      );
+      const run = runs.find((entry) => entry.id === started.run.id);
+      expect(run?.threadId ?? run?.error ?? null).not.toBeNull();
+      settled = run;
+    });
+    return settled;
+  }
+
+  it("records the creator's grant and spawns scheduled and manual runs through it", async () => {
+    const host = await bootAutomationsPlugin();
+    const { harness } = host;
+    const automation = await createAs(harness, MEMBER_CALLER);
+
+    expect(automation.runsAsCreator).toBe(true);
+    const [grant] = harness.experimental_callerGrants;
+    expect(harness.experimental_callerGrants).toEqual([
+      expect.objectContaining({
+        pluginId: "automations",
+        userId: "usr_member",
+        maxRole: "member",
+        purpose: 'Automation "Nightly triage"',
+        expiresAt: null,
+      }),
+    ]);
+
+    await sweepDueAutomations(host.bb as never, host.bb.storage.database(), {
+      pluginDataDir: "/tmp/bb-automations-grant-test",
+      serverUrl: "http://127.0.0.1:38886",
+      serverHostId: "host_fake",
+      now: Date.now() + 120_000,
+    });
+    const manual = await createAs(harness, MEMBER_CALLER, "Manual triage");
+    const manualGrant = harness.experimental_callerGrants[1];
+    await runNow(harness, manual.id);
+
+    const spawns = harness.sdk.calls.filter(
+      (call) => call.path === "threads.spawn",
+    );
+    expect(spawns).toHaveLength(2);
+    expect(spawns).toEqual([
+      expect.objectContaining({
+        experimental_grantId: grant!.grantId,
+        experimental_caller: expect.objectContaining({ userId: "usr_member" }),
+      }),
+      expect.objectContaining({
+        experimental_grantId: manualGrant!.grantId,
+        experimental_caller: expect.objectContaining({ userId: "usr_member" }),
+      }),
+    ]);
+    await harness.dispose();
+  });
+
+  it("replaces the grant when someone saves the automation and revokes it on delete", async () => {
+    const { harness } = await bootAutomationsPlugin();
+    const automation = await createAs(harness, MEMBER_CALLER);
+    const [memberGrant] = harness.experimental_callerGrants;
+
+    await harness.callRpc(
+      "automations_update",
+      { projectId: PROJECT_ID, automationId: automation.id, name: "Renamed" },
+      { experimental_caller: { kind: "system" } },
+    );
+    expect(harness.experimental_callerGrants).toEqual([memberGrant]);
+
+    await harness.callRpc(
+      "automations_update",
+      {
+        projectId: PROJECT_ID,
+        automationId: automation.id,
+        agent: { prompt: "summarize the outbox" },
+      },
+      { experimental_caller: ADMIN_CALLER },
+    );
+    expect(harness.experimental_callerGrants).toEqual([
+      expect.objectContaining({
+        userId: "usr_admin",
+        maxRole: "admin",
+        purpose: 'Automation "Renamed"',
+      }),
+    ]);
+
+    await harness.callRpc("automations_delete", {
+      projectId: PROJECT_ID,
+      automationId: automation.id,
+    });
+    expect(harness.experimental_callerGrants).toEqual([]);
+    await harness.dispose();
+  });
+
+  it("fails a run whose grant was revoked instead of running without the person", async () => {
+    const { harness } = await bootAutomationsPlugin();
+    const automation = await createAs(harness, MEMBER_CALLER);
+    harness.experimental_revokeCallerGrant(
+      harness.experimental_callerGrants[0]!.grantId,
+    );
+
+    expect(await runNow(harness, automation.id)).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("does not exist or was revoked"),
+    });
+    expect(harness.sdk.callsTo("threads.spawn")).toEqual([]);
+    await harness.dispose();
+  });
+
+  it("keeps running an automation without a grant as the plugin and says so", async () => {
+    const { harness } = await bootAutomationsPlugin();
+    const automation = await createAs(harness, { kind: "system" });
+
+    expect(automation.runsAsCreator).toBe(false);
+    expect(harness.experimental_callerGrants).toEqual([]);
+    await runNow(harness, automation.id);
+    const [spawn] = harness.sdk.calls.filter(
+      (call) => call.path === "threads.spawn",
+    );
+    expect(spawn).toBeDefined();
+    expect(spawn).not.toHaveProperty("experimental_caller");
+
+    const shown = await harness.runCli([
+      "show",
+      automation.id,
+      "--project",
+      PROJECT_ID,
+    ]);
+    expect(shown.stdout).toContain(
+      "Note:      Runs without a user identity until it is saved again",
+    );
+
+    const resaved = await harness.runCli([
+      "update",
+      automation.id,
+      "--project",
+      PROJECT_ID,
+      "--name",
+      "Re-saved",
+      "--json",
+    ]);
+    expect(resaved.exitCode).toBe(0);
+    expect(
+      automationDetailResponseSchema.parse(JSON.parse(resaved.stdout!))
+        .runsAsCreator,
+    ).toBe(true);
+    await harness.dispose();
   });
 });

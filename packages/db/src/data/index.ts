@@ -206,6 +206,14 @@ export {
   type UpsertPluginMarketplaceIconInput,
 } from "./plugin-marketplaces.js";
 export {
+  createPluginCallerGrant,
+  deletePluginCallerGrant,
+  deletePluginCallerGrantsForPlugin,
+  getPluginCallerGrant,
+  listPluginCallerGrantsForUser,
+  type PluginCallerGrantRow,
+} from "./plugin-caller-grants.js";
+export {
   deleteAllPluginSettings,
   deletePluginKvValue,
   getPluginKvValue,

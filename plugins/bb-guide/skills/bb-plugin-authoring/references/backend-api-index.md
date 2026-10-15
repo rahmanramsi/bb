@@ -63,6 +63,8 @@ Read the installed declarations for exact current signatures.
 - `ExperimentalLiveFileTarget`
 - `ExperimentalOpenFixedTabOptions`
 - `ExperimentalPermissionModePickerProps`
+- `ExperimentalCallerGrant`
+- `ExperimentalCallerGrantRequest`
 - `ExperimentalPluginCaller`
 - `ExperimentalPluginCallerContext`
 - `ExperimentalPluginFixedTabReference`
@@ -70,6 +72,9 @@ Read the installed declarations for exact current signatures.
 - `ExperimentalPluginRpcHandlerContext`
 - `ExperimentalPluginRpcHandlersWithContext`
 - `PluginBbSdk.experimental_asCaller`
+- `PluginBbSdk.experimental_asGrant`
+- `PluginBbSdk.experimental_createCallerGrant`
+- `PluginBbSdk.experimental_revokeCallerGrant`
 - `ExperimentalPluginWebSocket`
 - `ExperimentalPluginWebSocketContext`
 - `ExperimentalPluginWebSocketHandler`
@@ -439,7 +444,9 @@ Read the installed declarations for exact current signatures.
 - `FakePluginRegistrations`
 - `FakeRealtimeSignal`
 - `FakeScheduleRecord`
+- `ExperimentalFakeCallerGrant`
 - `FakeSdkCall`
+- `FakeSdkCallerGrants`
 - `FakeSdkHarness`
 - `FakeSdkOverrides`
 - `FakeServiceRecord`
