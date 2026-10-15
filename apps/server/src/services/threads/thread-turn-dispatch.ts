@@ -28,6 +28,7 @@ export interface ReadyThreadEnvironment extends EnvironmentRow {
 
 interface DispatchTurnDuringReprovisionArgs {
   beforeRequestAppendInTransaction?: (args: { tx: DbTransaction }) => void;
+  authorGrantId: string | null;
   authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   deps: LoggedPendingInteractionWorkSessionDeps;
@@ -83,6 +84,7 @@ export async function dispatchTurnDuringReprovision(
           throwEnvironmentNotReady(args.environment);
         }
       },
+      authorGrantId: args.authorGrantId,
       authorRoleCeiling: args.authorRoleCeiling,
       authorUserId: args.authorUserId,
       environment: args.environment,

@@ -365,6 +365,7 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
     const editor = requireTurnAuthor(context);
     const result = updateQueuedThreadMessage(deps.db, deps.hub, {
       content: input,
+      editorGrantId: editor.authorGrantId,
       editorRoleCeiling: editor.authorRoleCeiling,
       editorUserId: editor.authorUserId,
       expectedUpdatedAt: payload.expectedUpdatedAt,

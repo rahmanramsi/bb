@@ -42,6 +42,7 @@ describe("thread creation on a path another project already uses", () => {
       });
 
       const thread = await createThreadFromRequest(harness.deps, {
+        createdByGrantId: null,
         createdByRoleCeiling: null,
         createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
@@ -124,6 +125,7 @@ describe("thread creation on a path another project already uses", () => {
 
       await expect(
         createThreadFromRequest(harness.deps, {
+          createdByGrantId: null,
           createdByRoleCeiling: null,
           createdByUserId: LOCAL_OWNER_USER_ID,
           environment: {
@@ -184,6 +186,7 @@ describe("thread creation on a path another project already uses", () => {
 
       await expect(
         createThreadFromRequest(harness.deps, {
+          createdByGrantId: null,
           createdByRoleCeiling: null,
           createdByUserId: LOCAL_OWNER_USER_ID,
           environment: {
@@ -231,6 +234,7 @@ describe("thread creation on a path another project already uses", () => {
 
       await expect(
         createThreadFromRequest(harness.deps, {
+          createdByGrantId: null,
           createdByRoleCeiling: null,
           createdByUserId: LOCAL_OWNER_USER_ID,
           environment: {
@@ -280,6 +284,7 @@ describe("thread creation on a path another project already uses", () => {
       });
 
       const thread = await createThreadFromRequest(harness.deps, {
+        createdByGrantId: null,
         createdByRoleCeiling: null,
         createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {
@@ -354,6 +359,7 @@ describe("attaching to a path that already has an environment", () => {
       });
 
       const thread = await createThreadFromRequest(harness.deps, {
+        createdByGrantId: null,
         createdByRoleCeiling: null,
         createdByUserId: LOCAL_OWNER_USER_ID,
         environment: {

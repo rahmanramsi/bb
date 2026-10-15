@@ -17,6 +17,7 @@ import {
   authSessions,
   authUsers,
   authVerifications,
+  capPluginCallerGrantsForUserInTransaction,
   deleteQueuedThreadMessagesByAuthorInTransaction,
   deletePluginCallerGrant,
   getPluginCallerGrant,
@@ -62,6 +63,7 @@ export type PrincipalKind = "user" | "local" | "machine";
 
 export interface RequestPrincipal {
   delegatedPluginId: string | null;
+  grantId: string | null;
   kind: PrincipalKind;
   role: UserRole;
   roleCeiling: RoleCeiling | null;
@@ -75,6 +77,7 @@ export interface AuthenticatedCredential {
 
 export const LOCAL_OWNER_PRINCIPAL: RequestPrincipal = {
   delegatedPluginId: null,
+  grantId: null,
   kind: "local",
   role: "admin",
   roleCeiling: null,
@@ -83,6 +86,7 @@ export const LOCAL_OWNER_PRINCIPAL: RequestPrincipal = {
 
 const SERVICE_PRINCIPAL: RequestPrincipal = {
   delegatedPluginId: null,
+  grantId: null,
   kind: "machine",
   role: "admin",
   roleCeiling: null,
@@ -107,6 +111,7 @@ const shellTokenPayloadSchema = z
     userId: z.string().min(1),
     expiresAt: z.number().int().positive(),
     roleCeiling: z.enum(roleCeilingValues).optional(),
+    grantId: z.string().min(1).optional(),
   })
   .strict();
 const SHELL_TOKEN_PREFIX = "bbshell_";
@@ -121,11 +126,13 @@ const pluginCallerTokenPayloadSchema = z
     maxRole: userRoleSchema,
     roleCeiling: z.enum(roleCeilingValues).nullable(),
     grantId: z.string().min(1).nullable(),
+    derivedGrantId: z.string().min(1).nullable(),
     expiresAt: z.number().int().positive(),
   })
   .strict();
 
 export interface PluginCallerCredentialArgs {
+  derivedGrantId: string | null;
   grantId: string | null;
   maxRole: UserRole;
   pluginId: string;
@@ -144,7 +151,11 @@ function lowestRole(roles: readonly (UserRole | null)[]): UserRole {
 
 export async function issueThreadShellToken(
   dataDir: string,
-  args: { userId: string; roleCeiling: RoleCeiling | null },
+  args: {
+    grantId: string | null;
+    userId: string;
+    roleCeiling: RoleCeiling | null;
+  },
 ): Promise<string> {
   const secret = (
     await readFile(join(dataDir, AUTH_SECRET_FILE_NAME), "utf8")
@@ -154,6 +165,7 @@ export async function issueThreadShellToken(
       userId: args.userId,
       expiresAt: Date.now() + SHELL_TOKEN_TTL_MS,
       ...(args.roleCeiling === null ? {} : { roleCeiling: args.roleCeiling }),
+      ...(args.grantId === null ? {} : { grantId: args.grantId }),
     }),
   ).toString("base64url");
   const signature = createHmac("sha256", secret)
@@ -480,13 +492,13 @@ export async function createUserAuthService(
   }
 
   function updateUserRole(userId: string, role: UserRole): AuthUser {
-    const updated = args.db.transaction(() => {
+    const updated = args.db.transaction((tx) => {
       const user = assertMutableUser(userId, role !== "admin");
-      args.db
-        .update(authUsers)
+      tx.update(authUsers)
         .set({ role, updatedAt: new Date() })
         .where(eq(authUsers.id, userId))
         .run();
+      capPluginCallerGrantsForUserInTransaction(tx, { maxRole: role, userId });
       return { ...user, role };
     });
     notifyAuthorizationChange();
@@ -564,6 +576,7 @@ export async function createUserAuthService(
       ? null
       : {
           delegatedPluginId: null,
+          grantId: null,
           kind,
           role: user.role,
           roleCeiling: null,
@@ -614,6 +627,7 @@ export async function createUserAuthService(
         maxRole: issueArgs.maxRole,
         roleCeiling: issueArgs.roleCeiling,
         grantId: issueArgs.grantId,
+        derivedGrantId: issueArgs.derivedGrantId,
         expiresAt,
       })}`,
       revoke() {
@@ -638,39 +652,67 @@ export async function createUserAuthService(
     );
     if (!parsed.success) return null;
     const payload = parsed.data;
-    const grantHolds = () => {
-      if (payload.grantId === null) return true;
-      const grant = getPluginCallerGrant(args.db, payload.grantId);
-      return (
-        grant !== null &&
-        grant.pluginId === payload.pluginId &&
-        grant.userId === payload.userId &&
-        (grant.expiresAt === null || grant.expiresAt > Date.now())
-      );
+    const grantRole = (): UserRole | null => {
+      if (payload.grantId !== null) {
+        return heldGrantRole({
+          grantId: payload.grantId,
+          pluginId: payload.pluginId,
+          userId: payload.userId,
+        });
+      }
+      if (payload.derivedGrantId !== null) {
+        return heldGrantRole({
+          grantId: payload.derivedGrantId,
+          pluginId: null,
+          userId: payload.userId,
+        });
+      }
+      return payload.maxRole;
     };
     const live = () =>
       livePluginCallerCredentials.has(payload.id) &&
-      payload.expiresAt > Date.now() &&
-      grantHolds();
-    if (!live()) return null;
+      payload.expiresAt > Date.now();
+    const grantedRole = grantRole();
+    if (!live() || grantedRole === null) return null;
     const user = getUser(payload.userId);
     if (user === null || isSystemUserId(user.id)) return null;
     const accountRole = user.role;
     const roleCeiling: RoleCeiling | null =
-      lowestRole([payload.maxRole, payload.roleCeiling]) === "member"
+      lowestRole([payload.maxRole, grantedRole, payload.roleCeiling]) ===
+      "member"
         ? "member"
         : null;
     return {
       principal: {
         delegatedPluginId: payload.pluginId,
+        grantId: payload.grantId ?? payload.derivedGrantId,
         kind: "user",
         role: lowestRole([accountRole, roleCeiling]),
         roleCeiling,
         userId: user.id,
       },
       isActive: async () =>
-        live() && getUser(payload.userId)?.role === accountRole,
+        live() &&
+        grantRole() === grantedRole &&
+        getUser(payload.userId)?.role === accountRole,
     };
+  }
+
+  function heldGrantRole(grantArgs: {
+    grantId: string;
+    pluginId: string | null;
+    userId: string;
+  }): UserRole | null {
+    const grant = getPluginCallerGrant(args.db, grantArgs.grantId);
+    if (
+      grant === null ||
+      grant.userId !== grantArgs.userId ||
+      (grantArgs.pluginId !== null && grant.pluginId !== grantArgs.pluginId) ||
+      (grant.expiresAt !== null && grant.expiresAt <= Date.now())
+    ) {
+      return null;
+    }
+    return grant.maxRole;
   }
 
   function needsBootstrap(): boolean {
@@ -743,6 +785,44 @@ export async function createUserAuthService(
       )
       .get();
     return row !== undefined;
+  }
+
+  function authenticateGrantShellToken(token: {
+    expiresAt: number;
+    grantId: string;
+    roleCeiling: RoleCeiling | null;
+    userId: string;
+  }): AuthenticatedCredential | null {
+    const grantRole = () =>
+      heldGrantRole({
+        grantId: token.grantId,
+        pluginId: null,
+        userId: token.userId,
+      });
+    const grantedRole = grantRole();
+    const user = getUser(token.userId);
+    if (grantedRole === null || user === null || isSystemUserId(user.id)) {
+      return null;
+    }
+    const accountRole = user.role;
+    const roleCeiling: RoleCeiling | null =
+      lowestRole([grantedRole, token.roleCeiling]) === "member"
+        ? "member"
+        : null;
+    return {
+      principal: {
+        delegatedPluginId: null,
+        grantId: token.grantId,
+        kind: "user",
+        role: lowestRole([accountRole, roleCeiling]),
+        roleCeiling,
+        userId: user.id,
+      },
+      isActive: async () =>
+        token.expiresAt > Date.now() &&
+        grantRole() === grantedRole &&
+        getUser(token.userId)?.role === accountRole,
+    };
   }
 
   async function resolvePrincipal(
@@ -851,6 +931,15 @@ export async function createUserAuthService(
         );
         if (!parsed.success || parsed.data.expiresAt <= Date.now()) return null;
         const expiresAt = parsed.data.expiresAt;
+        const grantId = parsed.data.grantId ?? null;
+        if (grantId !== null) {
+          return authenticateGrantShellToken({
+            expiresAt,
+            grantId,
+            roleCeiling: parsed.data.roleCeiling ?? null,
+            userId: parsed.data.userId,
+          });
+        }
         const roleCeiling = parsed.data.roleCeiling ?? null;
         const shellPrincipal = principalForUser(parsed.data.userId, "user");
         if (shellPrincipal === null || roleCeiling === null) {

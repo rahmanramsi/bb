@@ -84,6 +84,7 @@ describe("hero plugin: agent-enrichment (Phase 2 surfaces)", () => {
       { threadId: thread.id },
     );
     const command = await buildThreadStartCommand(harness.deps, {
+      authorGrantId: null,
       authorRoleCeiling: null,
       authorUserId: null,
       environment,
@@ -232,6 +233,7 @@ describe("hero plugin: agent-enrichment (Phase 2 surfaces)", () => {
       },
     ];
     await sendThreadMessage(harness.deps, {
+      authorGrantId: null,
       authorRoleCeiling: null,
       authorUserId: LOCAL_OWNER_USER_ID,
       environment,
@@ -271,6 +273,7 @@ describe("hero plugin: agent-enrichment (Phase 2 surfaces)", () => {
     const { environment, thread } = seedThreadFixture(4);
     await expect(
       sendThreadMessage(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         environment,

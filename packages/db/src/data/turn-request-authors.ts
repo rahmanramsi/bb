@@ -4,6 +4,7 @@ import type { DbQueryConnection, DbTransaction } from "../connection.js";
 import { turnRequestAuthors } from "../schema.js";
 
 export interface TurnRequestAuthor {
+  authorGrantId: string | null;
   authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
 }
@@ -18,12 +19,14 @@ export function recordTurnRequestAuthorInTransaction(
       requestId: args.requestId,
       authorUserId: args.authorUserId,
       authorRoleCeiling: args.authorRoleCeiling,
+      authorGrantId: args.authorGrantId,
     })
     .onConflictDoUpdate({
       target: [turnRequestAuthors.threadId, turnRequestAuthors.requestId],
       set: {
         authorUserId: args.authorUserId,
         authorRoleCeiling: args.authorRoleCeiling,
+        authorGrantId: args.authorGrantId,
       },
     })
     .run();
@@ -38,6 +41,7 @@ export function getTurnRequestAuthor(
       .select({
         authorUserId: turnRequestAuthors.authorUserId,
         authorRoleCeiling: turnRequestAuthors.authorRoleCeiling,
+        authorGrantId: turnRequestAuthors.authorGrantId,
       })
       .from(turnRequestAuthors)
       .where(

@@ -252,6 +252,7 @@ async function cappedToken(
   const thread = getThread(harness.db, fixture.thread.id);
   if (thread === null) throw new Error("thread not found");
   const config = await resolveThreadRuntimeCommandConfig(harness.deps, {
+    authorGrantId: null,
     authorRoleCeiling: "member",
     authorUserId: userId,
     environment: {
@@ -405,6 +406,7 @@ describe("requeueing input the daemon refused for a different live turn", () => 
       );
       expect(requeued).toMatchObject({
         authorUserId: alice.id,
+        authorGrantId: null,
         authorRoleCeiling: "member",
       });
 
@@ -522,14 +524,22 @@ describe("requeueing input the daemon refused for a different live turn", () => 
         expect(binding.activeTurnId).toBe("turn-capped");
         expect(
           sharesRunningTurnAuthority(restarted, {
-            author: { authorUserId: alice.id, authorRoleCeiling: "member" },
+            author: {
+              authorGrantId: null,
+              authorUserId: alice.id,
+              authorRoleCeiling: "member",
+            },
             binding,
             thread,
           }),
         ).toBe(true);
         expect(
           sharesRunningTurnAuthority(restarted, {
-            author: { authorUserId: bob.id, authorRoleCeiling: null },
+            author: {
+              authorGrantId: null,
+              authorUserId: bob.id,
+              authorRoleCeiling: null,
+            },
             binding,
             thread,
           }),

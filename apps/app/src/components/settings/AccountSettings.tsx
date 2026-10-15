@@ -276,7 +276,9 @@ function PluginGrantSettings({ userId }: { userId: string }) {
                     {new Date(grant.createdAt).toLocaleDateString()}.{" "}
                     {grant.expiresAt === null
                       ? "Never expires."
-                      : `Expires ${new Date(grant.expiresAt).toLocaleDateString()}.`}
+                      : grant.expiresAt <= Date.now()
+                        ? `Expired ${new Date(grant.expiresAt).toLocaleDateString()}.`
+                        : `Expires ${new Date(grant.expiresAt).toLocaleDateString()}.`}
                   </p>
                 </div>
                 <ConfirmAction

@@ -117,25 +117,39 @@ For work that outlives the handler, such as a scheduled job, record a grant
 while the person's handler runs and use it later:
 
 ```ts
-async create(input, ctx) {
+bb.http.route("POST", "/reports", async (c, ctx) => {
+  const { name, projectId, prompt } = await c.req.json();
   const { grantId } = await bb.sdk.experimental_createCallerGrant(ctx, {
-    purpose: `Report "${input.name}"`,
+    purpose: `Report "${name}"`,
   });
-  saveJob({ ...input, grantId });
-},
+  await bb.storage.kv.set(`report:${name}`, { grantId, projectId, prompt });
+  return c.json({ ok: true });
+});
 ```
 
 ```ts
-const sdk = bb.sdk.experimental_asGrant(job.grantId);
-await sdk.threads.spawn({ projectId: job.projectId, prompt: job.prompt });
+const job = await bb.storage.kv.get<{
+  grantId: string;
+  projectId: string;
+  prompt: string;
+}>("report:weekly");
+if (job !== undefined) {
+  const sdk = bb.sdk.experimental_asGrant(job.grantId);
+  await sdk.threads.spawn({
+    projectId: job.projectId,
+    environment: { type: "project-default" },
+    prompt: job.prompt,
+  });
+}
 ```
 
 A grant acts with the caller's effective authority at grant time and never
 more than the person's current role, so a member's grant stays member after
-promotion. Only `client` callers can grant; `purpose` (1 to 200 characters) is
-what the person sees in `bb user grants list` and the account settings, and
-`expiresInDays` (1 to 3650) is optional. `experimental_asGrant` throws once the
-grant expired, was revoked by the person, an admin, or
+promotion, and demoting an admin lowers their grants to member for good. Only
+`client` callers can grant; `purpose` (1 to 200 characters) is what the person
+sees in `bb user grants list` and the account settings. `expiresInDays` (1 to 3650) defaults to 90; pass `null` only when the person expects the work to run
+until they revoke it. Revoking a grant also stops the `BB_TOKEN` of turns
+started through it. `experimental_asGrant` throws once the grant expired, was revoked by the person, an admin, or
 `bb.sdk.experimental_revokeCallerGrant(grantId)`, or its person or your plugin
 was removed; fail the work then instead of falling back to `bb.sdk`. Only the
 plugin that created a grant can use it. Call `experimental_asGrant` for each

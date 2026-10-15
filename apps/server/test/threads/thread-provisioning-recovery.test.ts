@@ -631,6 +631,7 @@ it.each(["metadata", "workspace"])(
         status: "starting",
       });
       const requested = requestThreadProvision(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         thread,
@@ -739,12 +740,14 @@ it("rejects an older startup checkpoint after a new attempt has been persisted",
       titleProvided: true,
     };
     const first = requestThreadProvision(harness.deps, {
+      authorGrantId: null,
       authorRoleCeiling: null,
       authorUserId: LOCAL_OWNER_USER_ID,
       ...args,
       input: textInput("first"),
     });
     const second = requestThreadProvision(harness.deps, {
+      authorGrantId: null,
       authorRoleCeiling: null,
       authorUserId: LOCAL_OWNER_USER_ID,
       ...args,
@@ -790,6 +793,7 @@ it("retries failed setup on the same environment without reallocating its worksp
     });
     expect(
       await dispatchTurnDuringReprovision({
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         deps: harness.deps,
@@ -848,6 +852,7 @@ it.each(["success", "failure"])(
         status: "starting",
       });
       requestThreadProvision(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         thread,
@@ -918,6 +923,7 @@ it("waits for the host to reconnect before recovering workspace setup", async ()
       status: "starting",
     });
     requestThreadProvision(harness.deps, {
+      authorGrantId: null,
       authorRoleCeiling: null,
       authorUserId: LOCAL_OWNER_USER_ID,
       thread,
@@ -970,6 +976,7 @@ it("resumes workspace setup when the same daemon reconnects", async () => {
       status: "starting",
     });
     requestThreadProvision(harness.deps, {
+      authorGrantId: null,
       authorRoleCeiling: null,
       authorUserId: LOCAL_OWNER_USER_ID,
       thread,
@@ -1050,6 +1057,7 @@ it("keeps workspace setup waiting while the host stays disconnected", async () =
       status: "starting",
     });
     requestThreadProvision(harness.deps, {
+      authorGrantId: null,
       authorRoleCeiling: null,
       authorUserId: LOCAL_OWNER_USER_ID,
       thread,
@@ -1111,6 +1119,7 @@ it.each(["pending", "starting"] as const)(
         });
       } else {
         requestThreadProvision(harness.deps, {
+          authorGrantId: null,
           authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           ...startup,

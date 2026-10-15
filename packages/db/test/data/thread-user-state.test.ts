@@ -175,7 +175,10 @@ describe("per-user thread and settings state", () => {
       });
     }
     pinThread(db, noopNotifier, { threadId: second.id, userId: OTHER_USER_ID });
-    expect(getThreadViewerState(db, { threadId: second.id, userId: OTHER_USER_ID }).lastReadAt).toBe(second.createdAt);
+    expect(
+      getThreadViewerState(db, { threadId: second.id, userId: OTHER_USER_ID })
+        .lastReadAt,
+    ).toBe(second.createdAt);
 
     const pinnedIds = (userId: string) =>
       listActiveVisiblePinnedThreadRootsWithPendingInteractionState(
@@ -302,20 +305,34 @@ describe("per-user thread and settings state", () => {
     const thread = newThread(null);
     const queued = [LOCAL_OWNER_USER_ID, OTHER_USER_ID].map((authorUserId) =>
       createQueuedThreadMessage(db, noopNotifier, {
-        threadId: thread.id, authorUserId,
+        threadId: thread.id,
+        authorUserId,
         content: [{ type: "text", text: authorUserId, mentions: [] }],
-        model: "gpt-5", reasoningLevel: "medium", permissionMode: "auto",
-        serviceTier: "default", waitingOn: null, sendAt: null,
-        payload: { kind: "inline" }, systemNotice: null,
+        model: "gpt-5",
+        reasoningLevel: "medium",
+        permissionMode: "auto",
+        serviceTier: "default",
+        waitingOn: null,
+        sendAt: null,
+        payload: { kind: "inline" },
+        systemNotice: null,
       }),
     );
     const result = setQueuedThreadMessageGroupBoundary({
-      db, notifier: noopNotifier, threadId: thread.id,
+      db,
+      notifier: noopNotifier,
+      threadId: thread.id,
       groupBoundaryQueuedMessageId: queued[1]!.id,
       expectedGroupedPrefixQueuedMessageIds: queued.map((row) => row.id),
     });
     expect(result.kind).toBe("invalid_sender");
-    expect(listQueuedThreadMessages(db, thread.id, OTHER_USER_ID).map((row) => row.id)).toEqual([queued[1]!.id]);
-    expect(listQueuedThreadMessages(db, thread.id).map((row) => row.groupWithNext)).toEqual([false, false]);
+    expect(
+      listQueuedThreadMessages(db, thread.id, OTHER_USER_ID).map(
+        (row) => row.id,
+      ),
+    ).toEqual([queued[1]!.id]);
+    expect(
+      listQueuedThreadMessages(db, thread.id).map((row) => row.groupWithNext),
+    ).toEqual([false, false]);
   });
 });

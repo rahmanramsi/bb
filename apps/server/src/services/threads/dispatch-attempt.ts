@@ -236,6 +236,7 @@ export type DispatchAttemptSource =
 
 export interface DispatchAttemptArgs {
   thread: ThreadRecord;
+  authorGrantId: string | null;
   authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   payload: SendMessageRequest & { inputGroups?: PromptInput[][] };
@@ -379,6 +380,7 @@ async function runDispatchAttempt(
     input: payload.input,
     execution,
     senderThreadId,
+    authorGrantId: args.authorGrantId,
     authorRoleCeiling: args.authorRoleCeiling,
     authorUserId: args.authorUserId,
     origin: args.origin,
@@ -502,6 +504,7 @@ async function runDispatchAttempt(
       checkedRunningTurn.value !== null &&
       !sharesRunningTurnAuthority(deps, {
         author: {
+          authorGrantId: args.authorGrantId,
           authorRoleCeiling: args.authorRoleCeiling,
           authorUserId: args.authorUserId,
         },
@@ -554,6 +557,7 @@ async function runDispatchAttempt(
 
     if (firstDispatch) {
       admitted.value = await admitPendingThread(deps, {
+        authorGrantId: args.authorGrantId,
         authorRoleCeiling: args.authorRoleCeiling,
         authorUserId: args.authorUserId,
         claimed,
@@ -656,6 +660,7 @@ async function runDispatchAttempt(
   const environment = await requireThreadCommandEnvironment(deps, { thread });
   try {
     await sendThreadMessage(deps, {
+      authorGrantId: args.authorGrantId,
       authorRoleCeiling: args.authorRoleCeiling,
       authorUserId: args.authorUserId,
       environment,
@@ -749,6 +754,7 @@ function consumeClaimedRows(
 }
 
 interface AdmitPendingThreadArgs {
+  authorGrantId: string | null;
   authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   claimed: ClaimedQueuedThreadMessageRow[] | null;
@@ -836,6 +842,7 @@ async function admitPendingThread(
         const starting = getThread(tx, args.thread.id);
         if (starting === null) throw new PendingThreadAdmissionLost();
         requestThreadProvision(deps, {
+          authorGrantId: args.authorGrantId,
           authorRoleCeiling: args.authorRoleCeiling,
           authorUserId: args.authorUserId,
           thread: starting,

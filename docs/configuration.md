@@ -1982,17 +1982,21 @@ the current user's PATs. New token values are shown once. A member-capped
 `BB_TOKEN` cannot create a PAT: `POST /api/v1/auth/tokens` answers 403
 `credential_role_capped`. All these commands accept `--json`.
 
-`bb user grants list [USER_ID]` lists the plugin grants a person gave. A
-plugin records a grant when it must act as that person later, such as an
-automation that runs on a schedule; each grant names the plugin, its purpose,
-the role it was granted with, and its expiry. Work done through a grant never
+`bb user grants list [USER_ID]` lists the plugin grants a person gave. A plugin
+records a grant when it must act as that person later, such as an automation
+that runs on a schedule; each grant names the plugin, its purpose, the role it
+was granted with, and its expiry. A grant expires after 90 days unless the
+plugin chose another expiry, or none for work the person expects to run
+indefinitely; the list marks expired grants. Work done through a grant never
 has more than the granted role or the person's current role: a member's grant
-stays member after promotion, and an admin's grant acts as a member while the
-admin is demoted. `bb user grants revoke GRANT_ID [--user USER_ID]` revokes
-one, and the plugin's later work as that person fails instead of running as
-someone else. Both default to the signed-in user; only admins may name another
-user. A plugin acting as a user gets 403 `credential_delegated`. Removing a
-user or a plugin deletes its grants. Both commands accept `--json`.
+stays member after promotion. Demoting an admin permanently lowers each of
+their grants to member, so promoting them again does not restore admin
+authority; the plugin must record a new grant.
+`bb user grants revoke GRANT_ID [--user USER_ID]` revokes one, and the plugin's
+later work as that person fails instead of running as someone else. Both
+default to the signed-in user; only admins may name another user. A plugin
+acting as a user gets 403 `credential_delegated`. Removing a user or a plugin
+deletes its grants. Both commands accept `--json`.
 
 Roles are guardrails for a trusted team. A member who runs an agent effectively
 has shell access to its host. In multi mode, each turn supplies a signed
@@ -2017,24 +2021,29 @@ and is masked in runtime environment displays. Threads created before multi
 mode and threads a plugin creates without a parent have no creator to fall back
 to. In local mode, shells need no credential.
 
-A plugin can also act as a person, either while handling that person's
-request or later through a grant they gave (`bb user grants`). Threads and
-messages it creates that way count as sent by that person under the rules
-above, capped at member when the person called with member authority or a
-member-capped credential, so the cap survives a later promotion. An agent
-automation runs as the person who last changed what it runs, or who adopted
-it, through such a grant: its scheduled and manual runs get that person's
-`BB_TOKEN` and attribution. Renaming, rescheduling, pausing, or resuming it
-keeps that person. Changing its prompt, target, provider, model, reasoning,
-service tier, or permission mode as anyone else is refused with
-`automation_adoption_required` unless the change also adopts it; adopting
-(`bb automation adopt`, or Run as me in the app) shows the full execution,
-names its execution revision, and fails with `automation_revision_stale` if
-the execution changed since. A plugin or bb itself changing the execution
-revokes the grant. If the grant is revoked, expired, or its person removed,
-the run fails instead of running as the plugin. Automations without a grant
-run as the plugin without a user identity and say so in the app and in
-`bb automation show` until someone adopts them.
+A plugin can also act as a person, either while handling that person's request
+or later through a grant they gave (`bb user grants`). Threads and messages it
+creates that way count as sent by that person under the rules above, capped at
+member when the person called with member authority or a member-capped
+credential, so the cap survives a later promotion. Turns started through a grant
+record it, and their `BB_TOKEN` stops authenticating with 401 once the grant is
+revoked, expires, or its plugin or person is removed, including threads that
+token goes on to create; it is capped at member whenever the grant is. Such a
+token cannot create a PAT or list or revoke grants (403 `credential_delegated`),
+and a plugin it calls cannot record a new grant from it. An agent automation
+runs as the person who last changed what it runs, or who adopted it, through
+such a grant: its scheduled and manual runs get that person's `BB_TOKEN` and
+attribution. Renaming, rescheduling, pausing, or resuming it keeps that person.
+Changing its prompt, target, provider, model, reasoning, service tier, or
+permission mode as anyone else is refused with `automation_adoption_required`
+unless the change also adopts it; adopting (`bb automation adopt`, or Run as me
+in the app) shows the full execution, names its execution revision, and fails
+with `automation_revision_stale` if the execution changed since. A plugin or bb
+itself changing the execution revokes the grant. If the grant is revoked,
+expired, or its person removed, the run fails instead of running as the plugin.
+Automations without a grant, including those saved before grants existed, run as
+the plugin without a user identity and say so in the app and in `bb automation
+show` until someone adopts them.
 
 A running turn keeps the `BB_TOKEN` it started with, so in multi mode a
 message steers into it only when it would get the same credential: the same

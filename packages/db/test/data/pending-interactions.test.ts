@@ -28,7 +28,7 @@ function setup() {
     },
   });
   const environment = createEnvironment(db, noopNotifier, {
-      providerOwnsPath: false,
+    providerOwnsPath: false,
     projectId: project.id,
     hostId: host.id,
     status: "ready",
@@ -204,42 +204,38 @@ describe("pending interactions", () => {
     ).toBe("pending");
   });
 
-  it(
-    "chunks provider-thread interrupts to stay under SQLite variable limits",
-    () => {
-      const { db, siblingThread, thread } = setup();
-      const threadIds = Array.from(
-        { length: 1_050 },
-        (_, index) => `thr_missing_batch_${index}`,
-      );
-      threadIds[0] = thread.id;
-      threadIds[1_000] = siblingThread.id;
-      const targetThreadIds = [thread.id, siblingThread.id];
+  it("chunks provider-thread interrupts to stay under SQLite variable limits", () => {
+    const { db, siblingThread, thread } = setup();
+    const threadIds = Array.from(
+      { length: 1_050 },
+      (_, index) => `thr_missing_batch_${index}`,
+    );
+    threadIds[0] = thread.id;
+    threadIds[1_000] = siblingThread.id;
+    const targetThreadIds = [thread.id, siblingThread.id];
 
-      for (const [index, threadId] of targetThreadIds.entries()) {
-        createPendingInteraction(db, {
-          threadId,
-          turnId: `turn-batched-interrupt-provider-${index}`,
-          providerId: "codex",
-          providerThreadId: `provider-thread-batched-interrupt-provider-${index}`,
-          providerRequestId: `request-batched-interrupt-provider-${index}`,
-          payload: commandApprovalPayload(
-            "git push",
-            `item-batched-interrupt-provider-${index}`,
-          ),
-        });
-      }
-
-      expect(
-        new Set(
-          interruptPendingInteractionsForThreads(db, {
-            providerId: "codex",
-            threadIds,
-            statusReason: "Provider exited",
-          }).map((row) => row.threadId),
+    for (const [index, threadId] of targetThreadIds.entries()) {
+      createPendingInteraction(db, {
+        threadId,
+        turnId: `turn-batched-interrupt-provider-${index}`,
+        providerId: "codex",
+        providerThreadId: `provider-thread-batched-interrupt-provider-${index}`,
+        providerRequestId: `request-batched-interrupt-provider-${index}`,
+        payload: commandApprovalPayload(
+          "git push",
+          `item-batched-interrupt-provider-${index}`,
         ),
-      ).toEqual(new Set(targetThreadIds));
-    },
-  );
+      });
+    }
 
+    expect(
+      new Set(
+        interruptPendingInteractionsForThreads(db, {
+          providerId: "codex",
+          threadIds,
+          statusReason: "Provider exited",
+        }).map((row) => row.threadId),
+      ),
+    ).toEqual(new Set(targetThreadIds));
+  });
 });

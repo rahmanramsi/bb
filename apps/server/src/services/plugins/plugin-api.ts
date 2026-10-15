@@ -728,6 +728,7 @@ export function createPluginApi(options: {
     const cached = callerSdks.get(invocation);
     if (cached !== undefined) return cached;
     const credential = issuePluginCallerCredential({
+      derivedGrantId: invocation.grantId,
       grantId: null,
       maxRole: invocation.authority,
       pluginId,
@@ -775,6 +776,11 @@ export function createPluginApi(options: {
         "bb.sdk.experimental_createCallerGrant: the invocation ended",
       );
     }
+    if (invocation.grantId !== null) {
+      throw new Error(
+        "bb.sdk.experimental_createCallerGrant: a caller acting through a grant cannot grant",
+      );
+    }
     const now = Date.now();
     const parsed = parsePluginCallerGrantRequest(request, now);
     if (!parsed.ok) throw new Error(parsed.message);
@@ -814,6 +820,7 @@ export function createPluginApi(options: {
     }
     return delegatedSdk(
       issuePluginCallerCredential({
+        derivedGrantId: null,
         grantId: grant.id,
         maxRole: grant.maxRole,
         pluginId,

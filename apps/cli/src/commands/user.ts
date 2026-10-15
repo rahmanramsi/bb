@@ -21,7 +21,9 @@ async function grantsUserId(
 }
 
 function formatGrantExpiry(expiresAt: number | null): string {
-  return expiresAt === null ? "never" : new Date(expiresAt).toISOString();
+  if (expiresAt === null) return "never";
+  const date = new Date(expiresAt).toISOString();
+  return expiresAt <= Date.now() ? `expired ${date}` : date;
 }
 
 export function registerUserCommands(
@@ -92,7 +94,7 @@ export function registerUserCommands(
   const grants = user
     .command("grants")
     .description(
-      "List or revoke plugin grants that let plugins act as a user later (yours, or anyone's as an admin)",
+      "List or revoke plugin grants that let plugins act as a user later (yours, or anyone's as an admin). Grants expire after 90 days unless the plugin chose another expiry or none; revoking one also stops the BB_TOKEN of turns started through it",
     );
   grants
     .command("list [userId]")

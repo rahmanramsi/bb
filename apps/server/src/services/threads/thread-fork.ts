@@ -62,7 +62,11 @@ function requireSourceEnvironment(
 export async function createThreadForkFromRequest(
   deps: ThreadForkDeps,
   request: ForkThreadRequest,
-  creator: { roleCeiling: RoleCeiling | null; userId: string | null },
+  creator: {
+    grantId: string | null;
+    roleCeiling: RoleCeiling | null;
+    userId: string | null;
+  },
 ) {
   const sourceThread = requireForkSourceThread(deps, request.sourceThreadId);
   requireForkCapableProvider(deps, sourceThread);
@@ -77,6 +81,7 @@ export async function createThreadForkFromRequest(
   return createThreadFromRequest(
     deps,
     {
+      createdByGrantId: creator.grantId,
       createdByRoleCeiling: creator.roleCeiling,
       createdByUserId: creator.userId,
       environment: request.environment ?? {

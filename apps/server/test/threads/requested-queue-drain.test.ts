@@ -396,6 +396,7 @@ describe("the requested queue drain", () => {
         status: "idle",
       });
       await acceptThreadSendRequest(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         payload: { input: textInput("plugin-held lead"), mode: "auto" },
@@ -666,6 +667,7 @@ describe("the requested queue drain", () => {
         status: "active",
       });
       await acceptThreadSendRequest(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         payload: {
@@ -709,6 +711,7 @@ describe("the requested queue drain", () => {
         status: "idle",
       });
       await acceptThreadSendRequest(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         payload: { input: textInput("held work"), mode: "auto" },
@@ -749,6 +752,7 @@ describe("the requested queue drain", () => {
         status: "idle",
       }).thread;
       await acceptThreadSendRequest(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         payload: { input: textInput("first in"), mode: "auto" },
@@ -759,6 +763,7 @@ describe("the requested queue drain", () => {
         status: "idle",
       }).thread;
       await acceptThreadSendRequest(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         payload: { input: textInput("second in"), mode: "auto" },
@@ -836,6 +841,7 @@ describe("requesting a drain", () => {
         status: "idle",
       });
       await acceptThreadSendRequest(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         payload: { input: textInput("held work"), mode: "auto" },

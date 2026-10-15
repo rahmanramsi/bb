@@ -57,6 +57,7 @@ export interface ThreadRuntimeCommandEnvironment {
 }
 
 interface ResolveThreadRuntimeCommandConfigArgs {
+  authorGrantId: string | null;
   authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   environment: ThreadRuntimeCommandEnvironment;
@@ -124,6 +125,7 @@ export function resolvePermissionEscalation(
 }
 
 export interface ThreadShellCredential {
+  grantId: string | null;
   roleCeiling: RoleCeiling | null;
   userId: string;
 }
@@ -132,11 +134,15 @@ export function resolveThreadShellCredential(
   deps: Pick<LoggedWorkSessionDeps, "db">,
   args: Pick<
     ResolveThreadRuntimeCommandConfigArgs,
-    "authorRoleCeiling" | "authorUserId" | "thread"
+    "authorGrantId" | "authorRoleCeiling" | "authorUserId" | "thread"
   >,
 ): ThreadShellCredential | null {
   if (args.authorUserId !== null && !isSystemUserId(args.authorUserId)) {
-    return { userId: args.authorUserId, roleCeiling: args.authorRoleCeiling };
+    return {
+      grantId: args.authorGrantId,
+      userId: args.authorUserId,
+      roleCeiling: args.authorRoleCeiling,
+    };
   }
   const creatorUserId = args.thread.createdByUserId;
   if (
@@ -146,7 +152,7 @@ export function resolveThreadShellCredential(
   ) {
     return null;
   }
-  return { userId: creatorUserId, roleCeiling: "member" };
+  return { grantId: null, userId: creatorUserId, roleCeiling: "member" };
 }
 
 export async function resolveThreadRuntimeCommandConfig(

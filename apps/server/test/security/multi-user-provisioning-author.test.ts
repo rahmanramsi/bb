@@ -1,10 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import {
-  getThread,
-  listEvents,
-  threads,
-  turnRequestAuthors,
-} from "@bb/db";
+import { getThread, listEvents, threads, turnRequestAuthors } from "@bb/db";
 import type { ResolvedThreadExecutionOptions, RoleCeiling } from "@bb/domain";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -123,7 +118,11 @@ function seedStartingThreadOwnedBy(harness: TestAppHarness, ownerId: string) {
 function requestProvisionAs(
   harness: TestAppHarness,
   seeded: ReturnType<typeof seedStartingThreadOwnedBy>,
-  author: { authorRoleCeiling: RoleCeiling | null; authorUserId: string | null },
+  author: {
+    authorGrantId: string | null;
+    authorRoleCeiling: RoleCeiling | null;
+    authorUserId: string | null;
+  },
 ) {
   return requestThreadProvision(harness.deps, {
     ...author,
@@ -211,6 +210,7 @@ describe("a provisioning thread starts its pending input only as a known author"
       const { alice, bob, carol } = await bootstrapTeam(harness);
       const seeded = seedStartingThreadOwnedBy(harness, bob.id);
       requestProvisionAs(harness, seeded, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: carol.id,
       });
@@ -232,6 +232,7 @@ describe("a provisioning thread starts its pending input only as a known author"
       const { bob } = await bootstrapTeam(harness);
       const seeded = seedStartingThreadOwnedBy(harness, bob.id);
       const context = requestProvisionAs(harness, seeded, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: bob.id,
       });
@@ -240,10 +241,7 @@ describe("a provisioning thread starts its pending input only as a known author"
         .where(
           and(
             eq(turnRequestAuthors.threadId, seeded.thread.id),
-            eq(
-              turnRequestAuthors.requestId,
-              context.request.clientRequestId,
-            ),
+            eq(turnRequestAuthors.requestId, context.request.clientRequestId),
           ),
         )
         .run();
@@ -260,6 +258,7 @@ describe("a provisioning thread starts its pending input only as a known author"
       const { bob } = await bootstrapTeam(harness);
       const seeded = seedStartingThreadOwnedBy(harness, bob.id);
       requestProvisionAs(harness, seeded, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: null,
       });
@@ -285,6 +284,7 @@ describe("a provisioning thread starts its pending input only as a known author"
       const { bob } = await bootstrapTeam(harness);
       const seeded = seedStartingThreadOwnedBy(harness, bob.id);
       requestProvisionAs(harness, seeded, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: bob.id,
       });

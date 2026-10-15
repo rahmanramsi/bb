@@ -206,6 +206,7 @@ export {
   type UpsertPluginMarketplaceIconInput,
 } from "./plugin-marketplaces.js";
 export {
+  capPluginCallerGrantsForUserInTransaction,
   createPluginCallerGrant,
   deletePluginCallerGrant,
   deletePluginCallerGrantsForPlugin,

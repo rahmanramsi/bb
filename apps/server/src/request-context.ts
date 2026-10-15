@@ -57,11 +57,13 @@ export function requirePrincipal(context: PrincipalReader): RequestPrincipal {
 }
 
 export function requireTurnAuthor(context: PrincipalReader): {
+  authorGrantId: string | null;
   authorRoleCeiling: RoleCeiling | null;
   authorUserId: string;
 } {
   const principal = requirePrincipal(context);
   return {
+    authorGrantId: principal.grantId,
     authorRoleCeiling: principal.roleCeiling,
     authorUserId: principal.userId,
   };

@@ -599,6 +599,7 @@ describe("core environment orchestration", () => {
         if (admission === "new reuse") {
           await expect(
             createThreadFromRequest(harness.deps, {
+              createdByGrantId: null,
               createdByRoleCeiling: null,
               createdByUserId: LOCAL_OWNER_USER_ID,
               environment: { type: "reuse", environmentId: target.id },

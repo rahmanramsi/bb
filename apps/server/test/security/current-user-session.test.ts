@@ -106,6 +106,7 @@ describe("the auth session reports the caller's effective role", () => {
     await withTestHarness({ authMode: "multi" }, async (harness) => {
       const { admin } = await bootstrapTeam(harness);
       const capped = await issueThreadShellToken(harness.deps.config.dataDir, {
+        grantId: null,
         userId: admin.id,
         roleCeiling: "member",
       });

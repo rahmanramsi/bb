@@ -15,6 +15,7 @@ import { assertThreadHostAcceptsWork } from "./thread-host-admission.js";
 import { runWithTurnTrace } from "../system/turn-trace.js";
 
 interface AcceptThreadSendRequestArgs {
+  authorGrantId: string | null;
   authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   payload: SendMessageRequest;
@@ -31,6 +32,7 @@ export async function acceptThreadSendRequest(
       thread: args.thread,
     });
     await sendThreadMessage(deps, {
+      authorGrantId: args.authorGrantId,
       authorRoleCeiling: args.authorRoleCeiling,
       authorUserId: args.authorUserId,
       environment,
@@ -47,6 +49,7 @@ export async function acceptThreadSendRequest(
     () =>
       attemptDispatch(deps, {
         thread: args.thread,
+        authorGrantId: args.authorGrantId,
         authorRoleCeiling: args.authorRoleCeiling,
         authorUserId: args.authorUserId,
         payload: args.payload,

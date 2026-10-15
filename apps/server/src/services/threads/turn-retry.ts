@@ -84,6 +84,7 @@ function requireFailedTurn(
 }
 
 export interface RetryFailedTurnArgs {
+  authorGrantId: string | null;
   authorRoleCeiling: RoleCeiling | null;
   authorUserId: string | null;
   thread: ThreadRecord;
@@ -211,6 +212,7 @@ export async function retryFailedTurn(
     const attempt = chain.attemptNumber + 1;
     const outcome = await attemptDispatch(deps, {
       thread,
+      authorGrantId: args.authorGrantId,
       authorRoleCeiling: args.authorRoleCeiling,
       authorUserId: args.authorUserId,
       payload: {

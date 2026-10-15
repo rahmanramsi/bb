@@ -464,6 +464,15 @@ describe("account visibility and actions", () => {
           createdAt: 1,
           expiresAt: null,
         },
+        {
+          id: "grant_2",
+          pluginId: "automations",
+          userId: member.id,
+          maxRole: "member",
+          purpose: 'Automation "Weekly"',
+          createdAt: 1,
+          expiresAt: 2,
+        },
       ],
     });
     const revoke = vi
@@ -475,10 +484,12 @@ describe("account visibility and actions", () => {
     mount(<AccountSettings />, session(member));
 
     expect(await screen.findByText('Automation "Nightly"')).toBeTruthy();
+    expect(screen.getByText(/Never expires\./)).toBeTruthy();
+    expect(screen.getByText(/Expired /)).toBeTruthy();
     expect(sdk.experimental_users.listPluginGrants).toHaveBeenCalledWith(
       expect.objectContaining({ userId: member.id }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Revoke" })[0]!);
     expect(revoke).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Confirm revoke" }));
     await waitFor(() =>

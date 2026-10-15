@@ -445,6 +445,7 @@ describe("retrying a failed turn", () => {
       failThread(harness, thread.id);
 
       const result = await retryFailedTurn(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         thread: requireThread(harness, thread.id),
@@ -511,6 +512,7 @@ describe("retrying a failed turn", () => {
       failThread(harness, thread.id);
 
       const result = await retryFailedTurn(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         thread: requireThread(harness, thread.id),
@@ -545,6 +547,7 @@ describe("retrying a failed turn", () => {
       failThread(harness, thread.id);
 
       const result = await retryFailedTurn(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         thread: requireThread(harness, thread.id),
@@ -574,6 +577,7 @@ describe("retrying a failed turn", () => {
       });
 
       await retryFailedTurn(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         thread: requireThread(harness, thread.id),
@@ -597,6 +601,7 @@ describe("retrying a failed turn", () => {
       failThread(harness, thread.id);
       const retry = () =>
         retryFailedTurn(harness.deps, {
+          authorGrantId: null,
           authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           thread: requireThread(harness, thread.id),
@@ -633,6 +638,7 @@ describe("retrying a failed turn", () => {
       );
       failThread(harness, thread.id);
       await retryFailedTurn(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         thread: requireThread(harness, thread.id),
@@ -653,6 +659,7 @@ describe("retrying a failed turn", () => {
       expect(failedAgain?.requestId).not.toBe(requestId);
 
       await retryFailedTurn(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         thread: requireThread(harness, thread.id),
@@ -695,6 +702,7 @@ describe("retrying a failed turn", () => {
       const { thread } = seedFailableThread(harness, "host-limit");
       failThread(harness, thread.id);
       await retryFailedTurn(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: LOCAL_OWNER_USER_ID,
         thread: requireThread(harness, thread.id),
@@ -728,6 +736,7 @@ describe("retrying a failed turn", () => {
       const { requestId, thread } = seedFailableThread(harness, "host-refuse");
       const retry = (turnRequestId: string | null) =>
         retryFailedTurn(harness.deps, {
+          authorGrantId: null,
           authorRoleCeiling: null,
           authorUserId: LOCAL_OWNER_USER_ID,
           thread: requireThread(harness, thread.id),
@@ -840,6 +849,7 @@ describe("pooled provider retry integration", () => {
           threads: {
             retry: async (request) =>
               retryFailedTurn(harness.deps, {
+                authorGrantId: null,
                 authorRoleCeiling: null,
                 authorUserId: LOCAL_OWNER_USER_ID,
                 thread: requireThread(harness, request.threadId),

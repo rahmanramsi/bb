@@ -230,6 +230,15 @@ describe("CLI authentication", () => {
             createdAt: 1,
             expiresAt: null,
           },
+          {
+            id: "grant_2",
+            pluginId: "automations",
+            userId: "u",
+            maxRole: "member",
+            purpose: 'Automation "Weekly"',
+            createdAt: 1,
+            expiresAt: Date.parse("2001-02-03T00:00:00.000Z"),
+          },
         ],
       });
     });
@@ -244,6 +253,7 @@ describe("CLI authentication", () => {
     expect(table).toContain("grant_1");
     expect(table).toContain('Automation "Nightly"');
     expect(table).toContain("never");
+    expect(table).toContain("expired 2001-02-03T00:00:00.000Z");
 
     requests.length = 0;
     await run(["user", "grants", "revoke", "grant_1"]);

@@ -101,6 +101,7 @@ async function createProbeThread(
     path: `/tmp/${hostId}`,
   });
   return createThreadFromRequest(harness.deps, {
+    createdByGrantId: null,
     createdByRoleCeiling: creator.roleCeiling,
     createdByUserId: creator.userId,
     environment: {

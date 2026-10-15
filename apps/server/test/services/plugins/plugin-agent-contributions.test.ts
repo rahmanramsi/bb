@@ -298,6 +298,7 @@ describe("plugin agent contributions reach thread runtime config", () => {
     );
     const buildCommand = (requestValue: number) =>
       buildThreadStartCommand(harness.deps, {
+        authorGrantId: null,
         authorRoleCeiling: null,
         authorUserId: null,
         environment,
@@ -392,6 +393,7 @@ describe("plugin agent contributions reach thread runtime config", () => {
       { threadId: thread.id },
     );
     const command = await buildThreadStartCommand(harness.deps, {
+      authorGrantId: null,
       authorRoleCeiling: null,
       authorUserId: null,
       environment,

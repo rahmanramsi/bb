@@ -231,6 +231,7 @@ describe("echo-provider canary: plugin install → server command → runtime �
       { threadId: thread.id },
     );
     const command = await buildThreadStartCommand(harness.deps, {
+      authorGrantId: null,
       authorRoleCeiling: null,
       authorUserId: null,
       environment,
@@ -598,6 +599,7 @@ describe("echo-provider canary: plugin install → server command → runtime �
       { threadId: thread.id },
     );
     const command = await buildThreadStartCommand(harness.deps, {
+      authorGrantId: null,
       authorRoleCeiling: null,
       authorUserId: null,
       environment,
